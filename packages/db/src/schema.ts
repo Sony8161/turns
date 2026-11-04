@@ -358,6 +358,110 @@ export const auditLog = pgTable(
   ],
 ).enableRLS();
 
+// Visits and calls (Part 4) ----------------------------------------------------
+
+export const visitSourceEnum = pgEnum('visit_source', [
+  'walk_in',
+  'appointment',
+  'request',
+  'self_checkin',
+]);
+export const visitStatusEnum = pgEnum('visit_status', [
+  'waiting',
+  'called',
+  'in_service',
+  'completed',
+  'cancelled',
+]);
+export const callResponseEnum = pgEnum('call_response', [
+  'accepted',
+  'denied',
+  'overridden',
+  'expired',
+]);
+
+export const visits = pgTable(
+  'visits',
+  {
+    id: id(),
+    organizationId: uuid('organization_id').notNull(),
+    locationId: uuid('location_id').notNull(),
+    source: visitSourceEnum('source').notNull().default('walk_in'),
+    status: visitStatusEnum('status').notNull().default('waiting'),
+    // client_id arrives with Part 6; audit rows reference the visit, never the client.
+    requestedTechnicianId: uuid('requested_technician_id').references(() => technicians.id, {
+      onDelete: 'restrict',
+    }),
+    assignedTechnicianId: uuid('assigned_technician_id').references(() => technicians.id, {
+      onDelete: 'restrict',
+    }),
+    createdBy: uuid('created_by').references(() => profiles.id, { onDelete: 'restrict' }),
+    arrivedAt: timestamp('arrived_at', { withTimezone: true }).notNull().defaultNow(),
+    startedAt: timestamp('started_at', { withTimezone: true }),
+    completedAt: timestamp('completed_at', { withTimezone: true }),
+    cancelledAt: timestamp('cancelled_at', { withTimezone: true }),
+    // Posted at completion; kept here for the report, the ledger is the record.
+    pointsPosted: numeric('points_posted', { precision: 4, scale: 1 }),
+    note: text('note'),
+    createdAt: createdAt(),
+    updatedAt: updatedAt(),
+  },
+  (t) => [
+    locationFk(t, 'visits_location_fk'),
+    index('visits_location_status').on(t.locationId, t.status),
+  ],
+).enableRLS();
+
+export const visitServices = pgTable(
+  'visit_services',
+  {
+    id: id(),
+    organizationId: uuid('organization_id').notNull(),
+    visitId: uuid('visit_id')
+      .notNull()
+      .references(() => visits.id, { onDelete: 'restrict' }),
+    serviceId: uuid('service_id')
+      .notNull()
+      .references(() => services.id, { onDelete: 'restrict' }),
+    // The points this service was worth under the rules at the time.
+    pointsValueSnapshot: numeric('points_value_snapshot', { precision: 4, scale: 1 }).notNull(),
+    createdAt: createdAt(),
+  },
+  (t) => [unique('visit_services_visit_service').on(t.visitId, t.serviceId)],
+).enableRLS();
+
+// One call per visit per attempt. The partial unique indexes (migration) keep a
+// technician to one open call and a visit to one open call (threat model T3).
+export const turnCalls = pgTable(
+  'turn_calls',
+  {
+    id: id(),
+    organizationId: uuid('organization_id').notNull(),
+    locationId: uuid('location_id').notNull(),
+    visitId: uuid('visit_id')
+      .notNull()
+      .references(() => visits.id, { onDelete: 'restrict' }),
+    technicianId: uuid('technician_id')
+      .notNull()
+      .references(() => technicians.id, { onDelete: 'restrict' }),
+    calledAt: timestamp('called_at', { withTimezone: true }).notNull().defaultNow(),
+    respondedAt: timestamp('responded_at', { withTimezone: true }),
+    response: callResponseEnum('response'),
+    denyReason: text('deny_reason'),
+    excusedBy: uuid('excused_by').references(() => profiles.id, { onDelete: 'restrict' }),
+    excusedAt: timestamp('excused_at', { withTimezone: true }),
+    calledBy: uuid('called_by').references(() => profiles.id, { onDelete: 'restrict' }),
+    // Who was ahead and why, at that second: the row that settles arguments.
+    queueSnapshot: jsonb('queue_snapshot').notNull(),
+    createdAt: createdAt(),
+  },
+  (t) => [
+    locationFk(t, 'turn_calls_location_fk'),
+    index('turn_calls_visit').on(t.visitId),
+    index('turn_calls_technician').on(t.technicianId),
+  ],
+).enableRLS();
+
 // Salon setup codes ---------------------------------------------------------
 
 // Made by the platform operator, not by a salon. Whoever redeems one creates a
@@ -388,6 +492,9 @@ export const rateLimits = pgTable('rate_limits', {
 }).enableRLS();
 
 export const TENANT_TABLES = [
+  'visits',
+  'visit_services',
+  'turn_calls',
   'shifts',
   'technician_status',
   'turn_ledger',

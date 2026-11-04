@@ -104,28 +104,18 @@
         "audit_log_actor_user_id_profiles_id_fk": {
           "name": "audit_log_actor_user_id_profiles_id_fk",
           "tableFrom": "audit_log",
-          "columnsFrom": [
-            "actor_user_id"
-          ],
+          "columnsFrom": ["actor_user_id"],
           "tableTo": "profiles",
-          "columnsTo": [
-            "id"
-          ],
+          "columnsTo": ["id"],
           "onUpdate": "no action",
           "onDelete": "restrict"
         },
         "audit_log_location_fk": {
           "name": "audit_log_location_fk",
           "tableFrom": "audit_log",
-          "columnsFrom": [
-            "location_id",
-            "organization_id"
-          ],
+          "columnsFrom": ["location_id", "organization_id"],
           "tableTo": "locations",
-          "columnsTo": [
-            "id",
-            "organization_id"
-          ],
+          "columnsTo": ["id", "organization_id"],
           "onUpdate": "no action",
           "onDelete": "restrict"
         }
@@ -209,41 +199,27 @@
         "invite_codes_created_by_profiles_id_fk": {
           "name": "invite_codes_created_by_profiles_id_fk",
           "tableFrom": "invite_codes",
-          "columnsFrom": [
-            "created_by"
-          ],
+          "columnsFrom": ["created_by"],
           "tableTo": "profiles",
-          "columnsTo": [
-            "id"
-          ],
+          "columnsTo": ["id"],
           "onUpdate": "no action",
           "onDelete": "restrict"
         },
         "invite_codes_used_by_profiles_id_fk": {
           "name": "invite_codes_used_by_profiles_id_fk",
           "tableFrom": "invite_codes",
-          "columnsFrom": [
-            "used_by"
-          ],
+          "columnsFrom": ["used_by"],
           "tableTo": "profiles",
-          "columnsTo": [
-            "id"
-          ],
+          "columnsTo": ["id"],
           "onUpdate": "no action",
           "onDelete": "restrict"
         },
         "invite_codes_location_fk": {
           "name": "invite_codes_location_fk",
           "tableFrom": "invite_codes",
-          "columnsFrom": [
-            "location_id",
-            "organization_id"
-          ],
+          "columnsFrom": ["location_id", "organization_id"],
           "tableTo": "locations",
-          "columnsTo": [
-            "id",
-            "organization_id"
-          ],
+          "columnsTo": ["id", "organization_id"],
           "onUpdate": "no action",
           "onDelete": "restrict"
         }
@@ -252,9 +228,7 @@
       "uniqueConstraints": {
         "invite_codes_code_hash_unique": {
           "name": "invite_codes_code_hash_unique",
-          "columns": [
-            "code_hash"
-          ],
+          "columns": ["code_hash"],
           "nullsNotDistinct": false
         }
       },
@@ -355,13 +329,9 @@
         "locations_organization_id_organizations_id_fk": {
           "name": "locations_organization_id_organizations_id_fk",
           "tableFrom": "locations",
-          "columnsFrom": [
-            "organization_id"
-          ],
+          "columnsFrom": ["organization_id"],
           "tableTo": "organizations",
-          "columnsTo": [
-            "id"
-          ],
+          "columnsTo": ["id"],
           "onUpdate": "no action",
           "onDelete": "restrict"
         }
@@ -370,18 +340,12 @@
       "uniqueConstraints": {
         "locations_id_organization": {
           "name": "locations_id_organization",
-          "columns": [
-            "id",
-            "organization_id"
-          ],
+          "columns": ["id", "organization_id"],
           "nullsNotDistinct": false
         },
         "locations_organization_name": {
           "name": "locations_organization_name",
-          "columns": [
-            "organization_id",
-            "name"
-          ],
+          "columns": ["organization_id", "name"],
           "nullsNotDistinct": false
         }
       },
@@ -475,28 +439,18 @@
         "memberships_user_id_profiles_id_fk": {
           "name": "memberships_user_id_profiles_id_fk",
           "tableFrom": "memberships",
-          "columnsFrom": [
-            "user_id"
-          ],
+          "columnsFrom": ["user_id"],
           "tableTo": "profiles",
-          "columnsTo": [
-            "id"
-          ],
+          "columnsTo": ["id"],
           "onUpdate": "no action",
           "onDelete": "cascade"
         },
         "memberships_location_fk": {
           "name": "memberships_location_fk",
           "tableFrom": "memberships",
-          "columnsFrom": [
-            "location_id",
-            "organization_id"
-          ],
+          "columnsFrom": ["location_id", "organization_id"],
           "tableTo": "locations",
-          "columnsTo": [
-            "id",
-            "organization_id"
-          ],
+          "columnsTo": ["id", "organization_id"],
           "onUpdate": "no action",
           "onDelete": "restrict"
         }
@@ -505,11 +459,7 @@
       "uniqueConstraints": {
         "memberships_user_location_role": {
           "name": "memberships_user_location_role",
-          "columns": [
-            "user_id",
-            "location_id",
-            "role"
-          ],
+          "columns": ["user_id", "location_id", "role"],
           "nullsNotDistinct": false
         }
       },
@@ -733,15 +683,9 @@
         "rule_configs_location_fk": {
           "name": "rule_configs_location_fk",
           "tableFrom": "rule_configs",
-          "columnsFrom": [
-            "location_id",
-            "organization_id"
-          ],
+          "columnsFrom": ["location_id", "organization_id"],
           "tableTo": "locations",
-          "columnsTo": [
-            "id",
-            "organization_id"
-          ],
+          "columnsTo": ["id", "organization_id"],
           "onUpdate": "no action",
           "onDelete": "restrict"
         }
@@ -750,10 +694,7 @@
       "uniqueConstraints": {
         "rule_configs_location_version": {
           "name": "rule_configs_location_version",
-          "columns": [
-            "location_id",
-            "version"
-          ],
+          "columns": ["location_id", "version"],
           "nullsNotDistinct": false
         }
       },
@@ -823,15 +764,9 @@
         "service_categories_location_fk": {
           "name": "service_categories_location_fk",
           "tableFrom": "service_categories",
-          "columnsFrom": [
-            "location_id",
-            "organization_id"
-          ],
+          "columnsFrom": ["location_id", "organization_id"],
           "tableTo": "locations",
-          "columnsTo": [
-            "id",
-            "organization_id"
-          ],
+          "columnsTo": ["id", "organization_id"],
           "onUpdate": "no action",
           "onDelete": "restrict"
         }
@@ -840,18 +775,12 @@
       "uniqueConstraints": {
         "service_categories_id_organization": {
           "name": "service_categories_id_organization",
-          "columns": [
-            "id",
-            "organization_id"
-          ],
+          "columns": ["id", "organization_id"],
           "nullsNotDistinct": false
         },
         "service_categories_location_name": {
           "name": "service_categories_location_name",
-          "columns": [
-            "location_id",
-            "name"
-          ],
+          "columns": ["location_id", "name"],
           "nullsNotDistinct": false
         }
       },
@@ -920,30 +849,18 @@
         "services_location_fk": {
           "name": "services_location_fk",
           "tableFrom": "services",
-          "columnsFrom": [
-            "location_id",
-            "organization_id"
-          ],
+          "columnsFrom": ["location_id", "organization_id"],
           "tableTo": "locations",
-          "columnsTo": [
-            "id",
-            "organization_id"
-          ],
+          "columnsTo": ["id", "organization_id"],
           "onUpdate": "no action",
           "onDelete": "restrict"
         },
         "services_category_fk": {
           "name": "services_category_fk",
           "tableFrom": "services",
-          "columnsFrom": [
-            "category_id",
-            "organization_id"
-          ],
+          "columnsFrom": ["category_id", "organization_id"],
           "tableTo": "service_categories",
-          "columnsTo": [
-            "id",
-            "organization_id"
-          ],
+          "columnsTo": ["id", "organization_id"],
           "onUpdate": "no action",
           "onDelete": "restrict"
         }
@@ -1014,26 +931,18 @@
         "setup_codes_used_by_profiles_id_fk": {
           "name": "setup_codes_used_by_profiles_id_fk",
           "tableFrom": "setup_codes",
-          "columnsFrom": [
-            "used_by"
-          ],
+          "columnsFrom": ["used_by"],
           "tableTo": "profiles",
-          "columnsTo": [
-            "id"
-          ],
+          "columnsTo": ["id"],
           "onUpdate": "no action",
           "onDelete": "restrict"
         },
         "setup_codes_organization_id_organizations_id_fk": {
           "name": "setup_codes_organization_id_organizations_id_fk",
           "tableFrom": "setup_codes",
-          "columnsFrom": [
-            "organization_id"
-          ],
+          "columnsFrom": ["organization_id"],
           "tableTo": "organizations",
-          "columnsTo": [
-            "id"
-          ],
+          "columnsTo": ["id"],
           "onUpdate": "no action",
           "onDelete": "restrict"
         }
@@ -1042,9 +951,7 @@
       "uniqueConstraints": {
         "setup_codes_code_hash_unique": {
           "name": "setup_codes_code_hash_unique",
-          "columns": [
-            "code_hash"
-          ],
+          "columns": ["code_hash"],
           "nullsNotDistinct": false
         }
       },
@@ -1131,28 +1038,18 @@
         "shifts_technician_id_technicians_id_fk": {
           "name": "shifts_technician_id_technicians_id_fk",
           "tableFrom": "shifts",
-          "columnsFrom": [
-            "technician_id"
-          ],
+          "columnsFrom": ["technician_id"],
           "tableTo": "technicians",
-          "columnsTo": [
-            "id"
-          ],
+          "columnsTo": ["id"],
           "onUpdate": "no action",
           "onDelete": "restrict"
         },
         "shifts_location_fk": {
           "name": "shifts_location_fk",
           "tableFrom": "shifts",
-          "columnsFrom": [
-            "location_id",
-            "organization_id"
-          ],
+          "columnsFrom": ["location_id", "organization_id"],
           "tableTo": "locations",
-          "columnsTo": [
-            "id",
-            "organization_id"
-          ],
+          "columnsTo": ["id", "organization_id"],
           "onUpdate": "no action",
           "onDelete": "restrict"
         }
@@ -1161,10 +1058,7 @@
       "uniqueConstraints": {
         "shifts_technician_date": {
           "name": "shifts_technician_date",
-          "columns": [
-            "technician_id",
-            "date"
-          ],
+          "columns": ["technician_id", "date"],
           "nullsNotDistinct": false
         }
       },
@@ -1240,41 +1134,27 @@
         "technician_status_technician_id_technicians_id_fk": {
           "name": "technician_status_technician_id_technicians_id_fk",
           "tableFrom": "technician_status",
-          "columnsFrom": [
-            "technician_id"
-          ],
+          "columnsFrom": ["technician_id"],
           "tableTo": "technicians",
-          "columnsTo": [
-            "id"
-          ],
+          "columnsTo": ["id"],
           "onUpdate": "no action",
           "onDelete": "restrict"
         },
         "technician_status_shift_id_shifts_id_fk": {
           "name": "technician_status_shift_id_shifts_id_fk",
           "tableFrom": "technician_status",
-          "columnsFrom": [
-            "shift_id"
-          ],
+          "columnsFrom": ["shift_id"],
           "tableTo": "shifts",
-          "columnsTo": [
-            "id"
-          ],
+          "columnsTo": ["id"],
           "onUpdate": "no action",
           "onDelete": "restrict"
         },
         "technician_status_location_fk": {
           "name": "technician_status_location_fk",
           "tableFrom": "technician_status",
-          "columnsFrom": [
-            "location_id",
-            "organization_id"
-          ],
+          "columnsFrom": ["location_id", "organization_id"],
           "tableTo": "locations",
-          "columnsTo": [
-            "id",
-            "organization_id"
-          ],
+          "columnsTo": ["id", "organization_id"],
           "onUpdate": "no action",
           "onDelete": "restrict"
         }
@@ -1347,28 +1227,18 @@
         "technicians_user_id_profiles_id_fk": {
           "name": "technicians_user_id_profiles_id_fk",
           "tableFrom": "technicians",
-          "columnsFrom": [
-            "user_id"
-          ],
+          "columnsFrom": ["user_id"],
           "tableTo": "profiles",
-          "columnsTo": [
-            "id"
-          ],
+          "columnsTo": ["id"],
           "onUpdate": "no action",
           "onDelete": "restrict"
         },
         "technicians_location_fk": {
           "name": "technicians_location_fk",
           "tableFrom": "technicians",
-          "columnsFrom": [
-            "location_id",
-            "organization_id"
-          ],
+          "columnsFrom": ["location_id", "organization_id"],
           "tableTo": "locations",
-          "columnsTo": [
-            "id",
-            "organization_id"
-          ],
+          "columnsTo": ["id", "organization_id"],
           "onUpdate": "no action",
           "onDelete": "restrict"
         }
@@ -1377,10 +1247,7 @@
       "uniqueConstraints": {
         "technicians_user_location": {
           "name": "technicians_user_location",
-          "columns": [
-            "user_id",
-            "location_id"
-          ],
+          "columns": ["user_id", "location_id"],
           "nullsNotDistinct": false
         }
       },
@@ -1483,54 +1350,36 @@
         "turn_ledger_technician_id_technicians_id_fk": {
           "name": "turn_ledger_technician_id_technicians_id_fk",
           "tableFrom": "turn_ledger",
-          "columnsFrom": [
-            "technician_id"
-          ],
+          "columnsFrom": ["technician_id"],
           "tableTo": "technicians",
-          "columnsTo": [
-            "id"
-          ],
+          "columnsTo": ["id"],
           "onUpdate": "no action",
           "onDelete": "restrict"
         },
         "turn_ledger_shift_id_shifts_id_fk": {
           "name": "turn_ledger_shift_id_shifts_id_fk",
           "tableFrom": "turn_ledger",
-          "columnsFrom": [
-            "shift_id"
-          ],
+          "columnsFrom": ["shift_id"],
           "tableTo": "shifts",
-          "columnsTo": [
-            "id"
-          ],
+          "columnsTo": ["id"],
           "onUpdate": "no action",
           "onDelete": "restrict"
         },
         "turn_ledger_actor_user_id_profiles_id_fk": {
           "name": "turn_ledger_actor_user_id_profiles_id_fk",
           "tableFrom": "turn_ledger",
-          "columnsFrom": [
-            "actor_user_id"
-          ],
+          "columnsFrom": ["actor_user_id"],
           "tableTo": "profiles",
-          "columnsTo": [
-            "id"
-          ],
+          "columnsTo": ["id"],
           "onUpdate": "no action",
           "onDelete": "restrict"
         },
         "turn_ledger_location_fk": {
           "name": "turn_ledger_location_fk",
           "tableFrom": "turn_ledger",
-          "columnsFrom": [
-            "location_id",
-            "organization_id"
-          ],
+          "columnsFrom": ["location_id", "organization_id"],
           "tableTo": "locations",
-          "columnsTo": [
-            "id",
-            "organization_id"
-          ],
+          "columnsTo": ["id", "organization_id"],
           "onUpdate": "no action",
           "onDelete": "restrict"
         }
@@ -1546,43 +1395,22 @@
     "public.language": {
       "name": "language",
       "schema": "public",
-      "values": [
-        "en",
-        "vi"
-      ]
+      "values": ["en", "vi"]
     },
     "public.ledger_reason": {
       "name": "ledger_reason",
       "schema": "public",
-      "values": [
-        "visit",
-        "deny",
-        "out_over",
-        "late",
-        "manual"
-      ]
+      "values": ["visit", "deny", "out_over", "late", "manual"]
     },
     "public.role": {
       "name": "role",
       "schema": "public",
-      "values": [
-        "owner",
-        "manager",
-        "receptionist",
-        "technician"
-      ]
+      "values": ["owner", "manager", "receptionist", "technician"]
     },
     "public.tech_state": {
       "name": "tech_state",
       "schema": "public",
-      "values": [
-        "off",
-        "checked_in",
-        "available",
-        "in_service",
-        "break",
-        "out"
-      ]
+      "values": ["off", "checked_in", "available", "in_service", "break", "out"]
     }
   },
   "schemas": {},

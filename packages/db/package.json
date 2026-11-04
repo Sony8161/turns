@@ -10,6 +10,7 @@
     "./invites": "./src/invites.ts",
     "./setup": "./src/setup.ts",
     "./status": "./src/status.ts",
+    "./engine": "./src/engine.ts",
     "./rate-limit": "./src/rate-limit.ts"
   },
   "scripts": {

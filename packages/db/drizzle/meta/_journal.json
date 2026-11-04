@@ -78,6 +78,20 @@
       "when": 1793826032427,
       "tag": "0010_archive_columns",
       "breakpoints": true
+    },
+    {
+      "idx": 11,
+      "version": "7",
+      "when": 1793826880613,
+      "tag": "0011_visits_and_calls",
+      "breakpoints": true
+    },
+    {
+      "idx": 12,
+      "version": "7",
+      "when": 1793826882015,
+      "tag": "0012_calls_invariants",
+      "breakpoints": true
     }
   ]
 }
