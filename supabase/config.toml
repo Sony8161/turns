@@ -275,9 +275,16 @@ max_frequency = "5s"
 
 # Use pre-defined map of phone number to OTP for testing.
 # Keys are the phone number with country code and without the + prefix.
-# Local test phone (not a real number): +1 813 555 0100 always accepts 123456.
+# Local test phones (555 numbers are not real): each always accepts 123456.
+# One per sample account; see packages/db/src/seed-dev.ts and TESTING.md.
 [auth.sms.test_otp]
 18135550100 = "123456"
+18135550101 = "123456"
+18135550102 = "123456"
+18135550103 = "123456"
+18135550104 = "123456"
+18135550105 = "123456"
+18135550109 = "123456"
 
 # Configure logged in session timeouts.
 # [auth.sessions]

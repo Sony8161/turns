@@ -58,18 +58,39 @@ Open http://localhost:3000.
 - Press **Tiếng Việt** (top right). Every word switches, board included. The button
   now says **English**; press it to switch back. The choice is remembered.
 
-## 3. Join a salon as a receptionist
+## 2b. Sample accounts (made by `npm run up`)
 
-1. Go to http://localhost:3000/join.
-2. Invite code: `5BWGV-F7JKX` (unused as of Nov 4). Your name: anything. **Continue**.
-3. On the sign-in page, enter the test phone `813 555 0100` and press **Send me a code**.
-4. Enter `123456`. (This number and code only work on your machine.)
-5. You land on `/admin`: "Heavenly Nails main, receptionist", an empty board, and
-   "0 visits today, 0 denies, 0 overrides".
-6. Press **Sign out**. Then type http://localhost:3000/admin in the address bar: you
-   are sent back to sign-in.
+`npm run up` creates these every time and writes them, with fresh codes, to
+`dev-codes.txt` in the repo folder. Every sign-in code is **123456**. The phones
+are 555 numbers; they only work on your machine.
 
-If the code says "has been used", get a fresh one in step 6.
+| Role         | Name | Phone        | Email             | Screen   |
+| ------------ | ---- | ------------ | ----------------- | -------- |
+| owner        | Phu  | 813 555 0100 | phu@example.test  | `/admin` |
+| manager      | Vy   | 813 555 0101 | vy@example.test   | `/admin` |
+| receptionist | Hạnh | 813 555 0102 | hanh@example.test | `/admin` |
+| technician   | Thảo | 813 555 0103 | thao@example.test | `/me`    |
+| technician   | Linh | 813 555 0104 | linh@example.test | `/me`    |
+| technician   | Mai  | 813 555 0105 | mai@example.test  | `/me`    |
+
+Sign in at http://localhost:3000/login with the phone, then `123456`. Owners,
+managers and receptionists land on the board; technicians land on their own
+screen. Sign out before switching accounts (shared browser).
+
+**If anything says "something went wrong" or a code is "not valid":** the stack is
+probably off or the data was reset. Run `npm run up` again; it fixes both and
+prints new codes.
+
+## 3. Join a salon with an invite code (a new person)
+
+1. Sign out if you are signed in.
+2. http://localhost:3000/join → the technician or receptionist invite code from
+   `dev-codes.txt`, your name → **Continue**.
+3. Sign in with the spare phone `813 555 0109` → `123456` (or any new
+   `name@example.test` email, code in Mailpit).
+4. You land on `/me` (technician) or `/admin` (receptionist) at Heavenly.
+
+Each code works once; `npm run up` prints new ones.
 
 **Codes are for new accounts.** If you are already signed in (as Phu, say) and open
 /join or /setup, the page tells you so and offers Sign out. The code is never
@@ -80,13 +101,13 @@ attached to whoever happens to be signed in.
 A **salon setup code** is different from a staff invite: you, as the operator, make
 it, and whoever uses it creates a new salon and becomes its owner.
 
-1. Get a code: `npm run up` prints one, or `npm run -w @turn/db db:setup-code -- "note"`
-   with `DATABASE_URL` set (step 6).
+1. Get a code: the "Salon setup code" line in `dev-codes.txt` (new each `npm run up`),
+   or `npm run -w @turn/db db:setup-code -- "note"` with `DATABASE_URL` set (step 6).
 2. Sign out if you are signed in. Go to http://localhost:3000/setup (also linked
    from the front page as "Set up a new salon").
 3. Enter the code, your name, the salon name and the location name → **Continue**.
-4. Sign in with a new email (any `name@example.test`) or the test phone; read the
-   code in Mailpit (step 4).
+4. Sign in with the spare phone `813 555 0109` → `123456`, or a new
+   `name@example.test` email (code in Mailpit, step 4).
 5. You land on `/admin` as the owner of the new salon, with its own empty board,
    the four default service categories and rule config version 1.
 

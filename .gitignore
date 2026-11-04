@@ -23,3 +23,6 @@ security/scans/
 
 # Supabase Studio saved queries (personal, not source)
 supabase/snippets/
+
+# sample data notes written by the dev seed
+dev-codes.txt

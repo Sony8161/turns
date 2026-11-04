@@ -58,7 +58,8 @@ Step 'Migrations and seed'
 $env:DATABASE_URL = $dbUrl
 $env:SUPABASE_SERVICE_ROLE_KEY = $serviceKey
 npm run -s -w @turn/db db:migrate
-npm run -s -w @turn/db db:seed:dev
+npm run -s -w @turn/db db:seed:dev | Out-Null
+Write-Host 'sample accounts and codes written to dev-codes.txt'
 
 # 5. Web app ---------------------------------------------------------------------
 Step 'Web app'
@@ -78,5 +79,6 @@ if ($listening) {
 # 6. Open ---------------------------------------------------------------------------
 Step 'Open'
 Start-Process 'http://localhost:3000'
-Write-Host "`nSign-in test phone: 813 555 0100, code 123456. Owner email: phu@example.test (inbox above)."
-Write-Host 'Invite codes are printed above under "Migrations and seed". Full guide: TESTING.md'
+Write-Host ''
+Get-Content (Join-Path $root 'dev-codes.txt')
+Write-Host "`nFull guide: TESTING.md"
