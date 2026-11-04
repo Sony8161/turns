@@ -9,6 +9,8 @@ Threat model: `../11-Turn-System-Threat-Model.md`. Decisions: `../12-Turn-System
 - `apps/web`: Next.js admin, receptionist iPad and kiosk pages (Part 2 onward).
 - `apps/mobile`: Expo technician app (Part 4 onward).
 
+Trying it by hand: see `TESTING.md`.
+
 ## Local development
 
 Needs Node 22+, Docker Desktop running, and the Supabase CLI (`npx supabase`).
