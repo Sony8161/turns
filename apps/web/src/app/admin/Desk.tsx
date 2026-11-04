@@ -14,15 +14,19 @@ type Waiting = {
   waitSeconds: number;
   calledTechnician: string | null;
   calledSeconds: number | null;
+  requestedTechnician: string | null;
+  note: string | null;
 };
 
 /** The front desk: enter a walk-in, see who is waiting, call the next technician. */
 export function Desk({
   services,
+  technicians,
   waiting,
   t,
 }: {
   services: Service[];
+  technicians: { id: string; name: string }[];
   waiting: Waiting[];
   t: Dictionary['desk'];
 }) {
@@ -43,6 +47,30 @@ export function Desk({
             </label>
           ))}
         </div>
+        <label className="flex flex-col gap-2">
+          <span className="font-medium">{t.requestedTech}</span>
+          <select
+            name="requestedTechnician"
+            className="min-h-12 rounded-control border-2 border-slate/30 bg-board px-3 text-lead"
+          >
+            <option value="">{t.anyTech}</option>
+            {technicians.map((x) => (
+              <option key={x.id} value={x.id}>
+                {x.name}
+              </option>
+            ))}
+          </select>
+        </label>
+        <label className="flex flex-col gap-2">
+          <span className="font-medium">{t.note}</span>
+          <textarea
+            name="note"
+            maxLength={300}
+            rows={2}
+            placeholder={t.notePlaceholder}
+            className="rounded-control border-2 border-slate/30 bg-board px-3 py-2 text-lead"
+          />
+        </label>
         {entry.error ? <p className="text-polish">{t.errors[entry.error] ?? entry.error}</p> : null}
         <Button type="submit" disabled={entering}>
           {t.addWalkIn}
@@ -62,7 +90,13 @@ export function Desk({
           {waiting.map((v) => (
             <li key={v.id} className="flex items-center gap-4 bg-board px-4 py-3">
               <span className="flex min-w-0 flex-1 flex-col">
-                <span className="font-semibold">{v.services.join(', ')}</span>
+                <span className="font-semibold">
+                  {v.services.join(', ')}
+                  {v.requestedTechnician
+                    ? ` · ${fill(t.forTech, { name: v.requestedTechnician })}`
+                    : ''}
+                </span>
+                {v.note ? <span className="text-small text-slate/80">{v.note}</span> : null}
                 <span className="text-small text-slate/70">
                   {v.status === 'called' && v.calledTechnician
                     ? fill(t.calledLine, {

@@ -91,6 +91,8 @@ export async function createWalkIn(
     actor: Actor;
     source?: 'walk_in' | 'appointment' | 'request' | 'self_checkin';
     requestedTechnicianId?: string | null;
+    /** Free text from the desk: special requests the engine does not model yet. */
+    note?: string | null;
   },
 ): Promise<{ ok: true; visitId: string } | EngineError> {
   if (input.serviceIds.length === 0) return { ok: false, reason: 'no_services' };
@@ -119,8 +121,9 @@ export async function createWalkIn(
       .values({
         organizationId: input.organizationId,
         locationId: input.locationId,
-        source,
+        source: input.requestedTechnicianId ? 'request' : source,
         requestedTechnicianId: input.requestedTechnicianId ?? null,
+        note: input.note?.trim().slice(0, 300) || null,
         createdBy: input.actor.userId,
       })
       .returning({ id: visits.id });
@@ -557,8 +560,12 @@ export async function waitingVisits(db: Db, locationId: string) {
       status: visits.status,
       source: visits.source,
       arrivedAt: visits.arrivedAt,
+      note: visits.note,
       calledTechnician: technicians.displayName,
       calledAt: turnCalls.calledAt,
+      requestedTechnician: sql<
+        string | null
+      >`(select t2.display_name from ${technicians} t2 where t2.id = ${visits.requestedTechnicianId})`,
     })
     .from(visits)
     .leftJoin(turnCalls, and(eq(turnCalls.visitId, visits.id), isNull(turnCalls.respondedAt)))

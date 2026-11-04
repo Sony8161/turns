@@ -20,10 +20,13 @@ export async function enterWalkIn(_prev: DeskState, formData: FormData): Promise
   const m = await deskMembership();
   if (!m) return { error: 'not_allowed' };
   const serviceIds = formData.getAll('service').map(String).filter(Boolean);
+  const requested = String(formData.get('requestedTechnician') ?? '');
   const result = await createWalkIn(db(), {
     organizationId: m.organizationId,
     locationId: m.locationId,
     serviceIds,
+    requestedTechnicianId: requested || null,
+    note: String(formData.get('note') ?? ''),
     actor: { userId: actor.userId },
   });
   revalidatePath('/admin');

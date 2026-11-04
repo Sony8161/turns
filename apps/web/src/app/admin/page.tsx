@@ -80,7 +80,10 @@ export default async function AdminPage() {
                 waitSeconds: secondsSince(v.arrivedAt),
                 calledTechnician: v.calledTechnician,
                 calledSeconds: v.calledAt ? secondsSince(v.calledAt) : null,
+                requestedTechnician: v.requestedTechnician,
+                note: v.note,
               }))}
+              technicians={rows.map((r) => ({ id: r.id, name: r.name }))}
               t={t.desk}
             />
           ) : null}
