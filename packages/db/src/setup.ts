@@ -15,6 +15,7 @@ import {
 } from './schema';
 import { HEAVENLY_CATEGORIES, HEAVENLY_RULE_CONFIG_V1 } from './seed';
 import type { Db } from './server';
+import { writeAudit } from './status';
 
 export const SETUP_CODE_TTL_HOURS = 24 * 14;
 
@@ -104,6 +105,19 @@ export async function redeemSetupCode(
       .update(setupCodes)
       .set({ usedBy: input.userId, usedAt: new Date(), organizationId: org.id })
       .where(eq(setupCodes.id, setup.id));
+    await writeAudit(tx, {
+      organizationId: org.id,
+      locationId: loc.id,
+      actorUserId: input.userId,
+      entityType: 'organizations',
+      entityId: org.id,
+      action: 'salon_created',
+      after: {
+        salonName: input.salonName,
+        locationName: input.locationName,
+        setupCodeId: setup.id,
+      },
+    });
 
     return { ok: true, organizationId: org.id, locationId: loc.id };
   });

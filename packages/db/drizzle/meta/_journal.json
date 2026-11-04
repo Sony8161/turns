@@ -43,6 +43,34 @@
       "when": 1793823311090,
       "tag": "0005_setup_codes",
       "breakpoints": true
+    },
+    {
+      "idx": 6,
+      "version": "7",
+      "when": 1793823904649,
+      "tag": "0006_daily_operation",
+      "breakpoints": true
+    },
+    {
+      "idx": 7,
+      "version": "7",
+      "when": 1793823906061,
+      "tag": "0007_audit_append_only",
+      "breakpoints": true
+    },
+    {
+      "idx": 8,
+      "version": "7",
+      "when": 1793824133892,
+      "tag": "0008_probe",
+      "breakpoints": true
+    },
+    {
+      "idx": 9,
+      "version": "7",
+      "when": 1793825110913,
+      "tag": "0009_audit_hardening",
+      "breakpoints": true
     }
   ]
 }

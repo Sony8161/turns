@@ -1,16 +1,24 @@
-import { Board } from '@/components/Board';
+import { locationStatus } from '@turn/db/status';
+import { Board, type BoardRow } from '@/components/Board';
 import { Button } from '@/components/ui';
 import { fill } from '@/i18n/dictionary';
 import { LanguageToggle } from '@/i18n/LanguageToggle';
 import { getDictionary } from '@/i18n/lang';
+import { redirect } from 'next/navigation';
 import { requireActor } from '@/lib/auth';
+import { db } from '@/lib/db';
+import { can } from '@/lib/permissions';
 import { signOut } from '../login/actions';
 
 // Admin home: the live board, smaller, with today's counts as a sentence.
-// Part 2 shows an empty board; Parts 3 and 4 fill it.
+// Queue order (design doc): lowest points first, then earlier check-in.
+// "had appointment last" joins the sort in Part 7 when appointments exist.
 export default async function AdminPage() {
   const [{ lang, t }, actor] = await Promise.all([getDictionary(), requireActor()]);
-  const membership = actor.memberships[0];
+  // Technicians see their own position on /me, never the whole board (roles table).
+  const membership = actor.memberships.find((m) => can(m.role, 'view_board'));
+  if (!membership && actor.memberships.some((m) => m.role === 'technician')) redirect('/me');
+  const rows = membership ? await boardRows(membership.locationId) : [];
 
   return (
     <main className="mx-auto flex w-full max-w-5xl flex-1 flex-col gap-8 px-4 py-6 sm:px-8">
@@ -39,7 +47,7 @@ export default async function AdminPage() {
               role: t.roles[membership.role],
             })}
           </h1>
-          <Board rows={[]} t={t} compact />
+          <Board rows={rows} t={t} compact />
           <p className="text-slate/80">
             {fill(t.admin.today, { visits: 0, denies: 0, overrides: 0 })}
           </p>
@@ -49,4 +57,22 @@ export default async function AdminPage() {
       )}
     </main>
   );
+}
+
+async function boardRows(locationId: string): Promise<BoardRow[]> {
+  const now = Date.now();
+  const rows = await locationStatus(db(), locationId);
+  return rows
+    .filter((r) => r.status !== 'off')
+    .sort(
+      (a, b) =>
+        a.points - b.points || (a.checkedInAt?.getTime() ?? 0) - (b.checkedInAt?.getTime() ?? 0),
+    )
+    .map((r) => ({
+      id: r.technicianId,
+      name: r.displayName,
+      points: r.points,
+      status: r.status as BoardRow['status'],
+      seconds: Math.max(0, Math.floor((now - (r.since?.getTime() ?? now)) / 1000)),
+    }));
 }

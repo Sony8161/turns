@@ -89,11 +89,36 @@ const en = {
     waiting: 'waiting',
     backIn: 'back in',
     status: {
+      off: 'off',
+      checked_in: 'checked in',
       available: 'available',
       called: 'called',
       in_service: 'in service',
       break: 'break',
       out: 'out',
+    },
+  },
+  me: {
+    statusLine: 'You are {status}',
+    pointsToday: 'points today',
+    notTechnician: "You're signed in, but you're not a technician at any salon.",
+    inServiceNote: 'The front desk marks the visit complete; you then come back as available.',
+    actions: {
+      check_in: "I'm here",
+      available: "I'm ready",
+      break: 'Break',
+      out: 'Out',
+      off: 'Check out',
+    },
+    errors: {
+      illegal_transition: "That move isn't possible from where you are. Refresh and try again.",
+      outside_geofence:
+        "You're {distance} m from the salon; check-in works within {radius} m. Try again inside.",
+      no_location_fix:
+        'Your phone did not share a location. Allow location for this site and try again.',
+      poor_location_accuracy:
+        'Your phone is only sure of its position to about {accuracy} m; the salon fence is {radius} m. Step outside or wait a moment and try again.',
+      not_technician: "You're not a technician at any salon.",
     },
   },
   admin: {
@@ -188,11 +213,35 @@ const vi: Dictionary = {
     waiting: 'đang chờ',
     backIn: 'về sau',
     status: {
+      off: 'chưa vào ca',
+      checked_in: 'đã điểm danh',
       available: 'sẵn sàng',
       called: 'được gọi',
       in_service: 'đang làm',
       break: 'nghỉ',
       out: 'ra ngoài',
+    },
+  },
+  me: {
+    statusLine: 'Bạn đang {status}',
+    pointsToday: 'điểm hôm nay',
+    notTechnician: 'Bạn đã đăng nhập nhưng không phải là thợ ở tiệm nào.',
+    inServiceNote: 'Lễ tân đánh dấu xong lượt; sau đó bạn trở lại trạng thái sẵn sàng.',
+    actions: {
+      check_in: 'Tôi đã đến',
+      available: 'Tôi sẵn sàng',
+      break: 'Nghỉ',
+      out: 'Ra ngoài',
+      off: 'Kết thúc ca',
+    },
+    errors: {
+      illegal_transition: 'Không thể chuyển từ trạng thái hiện tại. Tải lại trang rồi thử lại.',
+      outside_geofence:
+        'Bạn cách tiệm {distance} m; điểm danh chỉ được trong vòng {radius} m. Vào trong rồi thử lại.',
+      no_location_fix: 'Điện thoại chưa chia sẻ vị trí. Cho phép vị trí cho trang này rồi thử lại.',
+      poor_location_accuracy:
+        'Điện thoại chỉ xác định được vị trí trong khoảng {accuracy} m; vùng tiệm là {radius} m. Ra chỗ thoáng hoặc chờ một chút rồi thử lại.',
+      not_technician: 'Bạn không phải là thợ ở tiệm nào.',
     },
   },
   admin: {

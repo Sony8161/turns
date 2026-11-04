@@ -42,8 +42,15 @@ async function sendCode(formData: FormData): Promise<LoginState> {
   if (!byContact.allowed || !byIp.allowed) return { step: 'contact', typed, error: 'tooMany' };
 
   // Accounts are created only behind a valid invite (T9); signup is off at the
-  // auth server, so the public anon key cannot create one directly.
-  if (await inviteIsRedeemable()) await ensureAuthUser(contact);
+  // auth server, so the public anon key cannot create one directly. One code
+  // may create at most three accounts' worth of attempts, so a leaked code
+  // cannot be used to spray codes at strangers (T7).
+  const pending = await readInviteCookie();
+  if (pending && (await inviteIsRedeemable())) {
+    const perCode = await consumeRateLimit(db(), `create:code:${hashCode(pending.code)}`, 3, 3600);
+    if (!perCode.allowed) return { step: 'contact', typed, error: 'tooMany' };
+    await ensureAuthUser(contact);
+  }
 
   const supabase = await createClient();
   const options = { shouldCreateUser: false };
@@ -93,9 +100,13 @@ async function verifyCode(
   const token = String(formData.get('code') ?? '').trim();
   if (!/^\d{6}$/.test(token)) return { ...prev, error: 'badCode' };
 
+  // Guessing a 6-digit code: limited per address and per contact (T7).
   const ip = await clientIp();
-  const attempts = await consumeRateLimit(db(), `verify:ip:${ip}`, 30, WINDOW);
-  if (!attempts.allowed) return { ...prev, error: 'badCode' };
+  const [byIp, byContact] = await Promise.all([
+    consumeRateLimit(db(), `verify:ip:${ip}`, 30, WINDOW),
+    consumeRateLimit(db(), `verify:contact:${prev.contact.value}`, 8, WINDOW),
+  ]);
+  if (!byIp.allowed || !byContact.allowed) return { ...prev, error: 'badCode' };
 
   const supabase = await createClient();
   const { data, error } =

@@ -14,7 +14,7 @@
     "format:check": "prettier --check .",
     "secrets:scan": "node scripts/scan-public-env.mjs",
     "up": "powershell -NoProfile -ExecutionPolicy Bypass -File scripts/dev.ps1",
-    "down": "npx supabase stop"
+    "down": "powershell -NoProfile -ExecutionPolicy Bypass -File scripts/down.ps1"
   },
   "devDependencies": {
     "prettier": "3.9.10",

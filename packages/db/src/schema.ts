@@ -15,6 +15,7 @@ import { sql } from 'drizzle-orm';
 import {
   type AnyPgColumn,
   boolean,
+  date,
   doublePrecision,
   foreignKey,
   index,
@@ -243,6 +244,117 @@ export const inviteCodes = pgTable(
   // RLS on, no policies, no grants: app users never read codes; the server does.
 ).enableRLS();
 
+// Daily operation (Part 3) --------------------------------------------------
+
+// The six states the technician drives from their own phone (design doc,
+// Technician status machine). The readiness checklist is recorded on the
+// shift (ready_at), not as a state.
+export const technicianStatusEnum = pgEnum('tech_state', [
+  'off',
+  'checked_in',
+  'available',
+  'in_service',
+  'break',
+  'out',
+]);
+
+export const shifts = pgTable(
+  'shifts',
+  {
+    id: id(),
+    organizationId: uuid('organization_id').notNull(),
+    locationId: uuid('location_id').notNull(),
+    technicianId: uuid('technician_id')
+      .notNull()
+      .references(() => technicians.id, { onDelete: 'restrict' }),
+    // Local date at the location, so a late-night shift stays on one day.
+    date: date('date').notNull(),
+    scheduledStart: time('scheduled_start'),
+    checkedInAt: timestamp('checked_in_at', { withTimezone: true }).notNull(),
+    readyAt: timestamp('ready_at', { withTimezone: true }),
+    lateMinutes: integer('late_minutes').notNull().default(0),
+    checkedOutAt: timestamp('checked_out_at', { withTimezone: true }),
+    createdAt: createdAt(),
+  },
+  (t) => [
+    locationFk(t, 'shifts_location_fk'),
+    unique('shifts_technician_date').on(t.technicianId, t.date),
+  ],
+).enableRLS();
+
+export const technicianStatus = pgTable(
+  'technician_status',
+  {
+    technicianId: uuid('technician_id')
+      .primaryKey()
+      .references(() => technicians.id, { onDelete: 'restrict' }),
+    organizationId: uuid('organization_id').notNull(),
+    locationId: uuid('location_id').notNull(),
+    status: technicianStatusEnum('status').notNull().default('off'),
+    since: timestamp('since', { withTimezone: true }).notNull().defaultNow(),
+    shiftId: uuid('shift_id').references(() => shifts.id, { onDelete: 'restrict' }),
+    outStartedAt: timestamp('out_started_at', { withTimezone: true }),
+    expectedBackAt: timestamp('expected_back_at', { withTimezone: true }),
+    updatedAt: updatedAt(),
+  },
+  (t) => [locationFk(t, 'technician_status_location_fk')],
+).enableRLS();
+
+export const ledgerReasonEnum = pgEnum('ledger_reason', [
+  'visit',
+  'deny',
+  'out_over',
+  'late',
+  'manual',
+]);
+
+// Points are a ledger, never a stored total (design doc, Data model). The daily
+// total is the sum of a shift's rows. visit_id gets its foreign key in Part 4.
+export const turnLedger = pgTable(
+  'turn_ledger',
+  {
+    id: id(),
+    organizationId: uuid('organization_id').notNull(),
+    locationId: uuid('location_id').notNull(),
+    technicianId: uuid('technician_id')
+      .notNull()
+      .references(() => technicians.id, { onDelete: 'restrict' }),
+    shiftId: uuid('shift_id')
+      .notNull()
+      .references(() => shifts.id, { onDelete: 'restrict' }),
+    delta: numeric('delta', { precision: 4, scale: 1 }).notNull(),
+    reasonType: ledgerReasonEnum('reason_type').notNull(),
+    visitId: uuid('visit_id'),
+    actorUserId: uuid('actor_user_id').references(() => profiles.id, { onDelete: 'restrict' }),
+    note: text('note'),
+    createdAt: createdAt(),
+  },
+  (t) => [locationFk(t, 'turn_ledger_location_fk'), index('turn_ledger_shift').on(t.shiftId)],
+).enableRLS();
+
+// Append-only: a trigger in the migration refuses update and delete, for every
+// role including the service key (design doc, Audit log; threat model T17).
+export const auditLog = pgTable(
+  'audit_log',
+  {
+    id: id(),
+    organizationId: uuid('organization_id').notNull(),
+    locationId: uuid('location_id').notNull(),
+    actorUserId: uuid('actor_user_id').references(() => profiles.id, { onDelete: 'restrict' }),
+    entityType: text('entity_type').notNull(),
+    entityId: uuid('entity_id'),
+    action: text('action').notNull(),
+    before: jsonb('before'),
+    after: jsonb('after'),
+    reason: text('reason'),
+    at: timestamp('at', { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => [
+    locationFk(t, 'audit_log_location_fk'),
+    index('audit_log_location_at').on(t.locationId, t.at),
+  ],
+).enableRLS();
+
 // Salon setup codes ---------------------------------------------------------
 
 // Made by the platform operator, not by a salon. Whoever redeems one creates a
@@ -273,6 +385,10 @@ export const rateLimits = pgTable('rate_limits', {
 }).enableRLS();
 
 export const TENANT_TABLES = [
+  'shifts',
+  'technician_status',
+  'turn_ledger',
+  'audit_log',
   'setup_codes',
   'rate_limits',
   'invite_codes',

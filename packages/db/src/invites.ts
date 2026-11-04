@@ -6,6 +6,7 @@ import { createHash, randomInt } from 'node:crypto';
 import { and, eq } from 'drizzle-orm';
 import { inviteCodes, locations, memberships, profiles, technicians } from './schema';
 import type { Db } from './server';
+import { writeAudit } from './status';
 
 export type Role = 'owner' | 'manager' | 'receptionist' | 'technician';
 
@@ -127,6 +128,15 @@ export async function redeemInvite(
       .update(inviteCodes)
       .set({ usedBy: input.userId, usedAt: new Date() })
       .where(eq(inviteCodes.id, invite.id));
+    await writeAudit(tx, {
+      organizationId: invite.organizationId,
+      locationId: invite.locationId,
+      actorUserId: input.userId,
+      entityType: 'memberships',
+      entityId: input.userId,
+      action: 'joined_by_invite',
+      after: { role: invite.role, inviteId: invite.id },
+    });
 
     return {
       ok: true,

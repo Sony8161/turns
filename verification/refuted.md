@@ -3,6 +3,20 @@
 Claims from reviewers that were checked and found not to be bugs. Kept so they
 are not re-raised.
 
+## 2026-11-04, Part 3 security sweep (REQ-09c1e578)
+
+- **"Every org member can read shifts, status and turn_ledger" (F6a).** Declined,
+  by design: the board is on a screen in the salon and the design doc makes points
+  visible to the floor; hiding them in the API would hide nothing. The audit log is
+  the sensitive table and is restricted (owner, manager at their location).
+- **"`db:seed` has no local-only guard" (F12).** By design: `db:seed` is the
+  production seed for Heavenly; `db:seed:dev` is the one that must stay local.
+- **"x-forwarded-for can be spoofed" (F9b).** Accepted for now: the target host is
+  Vercel, which sets the header itself. Revisit if the host changes.
+- **"Run the app as a non-owner database role" (F7b).** Deferred to the cloud setup
+  (Part 10): the local stack uses the postgres role; cloud will use a dedicated
+  role with INSERT and SELECT only on audit_log. TRUNCATE is blocked by trigger now.
+
 ## 2026-11-04, Part 2 (REQ-a5e7a172)
 
 - **check.py BLOCK: `supabase/config.toml` `auth_token = "local-placeholder"` flagged as

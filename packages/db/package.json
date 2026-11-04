@@ -9,6 +9,7 @@
     "./server": "./src/server.ts",
     "./invites": "./src/invites.ts",
     "./setup": "./src/setup.ts",
+    "./status": "./src/status.ts",
     "./rate-limit": "./src/rate-limit.ts"
   },
   "scripts": {

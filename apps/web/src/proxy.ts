@@ -4,7 +4,7 @@
 import { createServerClient } from '@supabase/ssr';
 import { NextResponse, type NextRequest } from 'next/server';
 
-const STAFF_PREFIXES = ['/admin'];
+const STAFF_PREFIXES = ['/admin', '/me'];
 
 // Bracket access on purpose: a literal dotted process.env read of a public
 // variable is inlined at build time, and a build without the variable would
@@ -47,5 +47,5 @@ export async function proxy(request: NextRequest) {
 }
 
 export const config = {
-  matcher: ['/admin/:path*', '/login', '/join/:path*'],
+  matcher: ['/admin/:path*', '/me', '/login', '/join/:path*', '/setup'],
 };

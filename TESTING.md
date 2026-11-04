@@ -20,7 +20,8 @@ It starts Docker Desktop if it is closed, starts the local stack, writes the web
 app's local keys, applies migrations, seeds Heavenly, prints fresh invite codes and
 a salon setup code, starts the web app in its own window, and opens the browser.
 Run it again any time; it skips what is already running. `npm run down` stops the
-stack. Steps 1 and 6 below are what it does by hand.
+web app and the stack (data kept); `npm run down -- -docker` also quits Docker
+Desktop. Steps 1 and 6 below are what `up` does by hand.
 
 ## 1. Start the two things it needs (by hand)
 
@@ -155,8 +156,27 @@ Supabase Studio: http://127.0.0.1:54323.
 npm test
 ```
 
-Expect 40 database tests and 49 web tests to pass. They reset the local database,
-so run step 6 again afterwards if you want the seed data back.
+Expect 80 database tests and 49 web tests to pass. They reset the local database
+before each test file and leave the last file's data behind, so run
+`npx supabase db reset` and then step 6 afterwards if you want clean seed data.
+
+## 8b. A technician's day (Part 3)
+
+1. Join as a technician (step 3, with the technician code from step 6), sign in,
+   then open http://localhost:3000/me.
+2. You see your name, "You are off", 0 points, and one button: **I'm here**.
+3. Tap through the day: **I'm here** → **I'm ready** → **Break** → **I'm ready**
+   → **Out** → **I'm ready** → **Check out**. Only the moves allowed from the
+   current state are shown.
+4. Open http://localhost:3000/admin in between: you appear on the board with
+   your status, points and a timer; order is lowest points first.
+5. Studio → `audit_log`: one row per move with before, after and who. Try to
+   edit or delete one in the SQL editor: "audit_log is append-only".
+
+Heavenly's seed has no geofence, so check-in needs no location. To try the fence,
+set `geofence_lat`, `geofence_lng` and `geofence_radius_m` on the location in
+Studio; check-in from a browser that shares a position outside it is refused with
+the distance.
 
 ## 9. If something is off
 

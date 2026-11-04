@@ -1,6 +1,6 @@
 import type { Dictionary } from '@/i18n/dictionary';
 
-export type BoardStatus = 'available' | 'called' | 'in_service' | 'break' | 'out';
+export type BoardStatus = 'checked_in' | 'available' | 'called' | 'in_service' | 'break' | 'out';
 
 export type BoardRow = {
   id: string;
@@ -18,6 +18,7 @@ export type BoardRow = {
 
 // Status colour, always paired with the status word (never colour alone).
 const BAR: Record<BoardStatus, string> = {
+  checked_in: 'bg-pumice',
   available: 'bg-teal',
   called: 'bg-polish',
   in_service: 'bg-slate',
