@@ -59,7 +59,7 @@ export async function createInvite(
 
 export type RedeemResult =
   | { ok: true; organizationId: string; locationId: string; locationName: string; role: Role }
-  | { ok: false; reason: 'unknown' | 'used' | 'expired' };
+  | { ok: false; reason: 'unknown' | 'used' | 'expired' | 'already_member' };
 
 /**
  * Redeems a code for an authenticated user: creates the profile if missing,
@@ -94,6 +94,21 @@ export async function redeemInvite(
     if (!invite) return { ok: false, reason: 'unknown' };
     if (invite.usedAt) return { ok: false, reason: 'used' };
     if (invite.expiresAt.getTime() < Date.now()) return { ok: false, reason: 'expired' };
+
+    // A code creates a new staff account. An account that already belongs to
+    // this salon keeps its role; only an owner or manager changes roles
+    // (Duong, 2026-11-04).
+    const [existing] = await tx
+      .select({ id: memberships.id })
+      .from(memberships)
+      .where(
+        and(
+          eq(memberships.userId, input.userId),
+          eq(memberships.organizationId, invite.organizationId),
+        ),
+      )
+      .limit(1);
+    if (existing) return { ok: false, reason: 'already_member' };
 
     await tx
       .insert(profiles)

@@ -11,7 +11,7 @@ import { setInviteCookie } from './invite-cookie';
 
 export type JoinState = {
   typed?: { code: string; name: string };
-  error?: 'unknown' | 'used' | 'expired' | 'name' | 'tooMany';
+  error?: 'unknown' | 'used' | 'expired' | 'name' | 'tooMany' | 'already_member';
 };
 
 /** Checks the code without using it, remembers it, then sends the person to sign in. */

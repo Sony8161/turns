@@ -58,6 +58,8 @@ const en = {
       expired: 'That invite code has expired. Ask the owner for a new one.',
       name: 'Enter your name.',
       tooMany: 'Too many tries. Wait a few minutes and try again.',
+      already_member:
+        'This phone or email already has a staff account at this salon. Ask the owner or manager to change your role.',
     },
   },
   setup: {
@@ -225,6 +227,8 @@ const vi: Dictionary = {
       expired: 'Mã mời đã hết hạn. Hỏi chủ tiệm để lấy mã mới.',
       name: 'Nhập tên của bạn.',
       tooMany: 'Thử quá nhiều lần. Chờ vài phút rồi thử lại.',
+      already_member:
+        'Số điện thoại hoặc email này đã có tài khoản ở tiệm. Hỏi chủ tiệm hoặc quản lý để đổi vai trò.',
     },
   },
   setup: {

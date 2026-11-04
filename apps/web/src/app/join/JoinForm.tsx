@@ -7,7 +7,10 @@ import { startJoin, type JoinState } from './actions';
 
 export function JoinForm({ t, initialError }: { t: Dictionary['join']; initialError?: string }) {
   const initial: JoinState =
-    initialError === 'used' || initialError === 'expired' || initialError === 'unknown'
+    initialError === 'used' ||
+    initialError === 'expired' ||
+    initialError === 'unknown' ||
+    initialError === 'already_member'
       ? { error: initialError }
       : {};
   const [state, action, pending] = useActionState<JoinState, FormData>(startJoin, initial);

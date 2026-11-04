@@ -89,6 +89,35 @@ describe('invite codes', () => {
     expect(rows.length).toBe(0);
   });
 
+  it('refuse an account that already belongs to the salon (roles change only by owner or manager)', async () => {
+    const first = await createInvite(db, {
+      organizationId: HEAVENLY.organizationId,
+      locationId: HEAVENLY.locationId,
+      role: 'technician',
+      createdBy: ownerId,
+    });
+    const second = await createInvite(db, {
+      organizationId: HEAVENLY.organizationId,
+      locationId: HEAVENLY.locationId,
+      role: 'receptionist',
+      createdBy: ownerId,
+    });
+    const quyen = await newAuthUser('quyen');
+    expect(
+      (await redeemInvite(db, { code: first.code, userId: quyen, displayName: 'Quyên' })).ok,
+    ).toBe(true);
+    expect(
+      await redeemInvite(db, { code: second.code, userId: quyen, displayName: 'Quyên' }),
+    ).toEqual({
+      ok: false,
+      reason: 'already_member',
+    });
+    const roles = await sql`select role from memberships where user_id = ${quyen}`;
+    expect(roles.map((r) => r.role)).toEqual(['technician']);
+    const [code] = await sql`select used_at from invite_codes where id = ${second.id}`;
+    expect(code?.used_at).toBeNull(); // the code stays usable by a new person
+  });
+
   it('expire', async () => {
     const invite = await createInvite(db, {
       organizationId: HEAVENLY.organizationId,

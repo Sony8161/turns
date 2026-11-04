@@ -77,6 +77,13 @@ Sign in at http://localhost:3000/login with the phone, then `123456`. Owners,
 managers and receptionists land on the board; technicians land on their own
 screen. Sign out before switching accounts (shared browser).
 
+**Only these 555 numbers work locally.** A random phone number cannot receive a
+text on your machine, so no code exists for it and `123456` says "didn't match".
+For a brand-new person use the spare `813 555 0109`, or a new `name@example.test`
+email (code in Mailpit). An invite code only creates a _new_ account: a phone that
+already has a staff account at the salon is refused ("ask the owner or manager to
+change your role"); role changes are an owner or manager screen (Part 5).
+
 **If anything says "something went wrong" or a code is "not valid":** the stack is
 probably off or the data was reset. Run `npm run up` again; it fixes both and
 prints new codes.
