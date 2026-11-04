@@ -3,6 +3,13 @@
 Claims from reviewers that were checked and found not to be bugs. Kept so they
 are not re-raised.
 
+## 2026-11-04, roles set by Duong (after the sweep)
+
+- **Sweep F3 "a technician can leave in_service"**: the fix was tightened too far.
+  Duong's roles: technicians mark a service **finished** themselves (as the design
+  doc also says). Now: from in_service the only move is "finish" (Part 4 posts the
+  points there); a plain "available" from in_service is still refused.
+
 ## 2026-11-04, Part 3 security sweep (REQ-09c1e578)
 
 - **"Every org member can read shifts, status and turn_ledger" (F6a).** Declined,

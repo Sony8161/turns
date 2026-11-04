@@ -166,6 +166,8 @@ export const serviceCategories = pgTable(
     name: text('name').notNull(),
     basePoints: numeric('base_points', { precision: 3, scale: 1 }).notNull(),
     isFillOrFullSet: boolean('is_fill_or_full_set').notNull().default(false),
+    // Nothing is deleted, only archived (Duong, 2026-11-04).
+    archivedAt: timestamp('archived_at', { withTimezone: true }),
     createdAt: createdAt(),
     updatedAt: updatedAt(),
   },
@@ -185,6 +187,7 @@ export const services = pgTable(
     categoryId: uuid('category_id').notNull(),
     name: text('name').notNull(),
     defaultDurationMin: integer('default_duration_min'),
+    archivedAt: timestamp('archived_at', { withTimezone: true }),
     createdAt: createdAt(),
     updatedAt: updatedAt(),
   },

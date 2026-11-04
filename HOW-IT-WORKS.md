@@ -18,10 +18,10 @@ answer.
 
 | Person            | Where                              | What they do                                                      |
 | ----------------- | ---------------------------------- | ----------------------------------------------------------------- |
-| Owner             | laptop or phone, `/admin`          | sets rules, invites staff, reads the log, exports                 |
-| Manager           | `/admin`                           | same minus rules and export; can override the queue with a reason |
-| Receptionist      | iPad at the desk, `/admin`         | enters walk-ins, sees the board, calls the next technician        |
-| Technician        | own iPhone, `/me` (later the app)  | checks in, ready, break, out, accepts or denies a call            |
+| Owner | laptop or phone, `/admin` | everything: rules, invites, overrides, archive, the full audit log, export |
+| Manager | `/admin` | runs the floor and the staff: adjust turns and points, override with a reason, move a visit to another technician, change a tech's services and skills, invite, see archived records and their location's audit log. Not rules, not export |
+| Receptionist | iPad at the desk, `/admin` | only the queue: sees the board, enters walk-ins, calls the next technician |
+| Technician | own iPhone, `/me` (later the app) | only their own day: check in, ready, break, out, upcoming appointments, the service they are called for, accept, deny (penalty shown first), finished |
 | Customer          | a second iPad at the desk (Part 9) | checks themselves in                                              |
 | You, the operator | command line                       | makes salon setup codes, keeps the service running                |
 

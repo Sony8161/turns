@@ -102,13 +102,15 @@ const en = {
     statusLine: 'You are {status}',
     pointsToday: 'points today',
     notTechnician: "You're signed in, but you're not a technician at any salon.",
-    inServiceNote: 'The front desk marks the visit complete; you then come back as available.',
+    inServiceNote:
+      'Tap Finished when the service is done; your points post and you are back in line.',
     actions: {
       check_in: "I'm here",
       available: "I'm ready",
       break: 'Break',
       out: 'Out',
       off: 'Check out',
+      finish: 'Finished',
     },
     errors: {
       illegal_transition: "That move isn't possible from where you are. Refresh and try again.",
@@ -226,13 +228,14 @@ const vi: Dictionary = {
     statusLine: 'Bạn đang {status}',
     pointsToday: 'điểm hôm nay',
     notTechnician: 'Bạn đã đăng nhập nhưng không phải là thợ ở tiệm nào.',
-    inServiceNote: 'Lễ tân đánh dấu xong lượt; sau đó bạn trở lại trạng thái sẵn sàng.',
+    inServiceNote: 'Bấm Xong khi làm xong; điểm được ghi và bạn trở lại hàng chờ.',
     actions: {
       check_in: 'Tôi đã đến',
       available: 'Tôi sẵn sàng',
       break: 'Nghỉ',
       out: 'Ra ngoài',
       off: 'Kết thúc ca',
+      finish: 'Xong',
     },
     errors: {
       illegal_transition: 'Không thể chuyển từ trạng thái hiện tại. Tải lại trang rồi thử lại.',

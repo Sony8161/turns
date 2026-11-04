@@ -20,9 +20,10 @@ export type MeState = {
   accuracyM?: number;
 };
 
-// The moves a technician may make for themself. in_service is the engine's:
-// a technician cannot end a service from their phone.
-const TECH_MOVES = new Set(['check_in', 'available', 'break', 'out', 'off']);
+// The moves a technician may make for themself. "finish" ends a service (the
+// design doc: in service ends when the technician taps complete); in Part 4
+// it also posts the visit's points.
+const TECH_MOVES = new Set(['check_in', 'available', 'break', 'out', 'off', 'finish']);
 
 /** A technician moves their own status. The technician row comes from the
  *  session and must be active with an active membership (threat model T10). */
@@ -38,8 +39,16 @@ export async function moveStatus(_prev: MeState, formData: FormData): Promise<Me
     .select({ status: technicianStatus.status })
     .from(technicianStatus)
     .where(eq(technicianStatus.technicianId, tech.id));
-  if (current?.status === 'in_service') return { error: 'illegal_transition' };
+  // Leaving in_service is only through "finish" (points post there in Part 4),
+  // never through a plain "available".
+  if (current?.status === 'in_service' && intent !== 'finish') {
+    return { error: 'illegal_transition' };
+  }
+  if (current?.status !== 'in_service' && intent === 'finish') {
+    return { error: 'illegal_transition' };
+  }
 
+  const to = (intent === 'finish' ? 'available' : intent) as Exclude<TechnicianState, 'checked_in'>;
   const result =
     intent === 'check_in'
       ? await checkIn(db(), {
@@ -49,8 +58,9 @@ export async function moveStatus(_prev: MeState, formData: FormData): Promise<Me
         })
       : await transition(db(), {
           technicianId: tech.id,
-          to: intent as Exclude<TechnicianState, 'checked_in'>,
+          to,
           actor: { userId: actor.userId },
+          reason: intent === 'finish' ? 'finished' : null,
         });
 
   revalidatePath('/me');

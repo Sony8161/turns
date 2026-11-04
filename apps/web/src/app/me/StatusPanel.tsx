@@ -19,7 +19,7 @@ const MOVES: Record<State, { intent: string; tone: 'primary' | 'quiet' | 'danger
     { intent: 'out', tone: 'quiet' },
     { intent: 'off', tone: 'quiet' },
   ],
-  in_service: [],
+  in_service: [{ intent: 'finish', tone: 'primary' }],
   break: [
     { intent: 'available', tone: 'primary' },
     { intent: 'off', tone: 'quiet' },
