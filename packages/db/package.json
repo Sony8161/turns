@@ -6,14 +6,17 @@
   "exports": {
     ".": "./src/index.ts",
     "./schema": "./src/schema.ts",
-    "./server": "./src/server.ts"
+    "./server": "./src/server.ts",
+    "./invites": "./src/invites.ts",
+    "./rate-limit": "./src/rate-limit.ts"
   },
   "scripts": {
     "typecheck": "tsc --noEmit",
     "test": "vitest run",
     "db:generate": "drizzle-kit generate",
     "db:migrate": "tsx src/migrate.ts",
-    "db:seed": "tsx src/seed.ts"
+    "db:seed": "tsx src/seed.ts",
+    "db:seed:dev": "tsx src/seed-dev.ts"
   },
   "dependencies": {
     "drizzle-orm": "0.45.4",

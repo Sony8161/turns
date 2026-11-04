@@ -20,3 +20,6 @@ Thumbs.db
 
 # scanner output (may name vulnerable paths)
 security/scans/
+
+# Supabase Studio saved queries (personal, not source)
+supabase/snippets/

@@ -1,0 +1,73 @@
+@import 'tailwindcss';
+
+/* Tokens from design/DESIGN.md. Colour names are the design names, not roles,
+   so a reader of the markup knows which swatch they are looking at. */
+@theme {
+  --color-board: #ffffff;
+  --color-pumice: #eef0f3;
+  --color-slate: #2b3444;
+  --color-navy: #1f2a37;
+  --color-polish: #c2185b;
+  --color-teal: #2a9d8f;
+  --color-amber: #d9a441;
+
+  --font-sans: var(--font-be-vietnam), system-ui, sans-serif;
+
+  /* Major third from 16 px. */
+  --text-small: 13px;
+  --text-body: 16px;
+  --text-lead: 20px;
+  --text-heading: 25px;
+  --text-status: 24px;
+  --text-kiosk-button: 28px;
+  --text-name: 40px;
+  --text-points: 112px;
+
+  --radius-control: 8px;
+}
+
+:root {
+  color-scheme: light;
+}
+
+html {
+  background: var(--color-pumice);
+  color: var(--color-slate);
+  font-family: var(--font-sans);
+  font-variant-numeric: tabular-nums;
+}
+
+body {
+  min-height: 100%;
+  margin: 0;
+  font-size: var(--text-body);
+  line-height: 1.5;
+}
+
+/* Points on the board. In a layer so a utility (text-[56px] on the compact
+   board) can still override the size; unlayered rules would always win. */
+@layer components {
+  .points {
+    font-variant-numeric: tabular-nums;
+    font-weight: 800;
+    font-size: var(--text-points);
+    line-height: 0.9;
+    letter-spacing: -0.03em;
+  }
+}
+
+/* Keyboard focus is visible everywhere; mouse clicks do not show it. */
+:focus-visible {
+  outline: 3px solid var(--color-navy);
+  outline-offset: 2px;
+}
+
+/* The one motion: rows sliding to a new queue position. */
+.board-row {
+  transition: transform 300ms ease;
+}
+@media (prefers-reduced-motion: reduce) {
+  .board-row {
+    transition: none;
+  }
+}

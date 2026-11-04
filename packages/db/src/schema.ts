@@ -218,7 +218,45 @@ export const ruleConfigs = pgTable(
   ],
 );
 
+// Invites ------------------------------------------------------------------
+
+// A code binds a new user to one location and one role (design doc,
+// Authentication). Only the SHA-256 of the code is stored (threat model T9);
+// the plain code is shown once to the owner who created it.
+export const inviteCodes = pgTable(
+  'invite_codes',
+  {
+    id: id(),
+    organizationId: uuid('organization_id').notNull(),
+    locationId: uuid('location_id').notNull(),
+    role: roleEnum('role').notNull(),
+    codeHash: text('code_hash').notNull().unique(),
+    createdBy: uuid('created_by')
+      .notNull()
+      .references(() => profiles.id, { onDelete: 'restrict' }),
+    expiresAt: timestamp('expires_at', { withTimezone: true }).notNull(),
+    usedBy: uuid('used_by').references(() => profiles.id, { onDelete: 'restrict' }),
+    usedAt: timestamp('used_at', { withTimezone: true }),
+    createdAt: createdAt(),
+  },
+  (t) => [locationFk(t, 'invite_codes_location_fk')],
+  // RLS on, no policies, no grants: app users never read codes; the server does.
+).enableRLS();
+
+// Rate limits -------------------------------------------------------------
+
+// App-side limiter for sign-in and join (threat model T7). Supabase's own
+// per-IP limits see only the server's IP, so they are one shared bucket.
+// Key examples: "otp:contact:+18135550100", "otp:ip:203.0.113.9".
+export const rateLimits = pgTable('rate_limits', {
+  key: text('key').primaryKey(),
+  count: integer('count').notNull(),
+  resetAt: timestamp('reset_at', { withTimezone: true }).notNull(),
+}).enableRLS();
+
 export const TENANT_TABLES = [
+  'rate_limits',
+  'invite_codes',
   'organizations',
   'locations',
   'profiles',
