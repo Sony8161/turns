@@ -1,3 +1,4 @@
+import Link from 'next/link';
 import { Board, type BoardRow } from '@/components/Board';
 import { LinkButton } from '@/components/ui';
 import { LanguageToggle } from '@/i18n/LanguageToggle';
@@ -33,6 +34,9 @@ export default async function LandingPage() {
             {t.landing.join}
           </LinkButton>
         </div>
+        <Link href="/setup" className="self-start text-slate/70 underline">
+          {t.setup.link}
+        </Link>
       </section>
 
       <figure className="flex flex-col gap-3">

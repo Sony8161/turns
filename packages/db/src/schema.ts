@@ -243,6 +243,24 @@ export const inviteCodes = pgTable(
   // RLS on, no policies, no grants: app users never read codes; the server does.
 ).enableRLS();
 
+// Salon setup codes ---------------------------------------------------------
+
+// Made by the platform operator, not by a salon. Whoever redeems one creates a
+// new organization with its first location and becomes its owner. Hashed and
+// single use like invite codes. No app access.
+export const setupCodes = pgTable('setup_codes', {
+  id: id(),
+  codeHash: text('code_hash').notNull().unique(),
+  note: text('note'),
+  expiresAt: timestamp('expires_at', { withTimezone: true }).notNull(),
+  usedBy: uuid('used_by').references(() => profiles.id, { onDelete: 'restrict' }),
+  usedAt: timestamp('used_at', { withTimezone: true }),
+  organizationId: uuid('organization_id').references(() => organizations.id, {
+    onDelete: 'restrict',
+  }),
+  createdAt: createdAt(),
+}).enableRLS();
+
 // Rate limits -------------------------------------------------------------
 
 // App-side limiter for sign-in and join (threat model T7). Supabase's own
@@ -255,6 +273,7 @@ export const rateLimits = pgTable('rate_limits', {
 }).enableRLS();
 
 export const TENANT_TABLES = [
+  'setup_codes',
   'rate_limits',
   'invite_codes',
   'organizations',

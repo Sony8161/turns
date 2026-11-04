@@ -1,7 +1,7 @@
 'use server';
 
 import { eq } from 'drizzle-orm';
-import { inviteCodes } from '@turn/db';
+import { inviteCodes, setupCodes } from '@turn/db';
 import { hashCode } from '@turn/db/invites';
 import { consumeRateLimit } from '@turn/db/rate-limit';
 import { redirect } from 'next/navigation';
@@ -58,12 +58,19 @@ async function sendCode(formData: FormData): Promise<LoginState> {
 }
 
 async function inviteIsRedeemable(): Promise<boolean> {
-  const invite = await readInviteCookie();
-  if (!invite) return false;
-  const [row] = await db()
-    .select({ usedAt: inviteCodes.usedAt, expiresAt: inviteCodes.expiresAt })
-    .from(inviteCodes)
-    .where(eq(inviteCodes.codeHash, hashCode(invite.code)));
+  const pending = await readInviteCookie();
+  if (!pending) return false;
+  const hash = hashCode(pending.code);
+  const [row] =
+    pending.kind === 'setup'
+      ? await db()
+          .select({ usedAt: setupCodes.usedAt, expiresAt: setupCodes.expiresAt })
+          .from(setupCodes)
+          .where(eq(setupCodes.codeHash, hash))
+      : await db()
+          .select({ usedAt: inviteCodes.usedAt, expiresAt: inviteCodes.expiresAt })
+          .from(inviteCodes)
+          .where(eq(inviteCodes.codeHash, hash));
   return !!row && !row.usedAt && row.expiresAt.getTime() > Date.now();
 }
 

@@ -9,7 +9,7 @@ import postgres from 'postgres';
 export const MIGRATIONS_FOLDER = join(dirname(fileURLToPath(import.meta.url)), '..', 'drizzle');
 
 export async function runMigrations(url: string): Promise<void> {
-  const client = postgres(url, { max: 1, prepare: false });
+  const client = postgres(url, { max: 1, prepare: false, onnotice: () => {} });
   try {
     await migrate(drizzle(client), { migrationsFolder: MIGRATIONS_FOLDER });
   } finally {

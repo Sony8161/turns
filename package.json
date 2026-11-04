@@ -12,7 +12,9 @@
     "test": "npm run test --workspaces --if-present",
     "format": "prettier --write .",
     "format:check": "prettier --check .",
-    "secrets:scan": "node scripts/scan-public-env.mjs"
+    "secrets:scan": "node scripts/scan-public-env.mjs",
+    "up": "powershell -NoProfile -ExecutionPolicy Bypass -File scripts/dev.ps1",
+    "down": "npx supabase stop"
   },
   "devDependencies": {
     "prettier": "3.9.10",

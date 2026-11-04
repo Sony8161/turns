@@ -6,6 +6,7 @@ import { createInvite } from './invites';
 import { memberships, profiles } from './schema';
 import { HEAVENLY, seedHeavenly } from './seed';
 import { createDb } from './server';
+import { createSetupCode } from './setup';
 
 export const DEV_OWNER = {
   email: 'phu@example.test',
@@ -53,7 +54,7 @@ async function ensureLocalAuthUser(email: string): Promise<string> {
 
 export async function seedDev(
   url: string,
-): Promise<{ technicianCode: string; receptionistCode: string }> {
+): Promise<{ technicianCode: string; receptionistCode: string; setupCode: string }> {
   assertLocal(url);
   await seedHeavenly(url);
   const ownerId = await ensureLocalAuthUser(DEV_OWNER.email);
@@ -84,7 +85,8 @@ export async function seedDev(
       role: 'receptionist',
       createdBy: ownerId,
     });
-    return { technicianCode: tech.code, receptionistCode: reception.code };
+    const setup = await createSetupCode(db, { note: 'dev seed' });
+    return { technicianCode: tech.code, receptionistCode: reception.code, setupCode: setup.code };
   } finally {
     await db.$client.end();
   }
@@ -101,6 +103,7 @@ if (import.meta.main) {
       console.log(`owner: ${DEV_OWNER.email} (code arrives in Mailpit, http://127.0.0.1:54324)`);
       console.log(`technician invite: ${codes.technicianCode}`);
       console.log(`receptionist invite: ${codes.receptionistCode}`);
+      console.log(`salon setup code (new salon + owner): ${codes.setupCode}`);
       console.log('test phone for sign-in: 813 555 0100, code 123456');
     },
     (err) => {

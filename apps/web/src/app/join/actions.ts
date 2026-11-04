@@ -35,6 +35,6 @@ export async function startJoin(_prev: JoinState, formData: FormData): Promise<J
   if (invite.usedAt) return { typed, error: 'used' };
   if (invite.expiresAt.getTime() < Date.now()) return { typed, error: 'expired' };
 
-  await setInviteCookie({ code, name });
+  await setInviteCookie({ kind: 'invite', code, name });
   redirect('/login');
 }
