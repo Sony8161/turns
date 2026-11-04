@@ -1,10 +1,12 @@
 // The turn engine (design doc, Rule engine and Call flow). Server only. App
 // code decides, the database enforces: one open call per technician and per
 // visit (partial unique indexes), and every move writes the audit log.
-// Every number comes from rule_config; nothing here is hard-coded.
-import { and, asc, desc, eq, inArray, isNull, sql } from 'drizzle-orm';
+// Every number comes from rule_config (rules.ts); nothing here is hard-coded.
+import { and, asc, eq, inArray, isNull, sql } from 'drizzle-orm';
+import { activeRules, visitPointsUnder, type RuleConfig } from './rules';
 import {
-  ruleConfigs,
+  auditLog,
+  locations,
   serviceCategories,
   services,
   shifts,
@@ -29,55 +31,7 @@ export const DENY_REASONS = [
 ] as const;
 export type DenyReason = (typeof DENY_REASONS)[number];
 
-type RuleConfig = {
-  points?: {
-    default_service?: number;
-    fill_or_full_set?: number;
-    appointment_discount?: number;
-    combined_services?: 'sum';
-    combined_fill_full_cap?: number | null;
-  };
-  penalties?: { deny?: number };
-  queue?: { sort?: readonly string[] };
-};
 export type { RuleConfig };
-
-async function rulesFor(tx: Tx, locationId: string): Promise<RuleConfig> {
-  const [row] = await tx
-    .select({ config: ruleConfigs.config })
-    .from(ruleConfigs)
-    .where(eq(ruleConfigs.locationId, locationId))
-    .orderBy(desc(ruleConfigs.version))
-    .limit(1);
-  return (row?.config as RuleConfig) ?? {};
-}
-
-function num(v: unknown, name: string): number {
-  if (typeof v !== 'number' || !Number.isFinite(v)) {
-    throw new Error(`rule_config is missing a number for ${name}`);
-  }
-  return v;
-}
-
-/** Points a visit is worth: sum of its services, with the fill/full-set cap and
- *  the appointment discount from the rules. Pure, so the tests can pin it. */
-export function visitPoints(
-  rules: RuleConfig,
-  items: { isFillOrFullSet: boolean }[],
-  source: 'walk_in' | 'appointment' | 'request' | 'self_checkin',
-): number {
-  const standard = num(rules.points?.default_service, 'points.default_service');
-  const fill = num(rules.points?.fill_or_full_set, 'points.fill_or_full_set');
-  let total = items.reduce((sum, s) => sum + (s.isFillOrFullSet ? fill : standard), 0);
-  const cap = rules.points?.combined_fill_full_cap;
-  if (items.length > 1 && items.some((s) => s.isFillOrFullSet) && typeof cap === 'number') {
-    total = Math.min(total, cap);
-  }
-  if (source === 'appointment') {
-    total += num(rules.points?.appointment_discount, 'points.appointment_discount');
-  }
-  return Math.round(total * 2) / 2;
-}
 
 export type EngineError = { ok: false; reason: string; detail?: string };
 
@@ -101,6 +55,7 @@ export async function createWalkIn(
       .select({
         id: services.id,
         isFillOrFullSet: serviceCategories.isFillOrFullSet,
+        categoryId: serviceCategories.id,
       })
       .from(services)
       .innerJoin(serviceCategories, eq(serviceCategories.id, services.categoryId))
@@ -114,7 +69,7 @@ export async function createWalkIn(
     if (rows.length !== new Set(input.serviceIds).size) {
       return { ok: false, reason: 'unknown_service' };
     }
-    const rules = await rulesFor(tx, input.locationId);
+    const rules = await activeRules(tx, input.locationId);
     const source = input.source ?? 'walk_in';
     const [visit] = await tx
       .insert(visits)
@@ -133,7 +88,7 @@ export async function createWalkIn(
         organizationId: input.organizationId,
         visitId: visit.id,
         serviceId: s.id,
-        pointsValueSnapshot: visitPoints(rules, [s], 'walk_in').toFixed(1),
+        pointsValueSnapshot: visitPointsUnder(rules, [s], 'walk_in').toFixed(1),
       })),
     );
     await writeAudit(tx, {
@@ -205,7 +160,12 @@ export async function queueFor(tx: Tx, locationId: string): Promise<Candidate[]>
 /** Calls the first eligible technician for a waiting visit, or says why nobody can be called. */
 export async function callNext(
   db: Db,
-  input: { visitId: string; actor: Actor },
+  input: {
+    visitId: string;
+    actor: Actor;
+    /** The caller's own location: a visit elsewhere is refused (threat model T10). */
+    locationId: string;
+  },
 ): Promise<{ ok: true; callId: string; technicianId: string } | EngineError> {
   return db.transaction(async (tx) => {
     const [visit] = await tx
@@ -214,6 +174,9 @@ export async function callNext(
       .where(eq(visits.id, input.visitId))
       .for('update');
     if (!visit) return { ok: false, reason: 'unknown_visit' };
+    if (visit.locationId !== input.locationId) {
+      return { ok: false, reason: 'wrong_location' };
+    }
     if (visit.status !== 'waiting') return { ok: false, reason: 'visit_not_waiting' };
 
     const queue = await queueFor(tx, visit.locationId);
@@ -225,6 +188,21 @@ export async function callNext(
         ok: false,
         reason: 'nobody_eligible',
         detail: queue.map((c) => `${c.displayName}: ${c.why}`).join('; '),
+      };
+    }
+    // Hold the technician's status row while the call is written, so a break
+    // or check-out that is being saved at the same second either lands first
+    // (and this pick is refused) or waits and then sees the open call.
+    const [held] = await tx
+      .select({ status: technicianStatus.status })
+      .from(technicianStatus)
+      .where(eq(technicianStatus.technicianId, pick.technicianId))
+      .for('update');
+    if (held?.status !== 'available') {
+      return {
+        ok: false,
+        reason: 'nobody_eligible',
+        detail: `${pick.displayName}: ${held?.status ?? 'off'}`,
       };
     }
     // The partial unique indexes refuse a second open call for the technician
@@ -324,7 +302,7 @@ export async function respondToCall(
       .update(visits)
       .set({ status: 'waiting', updatedAt: now })
       .where(eq(visits.id, call.visitId));
-    const rules = await rulesFor(tx, call.locationId);
+    const rules = await activeRules(tx, call.locationId);
     const [st] = await tx
       .select({ shiftId: technicianStatus.shiftId })
       .from(technicianStatus)
@@ -335,7 +313,7 @@ export async function respondToCall(
         locationId: call.locationId,
         technicianId: call.technicianId,
         shiftId: st.shiftId,
-        delta: num(rules.penalties?.deny, 'penalties.deny'),
+        delta: rules.penalties.deny,
         reasonType: 'deny',
         visitId: call.visitId,
         actorUserId: input.actor.userId,
@@ -372,13 +350,16 @@ export async function finishVisit(
       .for('update');
     if (!visit) return { ok: false, reason: 'no_visit_in_service' };
     const items = await tx
-      .select({ isFillOrFullSet: serviceCategories.isFillOrFullSet })
+      .select({
+        isFillOrFullSet: serviceCategories.isFillOrFullSet,
+        categoryId: serviceCategories.id,
+      })
       .from(visitServices)
       .innerJoin(services, eq(services.id, visitServices.serviceId))
       .innerJoin(serviceCategories, eq(serviceCategories.id, services.categoryId))
       .where(eq(visitServices.visitId, visit.id));
-    const rules = await rulesFor(tx, visit.locationId);
-    const points = visitPoints(rules, items, visit.source);
+    const rules = await activeRules(tx, visit.locationId);
+    const points = visitPointsUnder(rules, items, visit.source);
     const now = new Date();
 
     const moved = await transition(tx as unknown as Db, {
@@ -463,7 +444,7 @@ export async function reassignVisit(
         .set({ respondedAt: now, response: 'overridden' })
         .where(eq(turnCalls.id, open.id));
       if (input.penalizeFirst) {
-        const rules = await rulesFor(tx, visit.locationId);
+        const rules = await activeRules(tx, visit.locationId);
         const [st] = await tx
           .select({ shiftId: technicianStatus.shiftId })
           .from(technicianStatus)
@@ -474,7 +455,7 @@ export async function reassignVisit(
             locationId: visit.locationId,
             technicianId: open.technicianId,
             shiftId: st.shiftId,
-            delta: num(rules.penalties?.deny, 'penalties.deny'),
+            delta: rules.penalties.deny,
             reasonType: 'manual',
             visitId: visit.id,
             actorUserId: input.actor.userId,
@@ -589,4 +570,282 @@ export async function waitingVisits(db: Db, locationId: string) {
     ...r,
     services: items.filter((i) => i.visitId === r.id).map((i) => i.name),
   }));
+}
+
+// Attention (Duong, 2026-11-04) ------------------------------------------------
+
+/**
+ * Minutes a new customer would wait, from a queue simulation: free
+ * technicians take the waiting visits in order, each visit lasts its
+ * services' minutes, a busy technician frees up at their expected end.
+ * null when nobody can take a visit at all. Pure.
+ */
+export function estimateWait(input: {
+  now: Date;
+  /** Technicians free right now. */
+  available: number;
+  /** Expected end of each service in progress (or call being answered). */
+  inService: Date[];
+  /** Minutes each waiting visit will take, in arrival order. */
+  waiting: number[];
+}): number | null {
+  const free: number[] = [];
+  for (let i = 0; i < input.available; i++) free.push(0);
+  for (const end of input.inService) {
+    free.push(Math.max(0, Math.ceil((end.getTime() - input.now.getTime()) / 60_000)));
+  }
+  if (free.length === 0) return null;
+  for (const minutes of input.waiting) {
+    free.sort((x, y) => x - y);
+    free[0] = free[0]! + minutes;
+  }
+  return Math.min(...free);
+}
+
+export type FloorAttention = {
+  /** Calls open longer than the rules allow: the desk and the manager step in. */
+  unansweredCalls: {
+    callId: string;
+    visitId: string;
+    technicianId: string;
+    technicianName: string;
+    waitedMin: number;
+  }[];
+  unansweredCallMin: number;
+  /** Minutes a new customer would wait; null when nobody is on the floor. */
+  estimatedWaitMin: number | null;
+  longWait: boolean;
+  longWaitMin: number;
+  /** The desk's switch for the customer notice (kiosk, Part 9). */
+  noticeEnabled: boolean;
+};
+
+/** What needs a person right now, and how long the line is. Read only. */
+export async function floorAttention(
+  db: Db,
+  locationId: string,
+  now = new Date(),
+): Promise<FloorAttention> {
+  const rules = await activeRules(db, locationId);
+  const fallbackMin = rules.attention.default_service_min;
+
+  const [loc] = await db
+    .select({ longWaitNotice: locations.longWaitNotice })
+    .from(locations)
+    .where(eq(locations.id, locationId));
+
+  const open = await db
+    .select({
+      callId: turnCalls.id,
+      visitId: turnCalls.visitId,
+      technicianId: turnCalls.technicianId,
+      technicianName: technicians.displayName,
+      calledAt: turnCalls.calledAt,
+    })
+    .from(turnCalls)
+    .innerJoin(technicians, eq(technicians.id, turnCalls.technicianId))
+    .where(and(eq(turnCalls.locationId, locationId), isNull(turnCalls.respondedAt)));
+  const unansweredCalls = open
+    .map((c) => ({
+      callId: c.callId,
+      visitId: c.visitId,
+      technicianId: c.technicianId,
+      technicianName: c.technicianName,
+      waitedMin: Math.floor((now.getTime() - c.calledAt.getTime()) / 60_000),
+    }))
+    .filter((c) => c.waitedMin >= rules.attention.unanswered_call_min);
+
+  // Minutes per open visit, from its services.
+  const openVisits = await db
+    .select({
+      id: visits.id,
+      status: visits.status,
+      arrivedAt: visits.arrivedAt,
+      startedAt: visits.startedAt,
+      minutes: sql<string>`coalesce((
+        select sum(coalesce(s.default_duration_min, ${fallbackMin}))
+        from ${visitServices} vs join ${services} s on s.id = vs.service_id
+        where vs.visit_id = visits.id), ${fallbackMin})`,
+    })
+    .from(visits)
+    .where(
+      and(
+        eq(visits.locationId, locationId),
+        inArray(visits.status, ['waiting', 'called', 'in_service']),
+      ),
+    )
+    .orderBy(asc(visits.arrivedAt));
+
+  const statuses = await db
+    .select({ technicianId: technicianStatus.technicianId, status: technicianStatus.status })
+    .from(technicianStatus)
+    .innerJoin(technicians, eq(technicians.id, technicianStatus.technicianId))
+    .where(and(eq(technicians.locationId, locationId), eq(technicians.active, true)));
+  const calledIds = new Set(open.map((c) => c.technicianId));
+  const available = statuses.filter(
+    (t) => t.status === 'available' && !calledIds.has(t.technicianId),
+  ).length;
+
+  const inService: Date[] = [];
+  const waiting: number[] = [];
+  for (const v of openVisits) {
+    const minutes = Number(v.minutes);
+    if (v.status === 'in_service' && v.startedAt) {
+      inService.push(new Date(v.startedAt.getTime() + minutes * 60_000));
+    } else if (v.status === 'called') {
+      // Being answered: counts as about to start.
+      inService.push(new Date(now.getTime() + minutes * 60_000));
+    } else {
+      waiting.push(minutes);
+    }
+  }
+  const estimatedWaitMin = estimateWait({ now, available, inService, waiting });
+
+  return {
+    unansweredCalls,
+    unansweredCallMin: rules.attention.unanswered_call_min,
+    estimatedWaitMin,
+    longWait:
+      estimatedWaitMin === null
+        ? waiting.length > 0
+        : estimatedWaitMin >= rules.attention.long_wait_min,
+    longWaitMin: rules.attention.long_wait_min,
+    noticeEnabled: loc?.longWaitNotice ?? false,
+  };
+}
+
+/**
+ * The desk clears a call nobody answered: the call closes as expired, no
+ * penalty (the technician may have lost their phone, not their nerve), and
+ * the visit waits again so "Call next" can go to whoever is next. A manager
+ * who wants the penalty uses reassign with penalizeFirst.
+ */
+export async function expireCall(
+  db: Db,
+  input: {
+    callId: string;
+    actor: Actor;
+    /** The caller's own location: a call elsewhere is refused (threat model T10). */
+    locationId: string;
+  },
+): Promise<{ ok: true; visitId: string } | EngineError> {
+  return db.transaction(async (tx) => {
+    const [found] = await tx
+      .select({ visitId: turnCalls.visitId, locationId: turnCalls.locationId })
+      .from(turnCalls)
+      .where(eq(turnCalls.id, input.callId));
+    if (!found) return { ok: false, reason: 'unknown_call' };
+    if (found.locationId !== input.locationId) {
+      return { ok: false, reason: 'wrong_location' };
+    }
+    // Same lock order as reassignVisit (visit, then call), so the desk
+    // clearing and a manager reassigning the same call cannot deadlock.
+    await tx.select().from(visits).where(eq(visits.id, found.visitId)).for('update');
+    const [call] = await tx
+      .select()
+      .from(turnCalls)
+      .where(eq(turnCalls.id, input.callId))
+      .for('update');
+    if (!call) return { ok: false, reason: 'unknown_call' };
+    if (call.respondedAt) return { ok: false, reason: 'already_answered' };
+    const rules = await activeRules(tx, call.locationId);
+    const now = new Date();
+    const waitedMin = (now.getTime() - call.calledAt.getTime()) / 60_000;
+    if (waitedMin < rules.attention.unanswered_call_min) {
+      return { ok: false, reason: 'too_soon', detail: String(rules.attention.unanswered_call_min) };
+    }
+    await tx
+      .update(turnCalls)
+      .set({ respondedAt: now, response: 'expired' })
+      .where(eq(turnCalls.id, call.id));
+    await tx
+      .update(visits)
+      .set({ status: 'waiting', updatedAt: now })
+      .where(eq(visits.id, call.visitId));
+    await writeAudit(tx, {
+      organizationId: call.organizationId,
+      locationId: call.locationId,
+      actorUserId: input.actor.userId,
+      entityType: 'turn_calls',
+      entityId: call.id,
+      action: 'call_expired',
+      after: {
+        visitId: call.visitId,
+        technicianId: call.technicianId,
+        waitedMin: Math.floor(waitedMin),
+      },
+    });
+    return { ok: true, visitId: call.visitId };
+  });
+}
+
+/** The desk's switch for the customer notice. Audited like every setting. */
+export async function setLongWaitNotice(
+  db: Db,
+  input: { organizationId: string; locationId: string; enabled: boolean; actor: Actor },
+): Promise<void> {
+  await db.transaction(async (tx) => {
+    // No explicit lock: FOR UPDATE on a location would make every insert that
+    // references it (visits, calls, audit rows) wait until this commits.
+    const [before] = await tx
+      .select({ longWaitNotice: locations.longWaitNotice })
+      .from(locations)
+      .where(eq(locations.id, input.locationId));
+    await tx
+      .update(locations)
+      .set({ longWaitNotice: input.enabled, updatedAt: new Date() })
+      .where(eq(locations.id, input.locationId));
+    await writeAudit(tx, {
+      organizationId: input.organizationId,
+      locationId: input.locationId,
+      actorUserId: input.actor.userId,
+      entityType: 'locations',
+      entityId: input.locationId,
+      action: 'long_wait_notice',
+      before: { enabled: before?.longWaitNotice ?? null },
+      after: { enabled: input.enabled },
+    });
+  });
+}
+
+/** Today's counts for the admin sentence, on the location's own calendar day. */
+export async function todayCounts(
+  db: Db,
+  locationId: string,
+): Promise<{ visits: number; denies: number; overrides: number }> {
+  const [loc] = await db
+    .select({ timezone: locations.timezone })
+    .from(locations)
+    .where(eq(locations.id, locationId));
+  const tz = loc?.timezone ?? 'UTC';
+  // A range on the column, not a function of it, so the (location_id, at)
+  // indexes are used: from local midnight to the next local midnight.
+  const today = (col: unknown) =>
+    sql`${col} >= (date_trunc('day', now() at time zone ${tz}) at time zone ${tz})
+        and ${col} < ((date_trunc('day', now() at time zone ${tz}) + interval '1 day') at time zone ${tz})`;
+  const [v] = await db
+    .select({ n: sql<string>`count(*)` })
+    .from(visits)
+    .where(and(eq(visits.locationId, locationId), today(visits.arrivedAt)));
+  const [d] = await db
+    .select({ n: sql<string>`count(*)` })
+    .from(turnCalls)
+    .where(
+      and(
+        eq(turnCalls.locationId, locationId),
+        eq(turnCalls.response, 'denied'),
+        today(turnCalls.respondedAt),
+      ),
+    );
+  const [o] = await db
+    .select({ n: sql<string>`count(*)` })
+    .from(auditLog)
+    .where(
+      and(
+        eq(auditLog.locationId, locationId),
+        inArray(auditLog.action, ['visit_reassigned', 'deny_excused', 'points_adjusted']),
+        today(auditLog.at),
+      ),
+    );
+  return { visits: Number(v?.n ?? 0), denies: Number(d?.n ?? 0), overrides: Number(o?.n ?? 0) };
 }

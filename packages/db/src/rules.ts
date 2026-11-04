@@ -1,0 +1,542 @@
+// Rule config: the one place every number the engine reads lives (design doc,
+// Rule engine; threat model T18). Validated on save, versioned, never edited:
+// the database refuses an update or delete (drizzle/0014). The engine reads
+// the newest version that validates, so a bad row can never stall the floor.
+import { and, desc, eq, inArray, sql } from 'drizzle-orm';
+import {
+  ruleConfigs,
+  serviceCategories,
+  services,
+  shifts,
+  technicianStatus,
+  technicians,
+  turnLedger,
+  visitServices,
+  visits,
+} from './schema';
+import type { Db } from './server';
+import { writeAudit, type Actor } from './status';
+
+type Tx = Parameters<Parameters<Db['transaction']>[0]>[0];
+
+export type LateTier = { after_minutes: number; start_points: number | null };
+
+export type RuleConfig = {
+  points: {
+    default_service: number;
+    fill_or_full_set: number;
+    appointment_discount: number;
+    combined_services: 'sum';
+    /** null = no cap. */
+    combined_fill_full_cap: number | null;
+    post_on: 'completion';
+    /** Points for one service category (by category id), overriding the two defaults. */
+    by_category?: Record<string, number>;
+  };
+  penalties: {
+    deny: number;
+    out_over_minutes: number;
+    out_over_penalty: number;
+    /** start_points null = unset: still to confirm with the owner. */
+    late_tiers: LateTier[];
+  };
+  queue: {
+    reset: 'daily_at_open';
+    sort: string[];
+    auto_pass: boolean;
+  };
+  eligibility: {
+    require_on_site: boolean;
+    require_ready_checklist: boolean;
+    upcoming_appointment_buffer_min: number;
+    honor_restrictions: boolean;
+    skill_match: 'required' | 'preferred' | 'off';
+  };
+  requests: {
+    requested_tech_bypasses_queue: boolean;
+    /** Multiplier on a requested visit's points: 1 full, 0.5 half, 0 none; null = unset (counts in full). */
+    requested_counts_points: number | null;
+  };
+  /** When the floor needs a person (Duong, 2026-11-04). */
+  attention: {
+    /** A call with no answer for this long is flagged to the receptionist and manager. */
+    unanswered_call_min: number;
+    /** An estimated wait of this long or more is a long wait (kiosk notice, board flag). */
+    long_wait_min: number;
+    /** Used for the wait estimate when a service has no duration of its own. */
+    default_service_min: number;
+  };
+};
+
+export const SKILL_MATCH = ['required', 'preferred', 'off'] as const;
+export const QUEUE_SORT = ['points_asc', 'had_appointment_last', 'check_in_asc'] as const;
+
+export type RuleProblem =
+  | 'missing'
+  | 'not_a_number'
+  | 'not_a_boolean'
+  | 'not_a_half_step'
+  | 'negative'
+  | 'not_a_whole_number'
+  | 'not_allowed'
+  | 'not_in_order'
+  | 'not_an_object'
+  | 'unknown_category';
+
+export type RuleError = { path: string; problem: RuleProblem };
+
+export type ValidationResult =
+  { ok: true; config: RuleConfig } | { ok: false; errors: RuleError[] };
+
+// Bounds, not rules: points move in halves (the board cannot show finer), and
+// no timer in a salon day is longer than the day.
+const POINTS_MIN = -20;
+const POINTS_MAX = 20;
+const MINUTES_MAX = 24 * 60;
+
+function isRecord(v: unknown): v is Record<string, unknown> {
+  return typeof v === 'object' && v !== null && !Array.isArray(v);
+}
+
+class Check {
+  errors: RuleError[] = [];
+
+  fail(path: string, problem: RuleProblem): undefined {
+    this.errors.push({ path, problem });
+    return undefined;
+  }
+
+  section(root: Record<string, unknown>, name: string): Record<string, unknown> | undefined {
+    const v = root[name];
+    if (v === undefined) return this.fail(name, 'missing');
+    if (!isRecord(v)) return this.fail(name, 'not_an_object');
+    return v;
+  }
+
+  /** A point value: finite number in half steps, within a sane range. */
+  points(obj: Record<string, unknown>, path: string, nullable = false): number | null | undefined {
+    const v = obj[path.split('.').pop()!];
+    if (v === undefined) return this.fail(path, 'missing');
+    if (v === null) return nullable ? null : this.fail(path, 'not_a_number');
+    if (typeof v !== 'number' || !Number.isFinite(v)) return this.fail(path, 'not_a_number');
+    if (v < POINTS_MIN || v > POINTS_MAX) return this.fail(path, 'not_allowed');
+    if (Math.round(v * 2) !== v * 2) return this.fail(path, 'not_a_half_step');
+    return v;
+  }
+
+  /** A minute count: whole, zero or more, at most a day. */
+  minutes(obj: Record<string, unknown>, path: string): number | undefined {
+    const v = obj[path.split('.').pop()!];
+    if (v === undefined) return this.fail(path, 'missing');
+    if (typeof v !== 'number' || !Number.isFinite(v)) return this.fail(path, 'not_a_number');
+    if (v < 0) return this.fail(path, 'negative');
+    if (!Number.isInteger(v)) return this.fail(path, 'not_a_whole_number');
+    if (v > MINUTES_MAX) return this.fail(path, 'not_allowed');
+    return v;
+  }
+
+  bool(obj: Record<string, unknown>, path: string): boolean | undefined {
+    const v = obj[path.split('.').pop()!];
+    if (v === undefined) return this.fail(path, 'missing');
+    if (typeof v !== 'boolean') return this.fail(path, 'not_a_boolean');
+    return v;
+  }
+
+  choice<T extends string>(
+    obj: Record<string, unknown>,
+    path: string,
+    allowed: readonly T[],
+  ): T | undefined {
+    const v = obj[path.split('.').pop()!];
+    if (v === undefined) return this.fail(path, 'missing');
+    if (typeof v !== 'string' || !(allowed as readonly string[]).includes(v)) {
+      return this.fail(path, 'not_allowed');
+    }
+    return v as T;
+  }
+}
+
+/** Shape check only: no database. Save adds the checks that need one. */
+export function validateRuleConfig(input: unknown): ValidationResult {
+  const c = new Check();
+  if (!isRecord(input)) return { ok: false, errors: [{ path: '', problem: 'not_an_object' }] };
+
+  const points = c.section(input, 'points');
+  const penalties = c.section(input, 'penalties');
+  const queue = c.section(input, 'queue');
+  const eligibility = c.section(input, 'eligibility');
+  const requests = c.section(input, 'requests');
+  const attention = c.section(input, 'attention');
+  if (!points || !penalties || !queue || !eligibility || !requests || !attention) {
+    return { ok: false, errors: c.errors };
+  }
+
+  const out: RuleConfig = {
+    points: {
+      default_service: c.points(points, 'points.default_service')!,
+      fill_or_full_set: c.points(points, 'points.fill_or_full_set')!,
+      appointment_discount: c.points(points, 'points.appointment_discount')!,
+      combined_services: c.choice(points, 'points.combined_services', ['sum'] as const)!,
+      combined_fill_full_cap: c.points(points, 'points.combined_fill_full_cap', true) as
+        number | null,
+      post_on: c.choice(points, 'points.post_on', ['completion'] as const)!,
+    },
+    penalties: {
+      deny: c.points(penalties, 'penalties.deny')!,
+      out_over_minutes: c.minutes(penalties, 'penalties.out_over_minutes')!,
+      out_over_penalty: c.points(penalties, 'penalties.out_over_penalty')!,
+      late_tiers: [],
+    },
+    queue: {
+      reset: c.choice(queue, 'queue.reset', ['daily_at_open'] as const)!,
+      sort: [],
+      auto_pass: c.bool(queue, 'queue.auto_pass')!,
+    },
+    eligibility: {
+      require_on_site: c.bool(eligibility, 'eligibility.require_on_site')!,
+      require_ready_checklist: c.bool(eligibility, 'eligibility.require_ready_checklist')!,
+      upcoming_appointment_buffer_min: c.minutes(
+        eligibility,
+        'eligibility.upcoming_appointment_buffer_min',
+      )!,
+      honor_restrictions: c.bool(eligibility, 'eligibility.honor_restrictions')!,
+      skill_match: c.choice(eligibility, 'eligibility.skill_match', SKILL_MATCH)!,
+    },
+    requests: {
+      requested_tech_bypasses_queue: c.bool(requests, 'requests.requested_tech_bypasses_queue')!,
+      requested_counts_points: c.points(requests, 'requests.requested_counts_points', true) as
+        number | null,
+    },
+    attention: {
+      unanswered_call_min: c.minutes(attention, 'attention.unanswered_call_min')!,
+      long_wait_min: c.minutes(attention, 'attention.long_wait_min')!,
+      default_service_min: c.minutes(attention, 'attention.default_service_min')!,
+    },
+  };
+
+  // Penalties for a deny or an overlong out are added to the total, never subtracted.
+  if (out.penalties.deny < 0) c.fail('penalties.deny', 'negative');
+  if (out.penalties.out_over_penalty < 0) c.fail('penalties.out_over_penalty', 'negative');
+  const multiplier = out.requests.requested_counts_points;
+  if (multiplier !== null && (multiplier < 0 || multiplier > 1)) {
+    c.fail('requests.requested_counts_points', 'not_allowed');
+  }
+  if (out.attention.default_service_min === 0)
+    c.fail('attention.default_service_min', 'not_allowed');
+  // A call needs at least a minute before the desk may clear it.
+  if (out.attention.unanswered_call_min === 0) {
+    c.fail('attention.unanswered_call_min', 'not_allowed');
+  }
+
+  // Points per category: id -> points.
+  const byCategory = points['by_category'];
+  if (byCategory !== undefined) {
+    if (!isRecord(byCategory)) c.fail('points.by_category', 'not_an_object');
+    else {
+      const table: Record<string, number> = {};
+      for (const key of Object.keys(byCategory)) {
+        const v = c.points(byCategory, `points.by_category.${key}`);
+        if (v !== undefined && v !== null) table[key] = v;
+      }
+      out.points.by_category = table;
+    }
+  }
+
+  // Late tiers: ascending minutes, each with start points or unset.
+  const tiers = penalties['late_tiers'];
+  if (!Array.isArray(tiers)) c.fail('penalties.late_tiers', 'missing');
+  else {
+    let last = -1;
+    tiers.forEach((tier, i) => {
+      if (!isRecord(tier)) return c.fail(`penalties.late_tiers.${i}`, 'not_an_object');
+      const after = c.minutes(tier, `penalties.late_tiers.${i}.after_minutes`);
+      const start = c.points(tier, `penalties.late_tiers.${i}.start_points`, true);
+      if (after !== undefined && start !== undefined) {
+        out.penalties.late_tiers.push({ after_minutes: after, start_points: start });
+      }
+      if (after !== undefined) {
+        if (after <= last) c.fail('penalties.late_tiers', 'not_in_order');
+        last = after;
+      }
+    });
+  }
+
+  // Queue sort: the known keys, each at most once.
+  const sort = queue['sort'];
+  if (!Array.isArray(sort)) c.fail('queue.sort', 'missing');
+  else {
+    for (const key of sort) {
+      if (typeof key !== 'string' || !(QUEUE_SORT as readonly string[]).includes(key)) {
+        c.fail('queue.sort', 'not_allowed');
+      } else if (out.queue.sort.includes(key)) c.fail('queue.sort', 'not_allowed');
+      else out.queue.sort.push(key);
+    }
+  }
+
+  return c.errors.length ? { ok: false, errors: c.errors } : { ok: true, config: out };
+}
+
+/** The rules the engine runs under: the newest version that validates. */
+export async function activeRules(db: Db | Tx, locationId: string): Promise<RuleConfig> {
+  const rows = await db
+    .select({ version: ruleConfigs.version, config: ruleConfigs.config })
+    .from(ruleConfigs)
+    .where(eq(ruleConfigs.locationId, locationId))
+    .orderBy(desc(ruleConfigs.version));
+  for (const row of rows) {
+    const checked = validateRuleConfig(row.config);
+    if (checked.ok) return checked.config;
+  }
+  throw new Error(`no valid rule_config for location ${locationId}`);
+}
+
+export type RuleVersion = {
+  id: string;
+  version: number;
+  config: RuleConfig | null;
+  valid: boolean;
+  activeFrom: Date;
+  createdBy: string | null;
+  note: string | null;
+};
+
+/** Every version, newest first. A row that no longer validates says so. */
+export async function ruleHistory(db: Db, locationId: string): Promise<RuleVersion[]> {
+  const rows = await db
+    .select()
+    .from(ruleConfigs)
+    .where(eq(ruleConfigs.locationId, locationId))
+    .orderBy(desc(ruleConfigs.version));
+  return rows.map((r) => {
+    const checked = validateRuleConfig(r.config);
+    return {
+      id: r.id,
+      version: r.version,
+      config: checked.ok ? checked.config : null,
+      valid: checked.ok,
+      activeFrom: r.activeFrom,
+      createdBy: r.createdBy,
+      note: r.note,
+    };
+  });
+}
+
+export type SaveResult =
+  | { ok: true; version: number }
+  | { ok: false; reason: 'invalid'; errors: RuleError[] }
+  | { ok: false; reason: 'stale'; latestVersion: number };
+
+/**
+ * Saves a new version. Validates the shape, then checks that every category
+ * override names a category of this location. Never touches an old row; the
+ * trigger would refuse it anyway. The audit row carries both versions.
+ */
+export async function saveRuleConfig(
+  db: Db,
+  input: {
+    organizationId: string;
+    locationId: string;
+    config: unknown;
+    actor: Actor;
+    note?: string | null;
+    /** The version the editor started from; refused if a newer one exists. */
+    expectedVersion?: number;
+  },
+): Promise<SaveResult> {
+  const checked = validateRuleConfig(input.config);
+  if (!checked.ok) return { ok: false, reason: 'invalid', errors: checked.errors };
+  const config = checked.config;
+
+  const note = input.note?.trim().slice(0, 300) || null;
+  return db.transaction(async (tx) => {
+    const ids = Object.keys(config.points.by_category ?? {});
+    if (ids.length) {
+      const known = await tx
+        .select({ id: serviceCategories.id })
+        .from(serviceCategories)
+        .where(
+          and(
+            eq(serviceCategories.locationId, input.locationId),
+            inArray(serviceCategories.id, ids),
+          ),
+        );
+      if (known.length !== ids.length) {
+        return {
+          ok: false,
+          reason: 'invalid',
+          errors: [{ path: 'points.by_category', problem: 'unknown_category' }],
+        };
+      }
+    }
+
+    // One save at a time per location, so two owners cannot both take version n+1.
+    // Two-key form: the first key names this use, so a future advisory lock
+    // elsewhere cannot collide with it.
+    await tx.execute(
+      sql`select pg_advisory_xact_lock(hashtext('rule_configs'), hashtext(${input.locationId}))`,
+    );
+    const [latest] = await tx
+      .select({ version: ruleConfigs.version, config: ruleConfigs.config })
+      .from(ruleConfigs)
+      .where(eq(ruleConfigs.locationId, input.locationId))
+      .orderBy(desc(ruleConfigs.version))
+      .limit(1);
+    const latestVersion = latest?.version ?? 0;
+    if (input.expectedVersion !== undefined && latestVersion !== input.expectedVersion) {
+      return { ok: false, reason: 'stale', latestVersion };
+    }
+    const version = latestVersion + 1;
+    const [row] = await tx
+      .insert(ruleConfigs)
+      .values({
+        organizationId: input.organizationId,
+        locationId: input.locationId,
+        version,
+        config,
+        createdBy: input.actor.userId,
+        note,
+      })
+      .returning({ id: ruleConfigs.id });
+    if (!row) throw new Error('rule_configs insert returned nothing');
+    await writeAudit(tx, {
+      organizationId: input.organizationId,
+      locationId: input.locationId,
+      actorUserId: input.actor.userId,
+      entityType: 'rule_configs',
+      entityId: row.id,
+      action: 'rule_config_changed',
+      before: latest ? { version: latest.version, config: latest.config } : null,
+      after: { version, config },
+      reason: note,
+    });
+    return { ok: true, version };
+  });
+}
+
+/** Points a visit is worth under a config. Pure, so tests and the preview can pin it. */
+export function visitPointsUnder(
+  rules: RuleConfig,
+  items: { isFillOrFullSet: boolean; categoryId: string }[],
+  source: 'walk_in' | 'appointment' | 'request' | 'self_checkin',
+): number {
+  const overrides = rules.points.by_category ?? {};
+  let total = items.reduce((sum, s) => {
+    const own = overrides[s.categoryId];
+    const value =
+      own !== undefined
+        ? own
+        : s.isFillOrFullSet
+          ? rules.points.fill_or_full_set
+          : rules.points.default_service;
+    return sum + value;
+  }, 0);
+  const cap = rules.points.combined_fill_full_cap;
+  if (items.length > 1 && items.some((s) => s.isFillOrFullSet) && cap !== null) {
+    total = Math.min(total, cap);
+  }
+  if (source === 'appointment') total += rules.points.appointment_discount;
+  if (source === 'request' && rules.requests.requested_counts_points !== null) {
+    total *= rules.requests.requested_counts_points;
+  }
+  return Math.round(total * 2) / 2;
+}
+
+export type PreviewRow = {
+  technicianId: string;
+  displayName: string;
+  status: string;
+  checkedInAt: Date | null;
+  /** Today's total as posted. */
+  points: number;
+  /** Today's total if every row had been posted under the candidate config. */
+  previewPoints: number;
+};
+
+/**
+ * Today's board re-scored under a candidate config: every visit row is
+ * re-valued from its services, deny and out-over rows from the candidate
+ * penalties; late and manual rows stay as posted. Nothing is written.
+ */
+export async function previewBoard(
+  db: Db,
+  locationId: string,
+  candidate: RuleConfig,
+): Promise<PreviewRow[]> {
+  const techs = await db
+    .select({
+      technicianId: technicians.id,
+      displayName: technicians.displayName,
+      status: technicianStatus.status,
+      shiftId: technicianStatus.shiftId,
+      checkedInAt: shifts.checkedInAt,
+    })
+    .from(technicians)
+    .innerJoin(technicianStatus, eq(technicianStatus.technicianId, technicians.id))
+    .leftJoin(shifts, eq(shifts.id, technicianStatus.shiftId))
+    .where(and(eq(technicians.locationId, locationId), eq(technicians.active, true)));
+  const onShift = techs.filter((t) => t.status !== 'off' && t.shiftId);
+  const shiftIds = onShift.map((t) => t.shiftId!);
+  if (shiftIds.length === 0) return [];
+
+  const ledger = await db
+    .select({
+      shiftId: turnLedger.shiftId,
+      delta: turnLedger.delta,
+      reasonType: turnLedger.reasonType,
+      visitId: turnLedger.visitId,
+    })
+    .from(turnLedger)
+    .where(inArray(turnLedger.shiftId, shiftIds));
+  const visitIds = [...new Set(ledger.map((l) => l.visitId).filter((v): v is string => !!v))];
+  const items = visitIds.length
+    ? await db
+        .select({
+          visitId: visitServices.visitId,
+          source: visits.source,
+          isFillOrFullSet: serviceCategories.isFillOrFullSet,
+          categoryId: serviceCategories.id,
+        })
+        .from(visitServices)
+        .innerJoin(visits, eq(visits.id, visitServices.visitId))
+        .innerJoin(services, eq(services.id, visitServices.serviceId))
+        .innerJoin(serviceCategories, eq(serviceCategories.id, services.categoryId))
+        .where(inArray(visitServices.visitId, visitIds))
+    : [];
+
+  const rescore = (row: (typeof ledger)[number]): number => {
+    const posted = Number(row.delta);
+    switch (row.reasonType) {
+      case 'visit': {
+        const own = items.filter((i) => i.visitId === row.visitId);
+        if (own.length === 0) return posted;
+        return visitPointsUnder(candidate, own, own[0]!.source);
+      }
+      case 'deny':
+        return candidate.penalties.deny;
+      case 'out_over':
+        return candidate.penalties.out_over_penalty;
+      default:
+        return posted;
+    }
+  };
+
+  return onShift
+    .map((t) => {
+      const rows = ledger.filter((l) => l.shiftId === t.shiftId);
+      const points = rows.reduce((s, r) => s + Number(r.delta), 0);
+      const previewPoints = rows.reduce((s, r) => s + rescore(r), 0);
+      return {
+        technicianId: t.technicianId,
+        displayName: t.displayName,
+        status: t.status,
+        checkedInAt: t.checkedInAt,
+        points,
+        previewPoints,
+      };
+    })
+    .sort(
+      (a, b) =>
+        a.previewPoints - b.previewPoints ||
+        (a.checkedInAt?.getTime() ?? 0) - (b.checkedInAt?.getTime() ?? 0),
+    );
+}

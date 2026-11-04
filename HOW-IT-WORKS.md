@@ -82,21 +82,38 @@ disputed line by line.
   points first, then earlier check-in. The colour bar and the word say the
   status; the timer says how long.
 
-### Part 4. The engine and the first demo (next)
+### Part 4. The engine and the first demo (done)
 
 Walk-in entry on the iPad, the engine that picks the first eligible technician
-in queue order, a push to that technician's phone, accept or deny, the visit,
-points posted on completion, and the board updating live. The database will
-enforce "one open call per technician" so two receptionists cannot double-book.
-This is what Phu sees on Dec 4.
+in queue order, the call on that technician's phone (the web `/me` screen until
+the Expo app lands), accept or deny with the penalty shown first, the visit,
+points posted when the technician taps Finished, and the board refreshing every
+five seconds. The database enforces "one open call per technician" so two
+receptionists cannot double-book. A called technician must answer: Break, Out
+and Check out wait for the call. This is what Phu sees on Dec 4.
 
-### Part 5. The rule builder
+### Part 5. The rule builder, the staff screen, attention (done)
 
-Every number the engine uses (points per category, the appointment discount,
-late tiers, the deny penalty, the out-over timer, buffers) lives in a versioned
-rule config. The owner edits values in a form; each save is a new version, never
-an edit in place. Another salon gets its own behaviour with no code change.
-Owner-made staff invites arrive here too.
+- **Rules** (owner only): every number the engine uses (points, points per
+  service category, the appointment discount, late tiers, the deny penalty, the
+  out-over timer, buffers, the attention timers) is a field. A save is checked
+  first (text where a number goes, negative minutes, points that are not whole
+  or half are refused) and becomes a new version with who saved it and why. The
+  database refuses to edit or delete a version. The engine runs the newest
+  version that passes the checks, so a bad row can never stall the floor. A
+  preview re-sorts today's board under the typed rules without saving. The two
+  values Phu has not decided show as "not set".
+- **Staff** (owner and manager): invite codes made from the screen, role changes
+  (the only way a role changes), archive and restore with a reason. Nothing is
+  deleted; every change is in the audit log; a manager acts only at their own
+  location.
+- **Attention** (Duong, Nov 4): a call nobody answers for the rule's minutes
+  (15) is flagged on the board for the desk and the manager, with "Clear the
+  call" (no penalty, the visit waits again). The board shows an estimated wait
+  for a new customer, worked out by simulating the queue (free technicians,
+  services in progress and their minutes, visits waiting), and flags a long wait
+  at the rule's minutes (30). The receptionist or manager can switch on a
+  long-wait notice for customers; the kiosk (Part 9) will show it.
 
 ### Part 6. Eligibility, restrictions, overrides
 

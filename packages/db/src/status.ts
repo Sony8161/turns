@@ -5,14 +5,15 @@
 //
 // Every number comes from rule_config (geofence requirement) or the location
 // row (geofence centre and radius); nothing here is hard-coded.
-import { and, desc, eq, sql } from 'drizzle-orm';
+import { and, eq, isNull, sql } from 'drizzle-orm';
+import { activeRules } from './rules';
 import {
   auditLog,
   locations,
-  ruleConfigs,
   shifts,
   technicianStatus,
   technicians,
+  turnCalls,
   turnLedger,
 } from './schema';
 import type { Db } from './server';
@@ -42,7 +43,8 @@ export type StatusError =
   | { ok: false; reason: 'outside_geofence'; distanceM: number; radiusM: number }
   | { ok: false; reason: 'no_location_fix' }
   | { ok: false; reason: 'poor_location_accuracy'; accuracyM: number; radiusM: number }
-  | { ok: false; reason: 'unknown_technician' };
+  | { ok: false; reason: 'unknown_technician' }
+  | { ok: false; reason: 'open_call' };
 
 export type StatusOk = { ok: true; status: TechnicianState; shiftId: string | null };
 
@@ -86,16 +88,6 @@ async function currentStatus(tx: Tx, technicianId: string) {
     .where(eq(technicianStatus.technicianId, technicianId))
     .for('update');
   return row ?? null;
-}
-
-async function activeRuleConfig(tx: Tx, locationId: string): Promise<Record<string, unknown>> {
-  const [row] = await tx
-    .select({ config: ruleConfigs.config })
-    .from(ruleConfigs)
-    .where(eq(ruleConfigs.locationId, locationId))
-    .orderBy(desc(ruleConfigs.version))
-    .limit(1);
-  return (row?.config as Record<string, unknown>) ?? {};
 }
 
 function localDate(now: Date, timezone: string): string {
@@ -225,8 +217,8 @@ export async function checkIn(
       return { ok: false, reason: 'illegal_transition', from, to: 'checked_in' };
     }
 
-    const rules = await activeRuleConfig(tx, tech.locationId);
-    const eligibility = (rules.eligibility ?? {}) as { require_on_site?: boolean };
+    const rules = await activeRules(tx, tech.locationId);
+    const eligibility = rules.eligibility;
     const hasFence = tech.geofenceLat != null && tech.geofenceLng != null && !!tech.geofenceRadiusM;
     // The raw report is kept with the result so a dispute can see what the phone
     // said (threat model T5). passed is null when no check could be made.
@@ -367,6 +359,17 @@ export async function transition(
       return { ok: false, reason: 'illegal_transition', from, to: input.to };
     }
     const shiftId = status?.shiftId ?? null;
+
+    // No auto-pass (design doc): a called technician answers before stepping
+    // away. Break, out and check-out wait for the call.
+    if (input.to === 'break' || input.to === 'out' || input.to === 'off') {
+      const [open] = await tx
+        .select({ id: turnCalls.id })
+        .from(turnCalls)
+        .where(and(eq(turnCalls.technicianId, tech.id), isNull(turnCalls.respondedAt)))
+        .limit(1);
+      if (open) return { ok: false, reason: 'open_call' };
+    }
 
     if (input.to === 'available' && from === 'checked_in' && shiftId) {
       // The readiness checklist: the timestamp is kept on the shift.

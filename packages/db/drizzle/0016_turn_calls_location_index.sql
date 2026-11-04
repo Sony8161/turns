@@ -1,0 +1,1 @@
+CREATE INDEX "turn_calls_location_responded" ON "turn_calls" USING btree ("location_id","responded_at");

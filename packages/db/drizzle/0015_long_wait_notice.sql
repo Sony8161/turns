@@ -1,0 +1,1 @@
+ALTER TABLE "locations" ADD COLUMN "long_wait_notice" boolean DEFAULT false NOT NULL;

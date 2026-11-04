@@ -1,29 +1,30 @@
 import { and, eq, isNull } from 'drizzle-orm';
 import { serviceCategories, services, turnCalls } from '@turn/db';
-import { waitingVisits } from '@turn/db/engine';
+import { floorAttention, todayCounts, waitingVisits } from '@turn/db/engine';
 import { locationStatus } from '@turn/db/status';
 import { redirect } from 'next/navigation';
+import { AdminNav } from '@/components/AdminNav';
 import { AutoRefresh } from '@/components/AutoRefresh';
 import { Board, secondsSince, type BoardRow } from '@/components/Board';
 import { Button } from '@/components/ui';
 import { fill } from '@/i18n/dictionary';
 import { LanguageToggle } from '@/i18n/LanguageToggle';
 import { getDictionary } from '@/i18n/lang';
-import { requireActor } from '@/lib/auth';
+import { membershipWith, requireActor } from '@/lib/auth';
 import { db } from '@/lib/db';
 import { can } from '@/lib/permissions';
 import { signOut } from '../login/actions';
 import { Desk } from './Desk';
 
-// Admin home: the live board in queue order, the front desk (walk-ins and
-// calls), and today's counts as a sentence.
+// Admin home: the live board in queue order, what needs attention, the front
+// desk (walk-ins and calls), and today's counts as a sentence.
 export default async function AdminPage() {
   const [{ lang, t }, actor] = await Promise.all([getDictionary(), requireActor()]);
   // Technicians see their own position on /me, never the whole board (roles table).
-  const membership = actor.memberships.find((m) => can(m.role, 'view_board'));
+  const membership = membershipWith(actor, 'view_board');
   if (!membership && actor.memberships.some((m) => m.role === 'technician')) redirect('/me');
 
-  const [rows, menu, waiting] = membership
+  const [rows, menu, waiting, counts, attention] = membership
     ? await Promise.all([
         boardRows(membership.locationId),
         db()
@@ -33,8 +34,10 @@ export default async function AdminPage() {
           .where(and(eq(services.locationId, membership.locationId), isNull(services.archivedAt)))
           .orderBy(serviceCategories.name, services.name),
         waitingVisits(db(), membership.locationId),
+        todayCounts(db(), membership.locationId),
+        floorAttention(db(), membership.locationId),
       ])
-    : [[], [], []];
+    : [[], [], [], { visits: 0, denies: 0, overrides: 0 }, null];
 
   return (
     <main className="mx-auto flex w-full max-w-5xl flex-1 flex-col gap-8 px-4 py-6 sm:px-8">
@@ -58,6 +61,12 @@ export default async function AdminPage() {
 
       {membership ? (
         <>
+          <AdminNav
+            t={t.nav}
+            current="board"
+            canStaff={can(membership.role, 'invite_staff')}
+            canRules={can(membership.role, 'manage_rules')}
+          />
           <section className="flex flex-col gap-4">
             <h1 className="text-heading font-semibold">
               {fill(t.admin.locationRole, {
@@ -66,11 +75,9 @@ export default async function AdminPage() {
               })}
             </h1>
             <Board rows={rows} t={t} compact />
-            <p className="text-slate/80">
-              {fill(t.admin.today, { visits: 0, denies: 0, overrides: 0 })}
-            </p>
+            <p className="text-slate/80">{fill(t.admin.today, counts)}</p>
           </section>
-          {can(membership.role, 'enter_walkins') ? (
+          {can(membership.role, 'enter_walkins') && attention ? (
             <Desk
               services={menu}
               waiting={waiting.map((v) => ({
@@ -84,6 +91,18 @@ export default async function AdminPage() {
                 note: v.note,
               }))}
               technicians={rows.map((r) => ({ id: r.id, name: r.name }))}
+              attention={{
+                unansweredCalls: attention.unansweredCalls.map((c) => ({
+                  callId: c.callId,
+                  technicianName: c.technicianName,
+                  waitedMin: c.waitedMin,
+                })),
+                unansweredCallMin: attention.unansweredCallMin,
+                estimatedWaitMin: attention.estimatedWaitMin,
+                longWait: attention.longWait,
+                longWaitMin: attention.longWaitMin,
+                noticeEnabled: attention.noticeEnabled,
+              }}
               t={t.desk}
             />
           ) : null}

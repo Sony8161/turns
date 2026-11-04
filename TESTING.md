@@ -184,9 +184,10 @@ Supabase Studio: http://127.0.0.1:54323.
 npm test
 ```
 
-Expect 80 database tests and 49 web tests to pass. They reset the local database
+Expect 121 database tests and 92 web tests to pass. They reset the local database
 before each test file and leave the last file's data behind, so run
-`npx supabase db reset` and then step 6 afterwards if you want clean seed data.
+`npx supabase db reset` and then step 6 (or `npm run up`) afterwards if you want
+clean seed data.
 
 ## 8b. A technician's day (Part 3)
 
@@ -224,6 +225,53 @@ set `geofence_lat`, `geofence_lng` and `geofence_radius_m` on the location in
 Studio; check-in from a browser that shares a position outside it is refused with
 the distance.
 
+## 8d. Rules, staff and attention (Part 5)
+
+**Rules** (owner only). Sign in as Phu, open **Rules** in the top bar
+(http://localhost:3000/admin/rules).
+
+1. Every number the engine uses is a field: points, points per service category,
+   penalties, late tiers, queue, who can be called, requested technician, and the
+   attention timers (unanswered call after 15 min, long wait at 30 min).
+2. Type `one` into **Deny penalty** and press **Save as version 2**: the page says
+   "Fix the fields marked" and the field says "Enter a number". Nothing was saved.
+3. Put `1.5` back, write a note, **Save as version 2**: "Saved as version 2" and
+   the history lists version 2 with your name and the note. Version 1 is kept.
+4. **Preview on today's board** re-sorts the technicians on shift under the typed
+   rules without saving (nobody on shift = nothing to re-sort).
+5. The two values Phu has not decided show as "Not set yet (ask Phu)" (requested
+   visit) and a blank start-points box on the 60-minute late tier.
+6. Sign in as Vy (manager): the Rules page says only the owner changes rules.
+7. Studio → `rule_configs`: try to edit or delete a row in the SQL editor:
+   "rule_configs is append-only: save a new version".
+
+**Staff** (owner or manager). Open **Staff** (http://localhost:3000/admin/staff).
+
+1. **Make a code** for a technician: the code shows once with its expiry. It works
+   on /join like the codes in `dev-codes.txt`.
+2. On Mai's row pick **receptionist**, write a reason, **Change role**: her role
+   line changes; Studio → `technicians` shows her row inactive, `audit_log` has
+   `role_changed` with the reason. Change her back to technician: the same row
+   comes back active.
+3. **Archive** Hạnh with a reason: she drops to the bottom as "archived" with a
+   **Restore** button. Nothing was deleted. Restore her.
+4. A manager cannot pick owner anywhere; nobody can change their own row; a
+   technician who is checked in cannot be moved or archived ("Ask them to check
+   out first").
+
+**Attention** (on the board, for owner, manager and receptionist).
+
+1. With Thảo ready and a Basic manicure waiting, the **Needs attention** block
+   shows the estimated wait for a new customer and flags a long wait at the rule's
+   30 minutes. **Show the long-wait notice to customers** switches the notice the
+   kiosk will show (Part 9); the switch is audited.
+2. Call Thảo and do not answer. On her phone the only buttons are **Accept** and
+   **Deny**: Break, Out and Check out wait until the call is answered.
+3. After 15 minutes (or, to see it now, in Studio run
+   `update turn_calls set called_at = now() - interval '16 minutes' where responded_at is null`)
+   the block says "Thảo has not answered for 16 min" with **Clear the call**. Clear
+   it: no penalty, the visit waits again, **Call next** is back.
+
 ## 9. If something is off
 
 - **"Something went wrong on our side"** on sign-in: the local stack is probably
@@ -239,5 +287,6 @@ the distance.
 
 ## What is not here yet
 
-Check-in and status (Part 3), the rule engine, walk-in entry, push to a phone and
-the live board (Part 4), the rule builder (Part 5), and everything after.
+Skills and restrictions, client attributes at the desk, break and out timers,
+manager override and excuse screens (Part 6), appointments (Part 7), the audit log
+viewer (Part 8), the customer kiosk (Part 9), push to the phone and the Expo app.

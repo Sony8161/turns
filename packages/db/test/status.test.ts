@@ -168,7 +168,13 @@ describe('check-in geofence (server-side, from the location row and rule_config)
   });
 
   it('ignores the fence when the rules do not require being on site', async () => {
-    await sql`update rule_configs set config = jsonb_set(config, '{eligibility,require_on_site}', 'false') where location_id = ${LOC}`;
+    // Rule configs are append-only (Part 5): a change is a new version.
+    const newVersion = (requireOnSite: boolean) =>
+      sql`insert into rule_configs (organization_id, location_id, version, config)
+          select organization_id, location_id, max(version) + 1,
+                 jsonb_set((array_agg(config order by version desc))[1], '{eligibility,require_on_site}', to_jsonb(${requireOnSite}::boolean))
+          from rule_configs where location_id = ${LOC} group by organization_id, location_id`;
+    await newVersion(false);
     try {
       await driveTo(techId, techUser, 'off');
       const r = await checkIn(db, {
@@ -176,9 +182,9 @@ describe('check-in geofence (server-side, from the location row and rule_config)
         actor: { userId: techUser },
         position: OUTSIDE,
       });
-      expect(r.ok).toBe(true);
+      expect(r).toMatchObject({ ok: true });
     } finally {
-      await sql`update rule_configs set config = jsonb_set(config, '{eligibility,require_on_site}', 'true') where location_id = ${LOC}`;
+      await newVersion(true);
     }
   });
 });

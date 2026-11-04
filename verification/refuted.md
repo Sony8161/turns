@@ -3,6 +3,49 @@
 Claims from reviewers that were checked and found not to be bugs. Kept so they
 are not re-raised.
 
+## 2026-11-04, Part 5 (REQ-ecc2ba80)
+
+- **Security reviewer: "`rule_configs.created_by ... on delete restrict` blocks
+  deleting a login account for ever, because the row can never be edited."**
+  Declined, consistent with the existing design: accounts are never deleted,
+  only archived (schema comment on `technicians.user_id`, grc scoping 6.3), and
+  `technicians.user_id`, `audit_log.actor_user_id` and `invite_codes.created_by`
+  already restrict the same deletion. Erasure blanks contact fields on the
+  profile; the ids stay as history. Revisit with the attorney (Part 10) if
+  erasure must remove the account row itself.
+- **Security reviewer: "the table owner can still disable the append-only
+  triggers."** True and already accepted for `audit_log` (refuted list, Part 3,
+  F7b): the cloud setup gives the app a non-owner database role (Part 10).
+- **Database reviewer: "a location with no valid rule_config now throws instead
+  of running on `{}`."** By design (threat model T18): the engine runs the newest
+  version that validates; if none does, that is a deployment fault to surface,
+  not to paper over with a config that has no numbers. Every path that creates a
+  location (`seed.ts`, `setup.ts`) writes version 1; the migration's data step
+  now guards non-object configs.
+- **Database reviewer: "the append-only triggers and the RESTRICT keys mean a
+  location, salon or account can never be deleted."** Consistent with the
+  design: nothing is deleted, only archived (Duong, 2026-11-04); the same
+  RESTRICT keys already exist on technicians, shifts, ledger and audit rows.
+- **Database reviewer: "`previewBoard` does not limit shifts to today."** The
+  board itself reads the same shift (`technician_status.shift_id`); a stale
+  shift is a Part 6 item (daily reset, out and break timers), not a preview bug.
+- **Database reviewer: "`locations.timezone` is not validated."** Only the seed
+  and setup write it today (a fixed default); a location settings screen (Part
+  7, second location) validates it when it exists.
+- **TypeScript reviewer: "the builder offers settings the engine never reads"
+  (late tiers, out-over, auto-pass, skills, restrictions, appointment buffer,
+  requested-technician bypass).** True today and said on the screen: those
+  sections carry "the engine starts reading these in Part 6". The values are
+  stored now so Parts 6 and 7 read a complete config.
+- **TypeScript reviewer: "`todayCounts` counts `deny_excused` and
+  `points_adjusted`, which nothing writes yet."** Those are the Part 6 excuse
+  and adjust actions; counting them now costs nothing and avoids a second edit.
+- **TypeScript reviewer: "a user who is receptionist at A and manager at B sees
+  A's board but the staff page acts on B."** The known location-choice gap
+  (STATE: carry into Part 3, T10); each action still scopes to one membership's
+  location, so nothing crosses a location. An explicit location switch is due
+  with the second location (Part 7).
+
 ## 2026-11-04, roles set by Duong (after the sweep)
 
 - **Sweep F3 "a technician can leave in_service"**: the fix was tightened too far.

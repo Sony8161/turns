@@ -69,6 +69,9 @@ export const locations = pgTable(
     closeTime: time('close_time'),
     // Customer phone and name are anonymised after this many days (grc 6.2).
     clientRetentionDays: integer('client_retention_days').notNull().default(365),
+    // Part 5 (Duong, 2026-11-04): the receptionist or manager switches on a
+    // long-wait notice for customers (the kiosk shows it, Part 9).
+    longWaitNotice: boolean('long_wait_notice').notNull().default(false),
     createdAt: createdAt(),
     updatedAt: updatedAt(),
   },
@@ -215,6 +218,10 @@ export const ruleConfigs = pgTable(
     version: integer('version').notNull(),
     config: jsonb('config').notNull(),
     activeFrom: timestamp('active_from', { withTimezone: true }).notNull().defaultNow(),
+    // Part 5: who saved this version and why. A row is never edited or removed
+    // (trigger in drizzle/0014); the latest valid version is the active one.
+    createdBy: uuid('created_by').references(() => profiles.id, { onDelete: 'restrict' }),
+    note: text('note'),
     createdAt: createdAt(),
   },
   (t) => [
@@ -460,6 +467,8 @@ export const turnCalls = pgTable(
     locationFk(t, 'turn_calls_location_fk'),
     index('turn_calls_visit').on(t.visitId),
     index('turn_calls_technician').on(t.technicianId),
+    // Open calls at a location (attention strip) and today's answered calls.
+    index('turn_calls_location_responded').on(t.locationId, t.respondedAt),
   ],
 ).enableRLS();
 

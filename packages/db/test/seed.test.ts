@@ -52,6 +52,6 @@ describe('seedHeavenly', () => {
 
   it('keeps the two unconfirmed rule values as null, not a guess', () => {
     expect(HEAVENLY_RULE_CONFIG_V1.requests.requested_counts_points).toBeNull();
-    expect(HEAVENLY_RULE_CONFIG_V1.penalties.late_tiers[2].start_points).toBeNull();
+    expect(HEAVENLY_RULE_CONFIG_V1.penalties.late_tiers[2]?.start_points).toBeNull();
   });
 });

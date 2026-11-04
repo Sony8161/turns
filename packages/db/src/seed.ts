@@ -7,6 +7,7 @@
 // No users are seeded: people join through invite codes (Part 2).
 // Usage: DATABASE_URL=... npm run db:seed
 import { eq } from 'drizzle-orm';
+import type { RuleConfig } from './rules';
 import { locations, organizations, ruleConfigs, serviceCategories, services } from './schema';
 import { createDb } from './server';
 
@@ -18,8 +19,9 @@ export const HEAVENLY = {
   timezone: 'America/New_York',
 } as const;
 
-// Verbatim from the design doc. `null` = still to confirm with Phu.
-export const HEAVENLY_RULE_CONFIG_V1 = {
+// Verbatim from the design doc. `null` = still to confirm with Phu. Typed as
+// the validated shape so a drift between seed and validator fails to compile.
+export const HEAVENLY_RULE_CONFIG_V1: RuleConfig = {
   points: {
     default_service: 1.0,
     fill_or_full_set: 0.5,
@@ -54,7 +56,15 @@ export const HEAVENLY_RULE_CONFIG_V1 = {
     requested_tech_bypasses_queue: true,
     requested_counts_points: null,
   },
-} as const;
+  // Duong, 2026-11-04: an unanswered call comes back to the desk after 15
+  // minutes; 30 minutes or more is a long wait. The owner edits these in the
+  // rule builder like everything else.
+  attention: {
+    unanswered_call_min: 15,
+    long_wait_min: 30,
+    default_service_min: 45,
+  },
+};
 
 // Categories named in the design doc. Points per the doc: standard 1, fill or
 // full set 0.5. The engine reads rule_config for the numbers; base_points here

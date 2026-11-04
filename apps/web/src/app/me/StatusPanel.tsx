@@ -30,7 +30,16 @@ const MOVES: Record<State, { intent: string; tone: 'primary' | 'quiet' | 'danger
   ],
 };
 
-export function StatusPanel({ status, t }: { status: State; t: Dictionary['me'] }) {
+export function StatusPanel({
+  status,
+  called = false,
+  t,
+}: {
+  status: State;
+  /** An open call: the only moves are Accept and Deny (no auto-pass). */
+  called?: boolean;
+  t: Dictionary['me'];
+}) {
   const [state, action, pending] = useActionState<MeState, FormData>(moveStatus, {});
   const [pos, setPos] = useState<{ lat: number; lng: number; accuracy: number } | null>(null);
   const asked = useRef(false);
@@ -63,6 +72,8 @@ export function StatusPanel({ status, t }: { status: State; t: Dictionary['me'] 
         : state.error
           ? t.errors[state.error]
           : null;
+
+  if (called) return <p className="text-slate/80">{t.errors.open_call}</p>;
 
   return (
     <form action={action} className="flex flex-col gap-4">

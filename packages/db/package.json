@@ -11,7 +11,10 @@
     "./setup": "./src/setup.ts",
     "./status": "./src/status.ts",
     "./engine": "./src/engine.ts",
-    "./rate-limit": "./src/rate-limit.ts"
+    "./rate-limit": "./src/rate-limit.ts",
+    "./rules": "./src/rules.ts",
+    "./staff": "./src/staff.ts",
+    "./seed": "./src/seed.ts"
   },
   "scripts": {
     "typecheck": "tsc --noEmit",

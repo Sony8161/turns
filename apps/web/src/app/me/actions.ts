@@ -18,7 +18,8 @@ export type MeState = {
     | 'not_technician'
     | 'not_your_call'
     | 'already_answered'
-    | 'no_visit_in_service';
+    | 'no_visit_in_service'
+    | 'open_call';
   distanceM?: number;
   radiusM?: number;
   accuracyM?: number;

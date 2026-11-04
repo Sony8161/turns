@@ -1,6 +1,5 @@
-import { desc, eq } from 'drizzle-orm';
-import { ruleConfigs } from '@turn/db';
 import { openCallFor } from '@turn/db/engine';
+import { activeRules } from '@turn/db/rules';
 import { locationStatus } from '@turn/db/status';
 import Link from 'next/link';
 import { AutoRefresh } from '@/components/AutoRefresh';
@@ -25,18 +24,11 @@ export default async function MePage() {
     ? await Promise.all([
         locationStatus(db(), tech.locationId),
         openCallFor(db(), tech.id),
-        db()
-          .select({ config: ruleConfigs.config })
-          .from(ruleConfigs)
-          .where(eq(ruleConfigs.locationId, tech.locationId))
-          .orderBy(desc(ruleConfigs.version))
-          .limit(1)
-          .then((r) => r[0]?.config as { penalties?: { deny?: number } } | undefined),
+        activeRules(db(), tech.locationId),
       ])
-    : [[], null, undefined];
+    : [[], null, null];
   const me = tech ? board.find((r) => r.technicianId === tech.id) : undefined;
   const status = me?.status ?? 'off';
-  const denyPenalty = rules?.penalties?.deny ?? 1;
 
   return (
     <main className="mx-auto flex w-full max-w-md flex-1 flex-col gap-8 px-4 py-6">
@@ -55,7 +47,7 @@ export default async function MePage() {
         </div>
       </header>
 
-      {!tech ? (
+      {!tech || !rules ? (
         <p className="text-lead">{t.me.notTechnician}</p>
       ) : (
         <>
@@ -75,11 +67,11 @@ export default async function MePage() {
               callId={call.callId}
               services={call.services}
               waitedSeconds={secondsSince(call.calledAt)}
-              denyPenalty={denyPenalty}
+              denyPenalty={rules.penalties.deny}
               t={t.me}
             />
           ) : null}
-          <StatusPanel status={status} t={t.me} />
+          <StatusPanel status={status} called={!!call} t={t.me} />
         </>
       )}
     </main>

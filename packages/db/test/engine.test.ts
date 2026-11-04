@@ -10,8 +10,8 @@ import {
   openCallFor,
   reassignVisit,
   respondToCall,
-  visitPoints,
 } from '../src/engine';
+import { validateRuleConfig, visitPointsUnder } from '../src/rules';
 import { HEAVENLY, HEAVENLY_RULE_CONFIG_V1, seedHeavenly } from '../src/seed';
 import { createDb, type Db } from '../src/server';
 import { checkIn, shiftTotal, transition } from '../src/status';
@@ -75,23 +75,47 @@ afterAll(async () => {
   await sql.end();
 });
 
-describe('visitPoints (pure, from rule_config)', () => {
+describe('visitPointsUnder (pure, from rule_config)', () => {
   const rules = HEAVENLY_RULE_CONFIG_V1;
   it('standard 1, fill or full set ½, combined capped at 1, appointment −½', () => {
-    expect(visitPoints(rules, [{ isFillOrFullSet: false }], 'walk_in')).toBe(1);
-    expect(visitPoints(rules, [{ isFillOrFullSet: true }], 'walk_in')).toBe(0.5);
+    expect(visitPointsUnder(rules, [{ isFillOrFullSet: false, categoryId: '' }], 'walk_in')).toBe(
+      1,
+    );
+    expect(visitPointsUnder(rules, [{ isFillOrFullSet: true, categoryId: '' }], 'walk_in')).toBe(
+      0.5,
+    );
     expect(
-      visitPoints(rules, [{ isFillOrFullSet: false }, { isFillOrFullSet: false }], 'walk_in'),
+      visitPointsUnder(
+        rules,
+        [
+          { isFillOrFullSet: false, categoryId: '' },
+          { isFillOrFullSet: false, categoryId: '' },
+        ],
+        'walk_in',
+      ),
     ).toBe(2);
     expect(
-      visitPoints(rules, [{ isFillOrFullSet: true }, { isFillOrFullSet: false }], 'walk_in'),
+      visitPointsUnder(
+        rules,
+        [
+          { isFillOrFullSet: true, categoryId: '' },
+          { isFillOrFullSet: false, categoryId: '' },
+        ],
+        'walk_in',
+      ),
     ).toBe(1);
-    expect(visitPoints(rules, [{ isFillOrFullSet: true }], 'appointment')).toBe(0);
+    expect(
+      visitPointsUnder(rules, [{ isFillOrFullSet: true, categoryId: '' }], 'appointment'),
+    ).toBe(0);
   });
-  it('refuses a rule_config with a missing number', () => {
-    expect(() => visitPoints({}, [{ isFillOrFullSet: false }], 'walk_in')).toThrow(
-      /default_service/,
-    );
+  it('a rule_config with a missing number never reaches the engine', () => {
+    const { points, ...rest } = HEAVENLY_RULE_CONFIG_V1;
+    const { default_service: _dropped, ...fewer } = points;
+    const checked = validateRuleConfig({ ...rest, points: fewer });
+    expect(checked.ok).toBe(false);
+    if (!checked.ok) {
+      expect(checked.errors).toContainEqual({ path: 'points.default_service', problem: 'missing' });
+    }
   });
 });
 
@@ -105,7 +129,7 @@ describe('the call flow', () => {
     });
     expect(v.ok).toBe(true);
     if (!v.ok) return;
-    const c = await callNext(db, { visitId: v.visitId, actor: desk });
+    const c = await callNext(db, { visitId: v.visitId, actor: desk, locationId: LOC });
     expect(c).toMatchObject({ ok: true, technicianId: a.id });
     const call = await openCallFor(db, a.id);
     expect(call?.services).toEqual(['Basic manicure']);
@@ -127,7 +151,7 @@ describe('the call flow', () => {
     });
     expect(r.ok).toBe(true);
     expect(await shiftTotal(db, await shiftOf(a))).toBe(1); // deny penalty from rules
-    const again = await callNext(db, { visitId: call!.visitId, actor: desk });
+    const again = await callNext(db, { visitId: call!.visitId, actor: desk, locationId: LOC });
     expect(again).toMatchObject({ ok: true, technicianId: b.id });
   });
 
@@ -166,7 +190,7 @@ describe('the call flow', () => {
       actor: desk,
     });
     if (!v.ok) throw new Error(v.reason);
-    const c = await callNext(db, { visitId: v.visitId, actor: desk });
+    const c = await callNext(db, { visitId: v.visitId, actor: desk, locationId: LOC });
     if (!c.ok) throw new Error(c.reason);
     const other = c.technicianId === a.id ? b.id : a.id;
     const wrong = await respondToCall(db, {
@@ -202,8 +226,8 @@ describe('the call flow', () => {
     });
     if (!v1.ok || !v2.ok) throw new Error('walk-in failed');
     const [r1, r2] = await Promise.all([
-      callNext(db, { visitId: v1.visitId, actor: desk }),
-      callNext(db, { visitId: v2.visitId, actor: desk }),
+      callNext(db, { visitId: v1.visitId, actor: desk, locationId: LOC }),
+      callNext(db, { visitId: v2.visitId, actor: desk, locationId: LOC }),
     ]);
     const wins = [r1, r2].filter((r) => r.ok).length;
     expect(wins).toBe(1);

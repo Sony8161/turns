@@ -5,6 +5,7 @@ import { locations, memberships, profiles } from '@turn/db';
 import type { Role } from '@turn/db/invites';
 import { redirect } from 'next/navigation';
 import { db } from './db';
+import { can, type Capability } from './permissions';
 import { getAuthUser } from './supabase/server';
 
 export type Membership = {
@@ -49,6 +50,11 @@ export async function getActor(): Promise<Actor | null> {
     displayName: profile?.displayName ?? user.email ?? user.phone ?? '',
     memberships: rows,
   };
+}
+
+/** The first membership that may do this; its location scopes the action (T10). */
+export function membershipWith(actor: Actor, capability: Capability): Membership | null {
+  return actor.memberships.find((m) => can(m.role, capability)) ?? null;
 }
 
 /** Redirects to /login when signed out. Membership checks are separate. */
