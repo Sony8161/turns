@@ -111,7 +111,7 @@ const en = {
       waitedLine: 'waiting for your answer, {seconds} s',
       accept: 'Accept',
       deny: 'Deny',
-      penaltyNote: 'Denying adds {points} point to your total today. Pick the reason:',
+      penaltyNote: 'Denying adds {points} to your points today. Pick the reason:',
       back: 'Back',
       reasons: {
         not_my_service: 'Not my service',

@@ -11,9 +11,10 @@ import {
   profiles,
   ruleConfigs,
   serviceCategories,
+  services,
   setupCodes,
 } from './schema';
-import { HEAVENLY_CATEGORIES, HEAVENLY_RULE_CONFIG_V1 } from './seed';
+import { HEAVENLY_CATEGORIES, HEAVENLY_RULE_CONFIG_V1, HEAVENLY_SERVICES } from './seed';
 import type { Db } from './server';
 import { writeAudit } from './status';
 
@@ -85,14 +86,27 @@ export async function redeemSetupCode(
       locationId: loc.id,
       role: 'owner',
     });
-    // Same starting rules as Heavenly; the owner edits them in the rule builder.
-    await tx.insert(serviceCategories).values(
-      HEAVENLY_CATEGORIES.map((c) => ({
+    // Same starting rules and menu as Heavenly; the owner edits them later.
+    const cats = await tx
+      .insert(serviceCategories)
+      .values(
+        HEAVENLY_CATEGORIES.map((c) => ({
+          organizationId: org.id,
+          locationId: loc.id,
+          name: c.name,
+          basePoints: c.basePoints,
+          isFillOrFullSet: c.isFillOrFullSet,
+        })),
+      )
+      .returning({ id: serviceCategories.id, name: serviceCategories.name });
+    const categoryByName = new Map(cats.map((c) => [c.name, c.id]));
+    await tx.insert(services).values(
+      HEAVENLY_SERVICES.map((s) => ({
         organizationId: org.id,
         locationId: loc.id,
-        name: c.name,
-        basePoints: c.basePoints,
-        isFillOrFullSet: c.isFillOrFullSet,
+        categoryId: categoryByName.get(s.category)!,
+        name: s.name,
+        defaultDurationMin: s.minutes,
       })),
     );
     await tx.insert(ruleConfigs).values({

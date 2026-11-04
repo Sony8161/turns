@@ -2,6 +2,17 @@
 
 One version per delivered part. Tags point at the commits.
 
+## v0.5.1, 2026-11-04: QA pass fixes
+
+- A salon made from a setup code gets the starting menu (eight services), not
+  only the four categories, so its desk can take a walk-in on day one.
+- Phone wording: "Denying adds 2 to your points today" (no stray singular).
+- Full QA pass by Claude in the browser: every role against every screen it must
+  not reach, sign-in failure cases, join by invite code, new salon by setup code
+  with email sign-in, rules preview/save/stale guard, staff invite/role/archive/
+  restore, the called technician's screen, unanswered-call flag and clear,
+  Vietnamese on every new screen. See the session report.
+
 ## v0.5.0, 2026-11-04: Part 5, rule builder, staff screen, attention
 
 - Rule builder at `/admin/rules` (owner only): every value in `rule_config` as a
