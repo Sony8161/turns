@@ -42,6 +42,13 @@ export function formatPoints(points: number, hadAppointmentLast = false): string
   return half ? `${whole}½` : whole;
 }
 
+/** Whole seconds since a timestamp, never negative. Kept out of component
+ *  bodies so the render stays pure. */
+export function secondsSince(at: Date | null | undefined): number {
+  if (!at) return 0;
+  return Math.max(0, Math.floor((Date.now() - at.getTime()) / 1000));
+}
+
 export function formatClock(seconds: number): string {
   const safe = Math.max(0, Math.floor(seconds));
   const m = Math.floor(safe / 60);

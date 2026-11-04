@@ -1,0 +1,1 @@
+ALTER TABLE "services" ADD CONSTRAINT "services_location_name" UNIQUE("location_id","name");

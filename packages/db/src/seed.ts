@@ -6,7 +6,8 @@
 // seed is safe to run twice, concurrently, and after a rename.
 // No users are seeded: people join through invite codes (Part 2).
 // Usage: DATABASE_URL=... npm run db:seed
-import { locations, organizations, ruleConfigs, serviceCategories } from './schema';
+import { eq } from 'drizzle-orm';
+import { locations, organizations, ruleConfigs, serviceCategories, services } from './schema';
 import { createDb } from './server';
 
 export const HEAVENLY = {
@@ -65,6 +66,19 @@ export const HEAVENLY_CATEGORIES = [
   { name: 'full_set', basePoints: '0.5', isFillOrFullSet: true },
 ] as const;
 
+// A starting menu so the front desk has something to pick. The owner edits it
+// later; archived services stay for history.
+export const HEAVENLY_SERVICES = [
+  { category: 'manicure', name: 'Basic manicure', minutes: 30 },
+  { category: 'manicure', name: 'Gel manicure', minutes: 45 },
+  { category: 'pedicure', name: 'Basic pedicure', minutes: 45 },
+  { category: 'pedicure', name: 'Spa pedicure', minutes: 60 },
+  { category: 'fill', name: 'Acrylic fill', minutes: 45 },
+  { category: 'fill', name: 'Gel fill', minutes: 45 },
+  { category: 'full_set', name: 'Acrylic full set', minutes: 75 },
+  { category: 'full_set', name: 'Gel-X full set', minutes: 75 },
+] as const;
+
 export async function seedHeavenly(
   url: string,
 ): Promise<{ organizationId: string; locationId: string }> {
@@ -100,6 +114,23 @@ export async function seedHeavenly(
       await tx
         .insert(ruleConfigs)
         .values({ organizationId, locationId, version: 1, config: HEAVENLY_RULE_CONFIG_V1 })
+        .onConflictDoNothing();
+      const cats = await tx
+        .select({ id: serviceCategories.id, name: serviceCategories.name })
+        .from(serviceCategories)
+        .where(eq(serviceCategories.locationId, locationId));
+      const byName = new Map(cats.map((c) => [c.name, c.id]));
+      await tx
+        .insert(services)
+        .values(
+          HEAVENLY_SERVICES.map((s) => ({
+            organizationId,
+            locationId,
+            categoryId: byName.get(s.category)!,
+            name: s.name,
+            defaultDurationMin: s.minutes,
+          })),
+        )
         .onConflictDoNothing();
     });
     return { organizationId, locationId };

@@ -193,6 +193,7 @@ export const services = pgTable(
   },
   (t) => [
     locationFk(t, 'services_location_fk'),
+    unique('services_location_name').on(t.locationId, t.name),
     foreignKey({
       columns: [t.categoryId, t.organizationId],
       foreignColumns: [serviceCategories.id, serviceCategories.organizationId],

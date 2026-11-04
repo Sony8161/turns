@@ -55,18 +55,13 @@ beforeAll(async () => {
   await resetAndMigrate();
   await seedHeavenly(TEST_URL);
   db = createDb(TEST_URL);
-  const [cat] = await sql<
-    { id: string }[]
-  >`select id from service_categories where location_id = ${LOC} and name = 'manicure'`;
-  const [fs] = await sql<
-    { id: string }[]
-  >`select id from service_categories where location_id = ${LOC} and name = 'full_set'`;
+  // The seed's menu: a standard service and a full set.
   const [m] = await sql<
     { id: string }[]
-  >`insert into services (organization_id, location_id, category_id, name) values (${ORG}, ${LOC}, ${cat!.id}, 'Basic manicure') returning id`;
+  >`select id from services where location_id = ${LOC} and name = 'Basic manicure'`;
   const [f] = await sql<
     { id: string }[]
-  >`insert into services (organization_id, location_id, category_id, name) values (${ORG}, ${LOC}, ${fs!.id}, 'Acrylic full set') returning id`;
+  >`select id from services where location_id = ${LOC} and name = 'Acrylic full set'`;
   manicure = m!.id;
   fullSet = f!.id;
   a = await newTech('Thảo');

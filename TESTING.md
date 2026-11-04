@@ -194,6 +194,24 @@ before each test file and leave the last file's data behind, so run
 5. Studio → `audit_log`: one row per move with before, after and who. Try to
    edit or delete one in the SQL editor: "audit_log is append-only".
 
+## 8c. A walk-in from desk to finish (Part 4)
+
+Two browsers (or one normal window and one private window): the desk and a phone.
+
+1. **Phone**: sign in as a technician (Thảo, 813 555 0103), open /me, tap
+   **I'm here** then **I'm ready**.
+2. **Desk**: sign in as the receptionist (Hạnh, 813 555 0102) or the owner, open
+   /admin. Under **New walk-in** tick a service, **Add to the queue**, then
+   **Call next**. The board shows Thảo as "called" in pink with a timer.
+3. **Phone**: within 5 seconds the call appears: the services, **Accept** or
+   **Deny**. Deny first shows "Denying adds 1 point" and the reasons; pick one.
+   Your points go to 1. Back on the desk, **Call next** again calls the next
+   available technician (or Thảo again if nobody else is on).
+4. Accept: you are "in service". Tap **Finished**: the visit's points post
+   (1 for a manicure, ½ for a full set) and you are available again.
+5. Studio → `turn_calls` has the queue snapshot for each call; `audit_log` has
+   every step.
+
 Heavenly's seed has no geofence, so check-in needs no location. To try the fence,
 set `geofence_lat`, `geofence_lng` and `geofence_radius_m` on the location in
 Studio; check-in from a browser that shares a position outside it is refused with

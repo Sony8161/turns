@@ -1,6 +1,10 @@
+import { desc, eq } from 'drizzle-orm';
+import { ruleConfigs } from '@turn/db';
+import { openCallFor } from '@turn/db/engine';
 import { locationStatus } from '@turn/db/status';
 import Link from 'next/link';
-import { formatPoints } from '@/components/Board';
+import { AutoRefresh } from '@/components/AutoRefresh';
+import { formatPoints, secondsSince } from '@/components/Board';
 import { Button } from '@/components/ui';
 import { fill } from '@/i18n/dictionary';
 import { LanguageToggle } from '@/i18n/LanguageToggle';
@@ -9,21 +13,34 @@ import { requireActor } from '@/lib/auth';
 import { db } from '@/lib/db';
 import { technicianForUser } from '@/lib/technician';
 import { signOut } from '../login/actions';
+import { CallPanel } from './CallPanel';
 import { StatusPanel } from './StatusPanel';
 
-// The technician's own screen: status, today's points, and the moves allowed
-// from here. The web version of the phone app; the Expo app (Part 4) shows
-// the same thing.
+// The technician's own screen: status, today's points, the call if there is
+// one, and the moves allowed from here. The web version of the phone app.
 export default async function MePage() {
   const [{ lang, t }, actor] = await Promise.all([getDictionary(), requireActor()]);
   const tech = await technicianForUser(actor.userId);
-  const me = tech
-    ? (await locationStatus(db(), tech.locationId)).find((r) => r.technicianId === tech.id)
-    : undefined;
+  const [board, call, rules] = tech
+    ? await Promise.all([
+        locationStatus(db(), tech.locationId),
+        openCallFor(db(), tech.id),
+        db()
+          .select({ config: ruleConfigs.config })
+          .from(ruleConfigs)
+          .where(eq(ruleConfigs.locationId, tech.locationId))
+          .orderBy(desc(ruleConfigs.version))
+          .limit(1)
+          .then((r) => r[0]?.config as { penalties?: { deny?: number } } | undefined),
+      ])
+    : [[], null, undefined];
+  const me = tech ? board.find((r) => r.technicianId === tech.id) : undefined;
   const status = me?.status ?? 'off';
+  const denyPenalty = rules?.penalties?.deny ?? 1;
 
   return (
     <main className="mx-auto flex w-full max-w-md flex-1 flex-col gap-8 px-4 py-6">
+      <AutoRefresh seconds={5} />
       <header className="flex items-center justify-between">
         <Link href="/" className="text-lead font-semibold">
           {t.app.name}
@@ -53,6 +70,15 @@ export default async function MePage() {
             </p>
             <p className="text-slate/70">{t.me.pointsToday}</p>
           </section>
+          {call ? (
+            <CallPanel
+              callId={call.callId}
+              services={call.services}
+              waitedSeconds={secondsSince(call.calledAt)}
+              denyPenalty={denyPenalty}
+              t={t.me}
+            />
+          ) : null}
           <StatusPanel status={status} t={t.me} />
         </>
       )}
