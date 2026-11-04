@@ -1,0 +1,24 @@
+{
+  "name": "turn-system",
+  "private": true,
+  "version": "0.1.0",
+  "description": "Digital technician turn system for nail salons. Web (Next.js), mobile (Expo), shared db package.",
+  "workspaces": [
+    "packages/*",
+    "apps/*"
+  ],
+  "scripts": {
+    "typecheck": "npm run typecheck --workspaces --if-present",
+    "test": "npm run test --workspaces --if-present",
+    "format": "prettier --write .",
+    "format:check": "prettier --check .",
+    "secrets:scan": "node scripts/scan-public-env.mjs"
+  },
+  "devDependencies": {
+    "prettier": "3.9.10",
+    "typescript": "5.9.3"
+  },
+  "engines": {
+    "node": ">=22"
+  }
+}

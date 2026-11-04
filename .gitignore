@@ -1,0 +1,22 @@
+node_modules/
+dist/
+.next/
+.expo/
+coverage/
+
+# secrets: only .env.example is committed
+.env
+.env.*
+!.env.example
+
+# supabase local stack
+supabase/.branches/
+supabase/.temp/
+supabase/.env
+
+# os / editor
+.DS_Store
+Thumbs.db
+
+# scanner output (may name vulnerable paths)
+security/scans/
