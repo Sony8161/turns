@@ -468,9 +468,15 @@ Use two browser windows: a normal one signed in as staff, and a **private**
 3. **Drafts.** http://localhost:3000/terms and /privacy show the red "DRAFT,
    needs attorney review" box. Links at the bottom of the start page.
 4. **Scans.** `npm run secrets:scan`, then `npm run build -w web` and
-   `npm run bundle:scan`: both say "ok". The full report is
-   `docs/security/SEC-001-report.md`.
-5. **Screen reader (optional).** With VoiceOver on the iPad (or Narrator on
+   `npm run bundle:scan`: both say "ok". Then `npm run start -w web` and, in
+   a second window, `npm run pages:scan`: it fetches the public pages and says
+   "ok" (v0.10.1). The full report is `docs/security/SEC-001-report.md`.
+5. **Error reference (v0.10.1).** When an action fails for a reason nobody
+   planned, the screen shows "Something went wrong" with a line such as
+   "Reference: K7Q2MX", and the server window shows one line
+   `failed { where, ref, kind, code }` with the same reference and no names
+   or phones. `src/lib/failure.test.ts` checks the scrubbing.
+6. **Screen reader (optional).** With VoiceOver on the iPad (or Narrator on
    Windows), a wrong kiosk answer is read out, and each **Call next** says
    whose visit it is.
 

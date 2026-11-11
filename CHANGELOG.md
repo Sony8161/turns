@@ -2,6 +2,41 @@
 
 One version per delivered part. Tags point at the commits.
 
+## v0.10.1, 2026-11-11: Part 10 review fixes
+
+All eight findings from the independent review of v0.10.0.
+
+- **No contact details in logs (1).** Every server action now goes through
+  `guarded()` (login, setup, join, staff, rules, manage, appointments, kiosk
+  admin, location and language switches too). `instrumentation.ts` adds
+  `onRequestError` for page and route failures, and in production filters
+  `console.error` so a database error (whose message quotes the query's
+  parameters) is replaced by the scrubbed line.
+- **A useful log line and a reference (2).** `lib/failure.ts`: the error's
+  class, the Postgres code read from the cause, and a six-character
+  reference. The reference comes back in the action state and is shown under
+  "Something went wrong" in both languages.
+- **Session refresh on every page a signed-in browser opens (3).** The proxy
+  refreshes when a Supabase session cookie or the kiosk cookie is present, so
+  a rotated token is never thrown away. Paths now match whole sections:
+  `/meow` is a 404, not a sign-in redirect.
+- **Kiosk idle clock from the future counts as idle (4),** with a minute of
+  slack for a fast tablet clock.
+- **Kiosk unlock capped at 15 minutes after the PIN (5),** however often a
+  code is sent; a closed window is never re-opened. Migration 0023 adds
+  `kiosk_devices.unlock_opened_at`.
+- **Scanners (6).** The tracked-file scan reads every text file (it skipped
+  `.sql`, `.pem`, `.key`, `.txt`, `.svg`) and flags database URLs with a
+  password that are not the local stack's. The bundle scan adds
+  `apps/web/public`. New `npm run pages:scan` fetches the public pages from a
+  running production server and scans their HTML; CI runs it after the build.
+- **Wording (7).** Privacy: a kiosk phone is saved to the customer list when
+  the desk confirms and deleted when the desk declines. Terms and docs:
+  offline taps are blocked, not queued.
+- **CSP reports (8).** `report-uri` and `report-to` point at the new
+  `/api/csp-report`: small bodies only, rate limited per address and overall,
+  logs only the directive and the blocked origin. Answers 204.
+
 ## v0.10.0, 2026-11-11: Part 10, hardening
 
 - **SEC-001 secrets audit: clean.** gitleaks 8.30.1 over all history and the

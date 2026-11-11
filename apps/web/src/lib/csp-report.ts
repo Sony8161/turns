@@ -8,7 +8,10 @@
 
 export type CspViolation = { directive: string; blocked: string };
 
-const DIRECTIVE = /^[a-z-]{1,40}$/;
+// A fetch directive (script-src, script-src-elem, img-src...) or one of the
+// others this policy sets. Anything else is not a real report.
+const DIRECTIVE =
+  /^([a-z]+-)?src(-elem|-attr)?$|^[a-z]+-src(-elem|-attr)?$|^(frame-ancestors|form-action|base-uri|upgrade-insecure-requests|require-trusted-types-for|trusted-types)$/;
 const KEYWORDS = new Set([
   'inline',
   'eval',
@@ -23,8 +26,8 @@ const KEYWORDS = new Set([
 function directiveOf(v: unknown): string | null {
   if (typeof v !== 'string') return null;
   // "script-src-elem 'self'" (older browsers send the whole directive).
-  const name = v.trim().split(/\s+/)[0]?.toLowerCase() ?? '';
-  return DIRECTIVE.test(name) ? name : null;
+  const name = v.trim().split(/\s+/)[0] ?? '';
+  return name.length <= 40 && DIRECTIVE.test(name) ? name : null;
 }
 
 function blockedOf(v: unknown): string {
