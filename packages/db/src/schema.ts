@@ -459,6 +459,8 @@ export const auditLog = pgTable(
   (t) => [
     locationFk(t, 'audit_log_location_fk'),
     index('audit_log_location_at').on(t.locationId, t.at),
+    // The audit viewer (Part 8) filters by action over a date range.
+    index('audit_log_location_action_at').on(t.locationId, t.action, t.at),
   ],
 ).enableRLS();
 
@@ -719,7 +721,30 @@ export const rateLimits = pgTable('rate_limits', {
   resetAt: timestamp('reset_at', { withTimezone: true }).notNull(),
 }).enableRLS();
 
+// Daily summaries (Part 8) ---------------------------------------------------
+
+// The end-of-day summary for the owner, one row per location and local date.
+// Written once (insert, never update), read on the owner's home and, once the
+// phone app has push, sent from here. Counts and names of staff only: no
+// client name, phone or feed address ever goes in `summary`.
+export const dailySummaries = pgTable(
+  'daily_summaries',
+  {
+    id: id(),
+    organizationId: uuid('organization_id').notNull(),
+    locationId: uuid('location_id').notNull(),
+    date: date('date').notNull(),
+    summary: jsonb('summary').notNull(),
+    createdAt: createdAt(),
+  },
+  (t) => [
+    locationFk(t, 'daily_summaries_location_fk'),
+    unique('daily_summaries_location_date').on(t.locationId, t.date),
+  ],
+).enableRLS();
+
 export const TENANT_TABLES = [
+  'daily_summaries',
   'technician_skills',
   'technician_tags',
   'technician_restrictions',

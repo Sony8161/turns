@@ -23,7 +23,14 @@ import {
   visits,
 } from './schema';
 import type { Db } from './server';
-import { HAD_APPOINTMENT_LAST, postPoints, transition, writeAudit, type Actor } from './status';
+import {
+  HAD_APPOINTMENT_LAST,
+  postPoints,
+  shiftTotal,
+  transition,
+  writeAudit,
+  type Actor,
+} from './status';
 
 type Tx = Parameters<Parameters<Db['transaction']>[0]>[0];
 
@@ -1403,6 +1410,8 @@ export async function adjustPoints(
       return { ok: false, reason: 'wrong_location' };
     }
     if (!tech.shiftId || tech.status === 'off') return { ok: false, reason: 'not_on_shift' };
+    // The design doc's audit table asks for before and after on an adjustment.
+    const pointsBefore = await shiftTotal(tx, tech.shiftId);
     const ledgerId = await postPoints(tx, {
       organizationId: tech.organizationId,
       locationId: tech.locationId,
@@ -1421,7 +1430,8 @@ export async function adjustPoints(
       entityType: 'turn_ledger',
       entityId: ledgerId,
       action: 'points_adjusted',
-      after: { technicianId: input.technicianId, delta },
+      before: { technicianId: input.technicianId, points: pointsBefore },
+      after: { technicianId: input.technicianId, delta, points: pointsBefore + delta },
       reason,
     });
     return { ok: true };

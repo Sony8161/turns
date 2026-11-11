@@ -19,7 +19,8 @@
     "./clients": "./src/clients.ts",
     "./appointments": "./src/appointments.ts",
     "./feeds": "./src/feeds.ts",
-    "./locations": "./src/locations.ts"
+    "./locations": "./src/locations.ts",
+    "./reports": "./src/reports.ts"
   },
   "scripts": {
     "typecheck": "tsc --noEmit",
