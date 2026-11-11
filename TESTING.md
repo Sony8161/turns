@@ -184,7 +184,7 @@ Supabase Studio: http://127.0.0.1:54323.
 npm test
 ```
 
-Expect 157 database tests and 98 web tests to pass. They reset the local database
+Expect 217 database tests and 107 web tests to pass. They reset the local database
 before each test file and leave the last file's data behind, so run
 `npx supabase db reset` and then step 6 (or `npm run up`) afterwards if you want
 clean seed data.
@@ -386,6 +386,31 @@ minutes and Linh in two hours.
    that location's. Kim (`813 555 0106`) signs in there as receptionist and
    sees only its rows; Châu (`813 555 0107`) is its technician.
 
+## 8g. The audit log and reports (Part 8)
+
+Do 8c or 8e first so the day has calls, a deny and an override.
+
+1. Sign in as Hạnh (receptionist): the admin bar has no Log or Reports; open
+   http://localhost:3000/admin/log by hand: "Only the owner and managers can
+   open the log." A technician on `/admin/log` lands on `/me`.
+2. Sign in as Vy (manager) → **Log**. Today's rows, newest first: check-ins,
+   calls, the deny with its reason and answer time, points posted. Pick a
+   technician: only their rows. Pick "Call denied": only denies. There is no
+   Download button ("Only the owner can download the log.").
+3. On a **Call sent** row open **Queue at that second**: everyone on shift with
+   points and status; anyone on break shows "skipped: on break".
+4. Sign in as Phu (owner) → Log → **Download CSV**. Open it in Excel: the same
+   rows and columns as the screen, Vietnamese names intact, `-0.5` shown as
+   text. Visit http://localhost:3000/admin/log/export signed in as Vy: 403.
+5. **Reports**: today per technician (calls, denies, points by reason), and
+   "Who changed what, last 7 days" with Vy's overrides and Hạnh's walk-ins.
+   End of day says today is still open.
+6. **End of day**: with `CRON_SECRET` set (see 8f.8),
+   `curl.exe -H "Authorization: Bearer <secret>" http://localhost:3000/api/reports/daily`
+   answers `{"locations":2,"written":…}`. Pick yesterday on Reports to see the
+   stored summary; the owner's board shows "Yesterday (…)". Studio: an
+   `update` on `daily_summaries` is refused ("append-only").
+
 ## 9. If something is off
 
 - **"Something went wrong on our side"** on sign-in: the local stack is probably
@@ -401,5 +426,5 @@ minutes and Linh in two hours.
 
 ## What is not here yet
 
-The audit log viewer (Part 8), the customer kiosk (Part 9), push to the phone
-and the Expo app. Heavenly's real Fresha feed has not been opened yet.
+The customer kiosk (Part 9), push to the phone (the end-of-day summary
+included) and the Expo app. Heavenly's real Fresha feed has not been opened yet.

@@ -2,6 +2,40 @@
 
 One version per delivered part. Tags point at the commits.
 
+## v0.8.0, 2026-11-11: Part 8, audit log viewer and reports
+
+- Audit log `/admin/log` (owner, manager at their own location; receptionists
+  and technicians get "only the owner and managers"). Filters: from and to
+  date (at most 31 days, newest 2000 rows), technician, event. Each row shows
+  who did it, their role, the technician it is about, the fields the design
+  doc's audit table lists for that event (geofence and late minutes on a
+  check-in, response time and deny reason on an answer, ledger row and delta
+  on points, before and after on an adjustment and on a rule or role change),
+  and the reason. A call row opens the queue at that second: everyone on
+  shift, points, status, and why each one ahead was skipped.
+- CSV download `/admin/log/export` (owner only, per the permissions table): the
+  same rows from the same builder, so the file matches the screen row for row.
+  UTF-8 with a BOM for Excel; a cell that starts with `=`, `+`, `-`, `@`, tab
+  or carriage return gets a leading apostrophe so a spreadsheet keeps it text.
+- Reports `/admin/reports` (owner, manager): the daily turn report per
+  technician (check-in and out, late minutes, calls, accepted, denied, average
+  answer time, visits, appointments, points by reason), the end-of-day summary
+  for a closed day, and "who changed what, last 7 days": overrides per owner
+  or manager and desk entries per receptionist (threat model T4).
+- End-of-day summary: `daily_summaries`, one row per location and day, written
+  once after the day ends and never changed (trigger refuses update, delete,
+  truncate; owner and own-location manager read only). Nightly job at
+  `/api/reports/daily` (Bearer `CRON_SECRET`). The owner's board shows
+  "Yesterday: …" with a link to the report. Push to the phone waits on the
+  Expo app.
+- Manual point adjustments now log the total before and after.
+- No client name, phone, calendar address, check-in coordinates or rule
+  config dump reaches the viewer, the CSV or a summary (tested).
+- Migration 0020. Tests: 217 database, 107 web.
+- **Open**: the per-technician end-of-day summary on the phone was not in the
+  Part 8 request, so it is not built. Whether the log's two-year retention
+  should be enforced now or with the deletion rule (threat model T17).
+
 ## v0.7.0, 2026-11-11: Part 7, appointments, calendar feed, second location
 
 - Appointments screen `/admin/appointments` (owner, manager, receptionist):

@@ -199,11 +199,27 @@ and Check out wait for the call. This is what Phu sees on Dec 4.
 - **Not yet checked**: what Heavenly's real Fresha feed contains (client names
   or only times, and its lag). Fifteen minutes on Phu's Fresha account.
 
-### Part 8. The audit log viewer and reports
+### Part 8. The audit log viewer and reports (done)
 
-Filter the log by technician and date, export CSV, the queue snapshot on every
-call ("who was ahead and why, at that second"), the daily turn report, an
-end-of-day summary to the owner.
+This is the part that settles "who got called before whom".
+
+- **The log** (Log, owners and managers). Every change the app makes writes one
+  row to `audit_log`, which nobody can edit or delete, not even the server
+  key. The Log screen reads it for one location: pick dates, a technician, an
+  event. A call row opens the queue as it stood at that second, with everyone's
+  points and status and why the ones ahead were passed over. Managers see their
+  own location only.
+- **CSV** (owner only). Downloads exactly the rows on screen. Spreadsheet
+  formulas in a cell are defused, so a name typed as `=…` stays text.
+- **Reports** (owners and managers). One day per technician: when they came and
+  left, calls, accepts, denies, how fast they answered, visits, and points
+  split by reason. Below it, the last 7 days of overrides by each owner or
+  manager and desk entries by each receptionist, so a sudden rise shows.
+- **End of day.** After a day ends, its summary is written once to
+  `daily_summaries` and never changed. A nightly job writes it for every
+  location; the owner's board shows yesterday's line and a link. Push to the
+  owner's phone comes with the phone app.
+- Nothing here shows a client's name or phone.
 
 ### Part 9. The customer kiosk
 
