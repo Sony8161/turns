@@ -6,8 +6,11 @@
 import { writeFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { and, eq, inArray } from 'drizzle-orm';
+import { createWalkIn } from './engine';
 import { createInvite, type Role } from './invites';
-import { memberships, profiles, technicians } from './schema';
+import { loadProfiles, saveProfile, type ProfileInput } from './profile';
+import { memberships, profiles, serviceCategories, services, technicians, visits } from './schema';
 import { HEAVENLY, seedHeavenly } from './seed';
 import { createDb, type Db } from './server';
 import { createSetupCode } from './setup';
@@ -24,6 +27,132 @@ export const SAMPLE_ACCOUNTS: { name: string; email: string; phone: string; role
 ];
 export const SPARE_TEST_PHONE = '+18135550109';
 export const TEST_CODE = '123456';
+
+// Part 6 (Duong, 2026-11-04): sample technicians with attributes, so the
+// engine's skips can be watched on the board. Set once; a technician whose
+// profile was edited by hand is left alone.
+export const SAMPLE_PROFILES: Record<string, { skipCategories: string[]; profile: ProfileInput }> =
+  {
+    Thảo: {
+      skipCategories: [],
+      profile: {
+        skillCategoryIds: null,
+        tags: ['fast'],
+        restrictions: [{ type: 'no_male_clients', value: null, note: null }],
+      },
+    },
+    Linh: {
+      skipCategories: [],
+      profile: {
+        skillCategoryIds: null,
+        tags: ['design'],
+        restrictions: [
+          { type: 'no_kids', value: null, note: null },
+          { type: 'min_client_age', value: 12, note: null },
+        ],
+      },
+    },
+    Mai: {
+      // Everything but full sets.
+      skipCategories: ['full_set'],
+      profile: {
+        skillCategoryIds: [],
+        tags: [],
+        restrictions: [
+          { type: 'no_same_time', value: null, note: null },
+          { type: 'custom', value: null, note: 'prefers mornings' },
+        ],
+      },
+    },
+  };
+
+// Canned walk-ins with client attributes: a man (Thảo is skipped), a kid of 8
+// (Linh is skipped), a both-at-once pair (Mai is skipped), a full set (Mai
+// lacks the skill). Added only when the location has no visits yet, so
+// re-runs do not pile up.
+export const SAMPLE_WALK_INS: {
+  services: string[];
+  gender?: 'female' | 'male';
+  isKid?: boolean;
+  age?: number;
+  sameTime?: boolean;
+  note: string;
+}[] = [
+  { services: ['Basic manicure'], gender: 'male', note: 'sample: a man' },
+  { services: ['Basic pedicure'], gender: 'female', isKid: true, age: 8, note: 'sample: a kid, 8' },
+  {
+    services: ['Gel manicure', 'Spa pedicure'],
+    gender: 'female',
+    sameTime: true,
+    note: 'sample: both at once',
+  },
+  { services: ['Acrylic full set'], note: 'sample: a full set' },
+];
+
+async function seedProfiles(db: Db, ownerId: string): Promise<void> {
+  const existing = await loadProfiles(db, HEAVENLY.locationId);
+  const techs = await db
+    .select({ id: technicians.id, name: technicians.displayName })
+    .from(technicians)
+    .where(eq(technicians.locationId, HEAVENLY.locationId));
+  const cats = await db
+    .select({ id: serviceCategories.id, name: serviceCategories.name })
+    .from(serviceCategories)
+    .where(eq(serviceCategories.locationId, HEAVENLY.locationId));
+  const actor = {
+    userId: ownerId,
+    role: 'owner' as const,
+    organizationId: HEAVENLY.organizationId,
+    locationId: HEAVENLY.locationId,
+  };
+  for (const t of techs) {
+    const sample = SAMPLE_PROFILES[t.name];
+    if (!sample || existing.has(t.id)) continue;
+    const skillCategoryIds = sample.skipCategories.length
+      ? cats.filter((c) => !sample.skipCategories.includes(c.name)).map((c) => c.id)
+      : null;
+    const r = await saveProfile(db, {
+      actor,
+      technicianId: t.id,
+      profile: { ...sample.profile, skillCategoryIds },
+    });
+    if (!r.ok) throw new Error(`sample profile for ${t.name}: ${r.reason}`);
+  }
+}
+
+async function seedWalkIns(db: Db, ownerId: string): Promise<void> {
+  const any = await db
+    .select({ id: visits.id })
+    .from(visits)
+    .where(eq(visits.locationId, HEAVENLY.locationId))
+    .limit(1);
+  if (any.length) return;
+  const menu = await db
+    .select({ id: services.id, name: services.name })
+    .from(services)
+    .where(
+      and(
+        eq(services.locationId, HEAVENLY.locationId),
+        inArray(
+          services.name,
+          SAMPLE_WALK_INS.flatMap((w) => w.services),
+        ),
+      ),
+    );
+  const byName = new Map(menu.map((s) => [s.name, s.id]));
+  for (const w of SAMPLE_WALK_INS) {
+    const r = await createWalkIn(db, {
+      organizationId: HEAVENLY.organizationId,
+      locationId: HEAVENLY.locationId,
+      serviceIds: w.services.map((n) => byName.get(n)!).filter(Boolean),
+      actor: { userId: ownerId },
+      attributes: { gender: w.gender ?? null, isKid: w.isKid ?? null, age: w.age ?? null },
+      sameTime: w.sameTime ?? false,
+      note: w.note,
+    });
+    if (!r.ok) throw new Error(`sample walk-in "${w.note}": ${r.reason}`);
+  }
+}
 
 const LOCAL_AUTH_URL = 'http://127.0.0.1:54321/auth/v1';
 function localServiceKey(): string {
@@ -115,6 +244,8 @@ export async function seedDev(
     const tech = await createInvite(db, { ...base, role: 'technician' });
     const reception = await createInvite(db, { ...base, role: 'receptionist' });
     const setup = await createSetupCode(db, { note: 'dev seed' });
+    await seedProfiles(db, ownerId);
+    await seedWalkIns(db, ownerId);
 
     const lines = [
       `Local sample data, written ${new Date().toISOString()} by npm run db:seed:dev`,
@@ -132,6 +263,11 @@ export async function seedDev(
       '',
       'Screens: owner/manager/receptionist -> http://localhost:3000/admin   technician -> http://localhost:3000/me',
       'Join with a code: /join   New salon: /setup   (sign out first; a code is for a new account)',
+      '',
+      'Sample technicians (Part 6): Thảo takes no male clients; Linh takes no kids and nobody under 12;',
+      'Mai does everything but full sets and no both-at-once visits. Staff -> Skills and restrictions to change.',
+      'Sample walk-ins (added once, when the salon had no visits): a man, a kid of 8, a both-at-once pair, a full set.',
+      'Check the three technicians in and press Call next on each to watch who is skipped and why.',
     ];
     const notes = lines.join('\n');
     const root = join(dirname(fileURLToPath(import.meta.url)), '..', '..', '..');

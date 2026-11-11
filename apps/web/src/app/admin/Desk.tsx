@@ -5,17 +5,24 @@ import { formatClock } from '@/components/Board';
 import { Button } from '@/components/ui';
 import { fill, type Dictionary } from '@/i18n/dictionary';
 import { callNextFor, clearCallFor, enterWalkIn, setNotice, type DeskState } from './actions';
+import { skipText, visitChips } from './chips';
 
 type Service = { id: string; name: string; category: string };
-type Waiting = {
+export type Waiting = {
   id: string;
   status: string;
   services: string[];
   waitSeconds: number;
   calledTechnician: string | null;
   calledSeconds: number | null;
+  assignedTechnician: string | null;
   requestedTechnician: string | null;
   note: string | null;
+  clientName: string | null;
+  clientGender: 'female' | 'male' | 'unspecified' | null;
+  clientIsKid: boolean | null;
+  clientAge: number | null;
+  groupId: string | null;
 };
 export type Attention = {
   unansweredCalls: { callId: string; technicianName: string; waitedMin: number }[];
@@ -24,10 +31,18 @@ export type Attention = {
   longWait: boolean;
   longWaitMin: number;
   noticeEnabled: boolean;
+  timers: {
+    technicianId: string;
+    technicianName: string;
+    status: 'break' | 'out';
+    minutes: number;
+    over: boolean;
+  }[];
+  outOverMin: number;
 };
 
 /** The front desk: what needs a person now, enter a walk-in, see who is
- *  waiting, call the next technician. */
+ *  waiting, call the next technician and see who was passed over. */
 export function Desk({
   services,
   technicians,
@@ -45,6 +60,7 @@ export function Desk({
   const [callState, call, calling] = useActionState<DeskState, FormData>(callNextFor, {});
   const [clearState, clear, clearing] = useActionState<DeskState, FormData>(clearCallFor, {});
   const [noticeState, notice, switching] = useActionState<DeskState, FormData>(setNotice, {});
+  const field = 'min-h-12 rounded-control border-2 border-slate/30 bg-board px-3 text-lead';
 
   const waitLine =
     attention.estimatedWaitMin === null
@@ -52,7 +68,10 @@ export function Desk({
       : attention.estimatedWaitMin === 0
         ? t.noWait
         : fill(t.estimatedWait, { minutes: attention.estimatedWaitMin });
-  const needsPerson = attention.unansweredCalls.length > 0 || attention.longWait;
+  const needsPerson =
+    attention.unansweredCalls.length > 0 ||
+    attention.longWait ||
+    attention.timers.some((x) => x.over);
 
   return (
     <div className="flex flex-col gap-8">
@@ -79,6 +98,26 @@ export function Desk({
           {waitLine}
           {attention.longWait ? ` · ${fill(t.longWait, { minutes: attention.longWaitMin })}` : ''}
         </p>
+        {attention.timers.length > 0 ? (
+          <ul className="flex flex-col gap-1">
+            {attention.timers.map((x) => (
+              <li
+                key={x.technicianId}
+                className={x.over ? 'font-semibold text-polish' : 'text-slate/80'}
+              >
+                {x.status === 'break'
+                  ? fill(t.onBreak, { name: x.technicianName, minutes: x.minutes })
+                  : x.over
+                    ? fill(t.outOver, {
+                        name: x.technicianName,
+                        minutes: x.minutes,
+                        limit: attention.outOverMin,
+                      })
+                    : fill(t.outFor, { name: x.technicianName, minutes: x.minutes })}
+              </li>
+            ))}
+          </ul>
+        ) : null}
         <form action={notice} className="flex flex-wrap items-center gap-3">
           <input type="hidden" name="enabled" value={attention.noticeEnabled ? 'false' : 'true'} />
           <span className="text-slate/80">
@@ -106,12 +145,59 @@ export function Desk({
               </label>
             ))}
           </div>
+          <label className="flex min-h-11 items-center gap-3">
+            <input type="checkbox" name="sameTime" className="h-6 w-6" />
+            <span>{t.sameTime}</span>
+          </label>
+
+          <fieldset className="flex flex-col gap-3 border-t border-pumice pt-4">
+            <legend className="font-medium">{t.client}</legend>
+            <p className="text-small text-slate/70">{t.clientHint}</p>
+            <div className="flex flex-wrap items-center gap-4">
+              <span className="font-medium">{t.gender}</span>
+              {(['unspecified', 'female', 'male'] as const).map((g) => (
+                <label key={g} className="flex min-h-11 items-center gap-2">
+                  <input
+                    type="radio"
+                    name="gender"
+                    value={g}
+                    defaultChecked={g === 'unspecified'}
+                    className="h-5 w-5"
+                  />
+                  <span>{t.genders[g]}</span>
+                </label>
+              ))}
+            </div>
+            <div className="flex flex-wrap items-end gap-4">
+              <label className="flex min-h-11 items-center gap-3">
+                <input type="checkbox" name="kid" className="h-6 w-6" />
+                <span>{t.kid}</span>
+              </label>
+              <label className="flex flex-col gap-1">
+                <span className="text-small font-medium">{t.age}</span>
+                <input name="age" inputMode="numeric" maxLength={3} className={`${field} w-24`} />
+              </label>
+            </div>
+            <div className="flex flex-wrap gap-4">
+              <label className="flex flex-col gap-1">
+                <span className="text-small font-medium">{t.clientName}</span>
+                <input name="clientName" maxLength={120} className={`${field} w-48`} />
+              </label>
+              <label className="flex flex-col gap-1">
+                <span className="text-small font-medium">{t.clientPhone}</span>
+                <input
+                  name="clientPhone"
+                  inputMode="tel"
+                  maxLength={32}
+                  className={`${field} w-48`}
+                />
+              </label>
+            </div>
+          </fieldset>
+
           <label className="flex flex-col gap-2">
             <span className="font-medium">{t.requestedTech}</span>
-            <select
-              name="requestedTechnician"
-              className="min-h-12 rounded-control border-2 border-slate/30 bg-board px-3 text-lead"
-            >
+            <select name="requestedTechnician" className={field}>
               <option value="">{t.anyTech}</option>
               {technicians.map((x) => (
                 <option key={x.id} value={x.id}>
@@ -144,41 +230,77 @@ export function Desk({
           {callState.error ? (
             <p className="text-polish">
               {t.errors[callState.error] ?? callState.error}
-              {callState.detail ? ` (${callState.detail})` : ''}
+              {callState.error === 'nobody_eligible' && callState.skipped?.length
+                ? ` ${fill(t.nobodyLine, {
+                    list: callState.skipped
+                      .map((s) =>
+                        fill(t.skippedLine, { name: s.displayName, why: skipText(s, t.skip) }),
+                      )
+                      .join('; '),
+                  })}`
+                : callState.detail && callState.error !== 'nobody_eligible'
+                  ? ` (${callState.detail})`
+                  : ''}
             </p>
+          ) : callState.skipped && callState.skipped.length > 0 ? (
+            <div className="flex flex-col gap-1 border-l-[12px] border-amber bg-board p-4">
+              <span className="font-semibold">{t.skippedTitle}</span>
+              {callState.skipped.map((s, i) => (
+                <span key={`${s.displayName}-${i}`} className="text-slate/80">
+                  {fill(t.skippedLine, { name: s.displayName, why: skipText(s, t.skip) })}
+                </span>
+              ))}
+            </div>
           ) : null}
           <ol className="flex flex-col gap-2">
-            {waiting.map((v) => (
-              <li key={v.id} className="flex items-center gap-4 bg-board px-4 py-3">
-                <span className="flex min-w-0 flex-1 flex-col">
-                  <span className="font-semibold">
-                    {v.services.join(', ')}
-                    {v.requestedTechnician
-                      ? ` · ${fill(t.forTech, { name: v.requestedTechnician })}`
-                      : ''}
+            {waiting.map((v) => {
+              const chips = visitChips(v, t.chips);
+              return (
+                <li key={v.id} className="flex items-center gap-4 bg-board px-4 py-3">
+                  <span className="flex min-w-0 flex-1 flex-col">
+                    <span className="font-semibold">
+                      {v.services.join(', ')}
+                      {v.requestedTechnician
+                        ? ` · ${fill(t.forTech, { name: v.requestedTechnician })}`
+                        : ''}
+                    </span>
+                    {chips.length > 0 || v.clientName ? (
+                      <span className="flex flex-wrap gap-2 text-small">
+                        {v.clientName ? (
+                          <span className="text-slate/80">
+                            {fill(t.withName, { name: v.clientName })}
+                          </span>
+                        ) : null}
+                        {chips.map((c) => (
+                          <span key={c} className="rounded-control bg-pumice px-2 py-0.5">
+                            {c}
+                          </span>
+                        ))}
+                      </span>
+                    ) : null}
+                    {v.note ? <span className="text-small text-slate/80">{v.note}</span> : null}
+                    <span className="text-small text-slate/70">
+                      {v.status === 'called' && v.calledTechnician
+                        ? fill(t.calledLine, {
+                            name: v.calledTechnician,
+                            time: formatClock(v.calledSeconds ?? 0),
+                          })
+                        : v.status === 'in_service'
+                          ? `${t.inService}${v.assignedTechnician ? `, ${v.assignedTechnician}` : ''}`
+                          : fill(t.waitingLine, { time: formatClock(v.waitSeconds) })}
+                    </span>
                   </span>
-                  {v.note ? <span className="text-small text-slate/80">{v.note}</span> : null}
-                  <span className="text-small text-slate/70">
-                    {v.status === 'called' && v.calledTechnician
-                      ? fill(t.calledLine, {
-                          name: v.calledTechnician,
-                          time: formatClock(v.calledSeconds ?? 0),
-                        })
-                      : v.status === 'in_service'
-                        ? t.inService
-                        : fill(t.waitingLine, { time: formatClock(v.waitSeconds) })}
-                  </span>
-                </span>
-                {v.status === 'waiting' ? (
-                  <form action={call}>
-                    <input type="hidden" name="visitId" value={v.id} />
-                    <Button type="submit" disabled={calling}>
-                      {t.callNext}
-                    </Button>
-                  </form>
-                ) : null}
-              </li>
-            ))}
+                  {v.status === 'waiting' ? (
+                    <form action={call}>
+                      <input type="hidden" name="visitId" value={v.id} />
+                      <Button type="submit" disabled={calling}>
+                        {t.callNext}
+                      </Button>
+                    </form>
+                  ) : null}
+                </li>
+              );
+            })}
           </ol>
         </section>
       </div>

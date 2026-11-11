@@ -28,6 +28,7 @@ import {
   time,
   timestamp,
   unique,
+  uniqueIndex,
   uuid,
 } from 'drizzle-orm/pg-core';
 
@@ -205,6 +206,90 @@ export const services = pgTable(
   ],
 );
 
+// Technician profile (Part 6) ----------------------------------------------
+
+// Skills are per service category (Duong, 2026-11-04): a row says the
+// technician does that category. A technician with no rows does every
+// category (the common case; nothing to set up for a new salon). The engine
+// reads these when eligibility.skill_match is not "off".
+export const technicianSkills = pgTable(
+  'technician_skills',
+  {
+    id: id(),
+    organizationId: uuid('organization_id').notNull(),
+    locationId: uuid('location_id').notNull(),
+    technicianId: uuid('technician_id')
+      .notNull()
+      .references(() => technicians.id, { onDelete: 'restrict' }),
+    categoryId: uuid('category_id').notNull(),
+    createdAt: createdAt(),
+  },
+  (t) => [
+    locationFk(t, 'technician_skills_location_fk'),
+    foreignKey({
+      columns: [t.categoryId, t.organizationId],
+      foreignColumns: [serviceCategories.id, serviceCategories.organizationId],
+      name: 'technician_skills_category_fk',
+    }).onDelete('restrict'),
+    unique('technician_skills_technician_category').on(t.technicianId, t.categoryId),
+    index('technician_skills_location').on(t.locationId),
+  ],
+).enableRLS();
+
+// Free words the salon uses about a technician (fast, design, gel_x_specialist).
+// Shown to the desk; the engine does not read them (design doc, open question).
+export const technicianTags = pgTable(
+  'technician_tags',
+  {
+    id: id(),
+    organizationId: uuid('organization_id').notNull(),
+    locationId: uuid('location_id').notNull(),
+    technicianId: uuid('technician_id')
+      .notNull()
+      .references(() => technicians.id, { onDelete: 'restrict' }),
+    tag: text('tag').notNull(),
+    createdAt: createdAt(),
+  },
+  (t) => [
+    locationFk(t, 'technician_tags_location_fk'),
+    unique('technician_tags_technician_tag').on(t.technicianId, t.tag),
+    index('technician_tags_location').on(t.locationId),
+  ],
+).enableRLS();
+
+// The five restrictions from the design doc. One row per type per technician;
+// min_client_age carries the age in `value`; custom carries text in `note` and
+// is shown to the desk, never applied by the engine (it cannot read it).
+export const restrictionTypeEnum = pgEnum('restriction_type', [
+  'no_male_clients',
+  'no_kids',
+  'no_same_time',
+  'min_client_age',
+  'custom',
+]);
+
+export const technicianRestrictions = pgTable(
+  'technician_restrictions',
+  {
+    id: id(),
+    organizationId: uuid('organization_id').notNull(),
+    locationId: uuid('location_id').notNull(),
+    technicianId: uuid('technician_id')
+      .notNull()
+      .references(() => technicians.id, { onDelete: 'restrict' }),
+    type: restrictionTypeEnum('type').notNull(),
+    value: integer('value'),
+    note: text('note'),
+    createdAt: createdAt(),
+    updatedAt: updatedAt(),
+  },
+  (t) => [
+    locationFk(t, 'technician_restrictions_location_fk'),
+    unique('technician_restrictions_technician_type').on(t.technicianId, t.type),
+    index('technician_restrictions_location').on(t.locationId),
+  ],
+).enableRLS();
+
 // Rules ---------------------------------------------------------------------
 
 // Versioned. A change to points is a new row, never an edit (design doc,
@@ -317,6 +402,8 @@ export const ledgerReasonEnum = pgEnum('ledger_reason', [
   'out_over',
   'late',
   'manual',
+  // Part 6: a manager excuses a penalty; the row reverses the one it names.
+  'excuse',
 ]);
 
 // Points are a ledger, never a stored total (design doc, Data model). The daily
@@ -338,9 +425,18 @@ export const turnLedger = pgTable(
     visitId: uuid('visit_id'),
     actorUserId: uuid('actor_user_id').references(() => profiles.id, { onDelete: 'restrict' }),
     note: text('note'),
+    // Part 6: an "excuse" row names the penalty row it reverses. Unique, so a
+    // penalty is excused at most once.
+    reversesId: uuid('reverses_id').references((): AnyPgColumn => turnLedger.id, {
+      onDelete: 'restrict',
+    }),
     createdAt: createdAt(),
   },
-  (t) => [locationFk(t, 'turn_ledger_location_fk'), index('turn_ledger_shift').on(t.shiftId)],
+  (t) => [
+    locationFk(t, 'turn_ledger_location_fk'),
+    index('turn_ledger_shift').on(t.shiftId),
+    unique('turn_ledger_reverses').on(t.reversesId),
+  ],
 ).enableRLS();
 
 // Append-only: a trigger in the migration refuses update and delete, for every
@@ -363,6 +459,36 @@ export const auditLog = pgTable(
   (t) => [
     locationFk(t, 'audit_log_location_fk'),
     index('audit_log_location_at').on(t.locationId, t.at),
+  ],
+).enableRLS();
+
+// Clients (Part 6) ------------------------------------------------------------
+
+// Minimal: Fresha stays the client system (design doc). The phone, stored in
+// E.164, is the match key so Fresha's client list can be imported later
+// without duplicates (Duong, 2026-11-04). Name and phone are blanked after the
+// location's client_retention_days (grc 6.2); the row stays for the visits.
+export const clientGenderEnum = pgEnum('client_gender', ['female', 'male', 'unspecified']);
+
+export const clients = pgTable(
+  'clients',
+  {
+    id: id(),
+    organizationId: uuid('organization_id').notNull(),
+    locationId: uuid('location_id').notNull(),
+    name: text('name'),
+    phone: text('phone'),
+    gender: clientGenderEnum('gender'),
+    notes: text('notes'),
+    anonymisedAt: timestamp('anonymised_at', { withTimezone: true }),
+    createdAt: createdAt(),
+    updatedAt: updatedAt(),
+  },
+  (t) => [
+    locationFk(t, 'clients_location_fk'),
+    uniqueIndex('clients_location_phone')
+      .on(t.locationId, t.phone)
+      .where(sql`${t.phone} is not null`),
   ],
 ).enableRLS();
 
@@ -396,7 +522,17 @@ export const visits = pgTable(
     locationId: uuid('location_id').notNull(),
     source: visitSourceEnum('source').notNull().default('walk_in'),
     status: visitStatusEnum('status').notNull().default('waiting'),
-    // client_id arrives with Part 6; audit rows reference the visit, never the client.
+    // Part 6: who the client is (optional) and what the restrictions need to
+    // know about this visit. Audit rows reference the visit, never the client.
+    clientId: uuid('client_id').references(() => clients.id, { onDelete: 'restrict' }),
+    // null = not asked. Only male triggers no_male_clients.
+    clientGender: clientGenderEnum('client_gender'),
+    clientIsKid: boolean('client_is_kid'),
+    // Approximate age when the desk asked (for min_client_age); null = not asked.
+    clientAge: integer('client_age'),
+    // Two services at the same time: the visits of one client share a group
+    // (design doc, Same-time services). Technicians with no_same_time are skipped.
+    groupId: uuid('group_id'),
     requestedTechnicianId: uuid('requested_technician_id').references(() => technicians.id, {
       onDelete: 'restrict',
     }),
@@ -417,6 +553,7 @@ export const visits = pgTable(
   (t) => [
     locationFk(t, 'visits_location_fk'),
     index('visits_location_status').on(t.locationId, t.status),
+    index('visits_client').on(t.clientId),
   ],
 ).enableRLS();
 
@@ -472,6 +609,43 @@ export const turnCalls = pgTable(
   ],
 ).enableRLS();
 
+// Appointments (table in Part 6, filled in Part 7) ----------------------------
+
+// The eligibility filter "no appointment starting within the buffer" reads
+// this table now; the ICS poll and the manual entry that fill it are Part 7.
+export const appointmentSourceEnum = pgEnum('appointment_source', ['ics', 'manual']);
+
+export const appointments = pgTable(
+  'appointments',
+  {
+    id: id(),
+    organizationId: uuid('organization_id').notNull(),
+    locationId: uuid('location_id').notNull(),
+    technicianId: uuid('technician_id')
+      .notNull()
+      .references(() => technicians.id, { onDelete: 'restrict' }),
+    // The calendar's own id, so a re-poll updates instead of duplicating.
+    externalId: text('external_id'),
+    clientName: text('client_name'),
+    startAt: timestamp('start_at', { withTimezone: true }).notNull(),
+    endAt: timestamp('end_at', { withTimezone: true }).notNull(),
+    source: appointmentSourceEnum('source').notNull().default('manual'),
+    syncedAt: timestamp('synced_at', { withTimezone: true }),
+    cancelledAt: timestamp('cancelled_at', { withTimezone: true }),
+    createdAt: createdAt(),
+    updatedAt: updatedAt(),
+  },
+  (t) => [
+    locationFk(t, 'appointments_location_fk'),
+    index('appointments_technician_start').on(t.technicianId, t.startAt),
+    // The buffer filter: a location's appointments around now.
+    index('appointments_location_start').on(t.locationId, t.startAt),
+    uniqueIndex('appointments_location_external')
+      .on(t.locationId, t.externalId)
+      .where(sql`${t.externalId} is not null`),
+  ],
+).enableRLS();
+
 // Salon setup codes ---------------------------------------------------------
 
 // Made by the platform operator, not by a salon. Whoever redeems one creates a
@@ -502,6 +676,11 @@ export const rateLimits = pgTable('rate_limits', {
 }).enableRLS();
 
 export const TENANT_TABLES = [
+  'technician_skills',
+  'technician_tags',
+  'technician_restrictions',
+  'clients',
+  'appointments',
   'visits',
   'visit_services',
   'turn_calls',

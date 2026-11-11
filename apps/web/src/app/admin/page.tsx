@@ -1,7 +1,7 @@
 import { and, eq, isNull } from 'drizzle-orm';
 import { serviceCategories, services, turnCalls } from '@turn/db';
 import { floorAttention, todayCounts, waitingVisits } from '@turn/db/engine';
-import { locationStatus } from '@turn/db/status';
+import { locationStatus, sweepFloor } from '@turn/db/status';
 import { redirect } from 'next/navigation';
 import { AdminNav } from '@/components/AdminNav';
 import { AutoRefresh } from '@/components/AutoRefresh';
@@ -24,6 +24,9 @@ export default async function AdminPage() {
   const membership = membershipWith(actor, 'view_board');
   if (!membership && actor.memberships.some((m) => m.role === 'technician')) redirect('/me');
 
+  // Part 6: out-over penalties and shifts left open from an earlier day are
+  // settled before the board is read. Idempotent.
+  if (membership) await sweepFloor(db(), membership.locationId);
   const [rows, menu, waiting, counts, attention] = membership
     ? await Promise.all([
         boardRows(membership.locationId),
@@ -66,6 +69,7 @@ export default async function AdminPage() {
             current="board"
             canStaff={can(membership.role, 'invite_staff')}
             canRules={can(membership.role, 'manage_rules')}
+            canManage={can(membership.role, 'override_queue')}
           />
           <section className="flex flex-col gap-4">
             <h1 className="text-heading font-semibold">
@@ -87,8 +91,14 @@ export default async function AdminPage() {
                 waitSeconds: secondsSince(v.arrivedAt),
                 calledTechnician: v.calledTechnician,
                 calledSeconds: v.calledAt ? secondsSince(v.calledAt) : null,
+                assignedTechnician: v.assignedTechnician,
                 requestedTechnician: v.requestedTechnician,
                 note: v.note,
+                clientName: v.clientName,
+                clientGender: v.clientGender,
+                clientIsKid: v.clientIsKid,
+                clientAge: v.clientAge,
+                groupId: v.groupId,
               }))}
               technicians={rows.map((r) => ({ id: r.id, name: r.name }))}
               attention={{
@@ -102,6 +112,14 @@ export default async function AdminPage() {
                 longWait: attention.longWait,
                 longWaitMin: attention.longWaitMin,
                 noticeEnabled: attention.noticeEnabled,
+                timers: attention.timers.map((x) => ({
+                  technicianId: x.technicianId,
+                  technicianName: x.technicianName,
+                  status: x.status,
+                  minutes: x.minutes,
+                  over: x.over,
+                })),
+                outOverMin: attention.outOverMin,
               }}
               t={t.desk}
             />

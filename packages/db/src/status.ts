@@ -5,8 +5,8 @@
 //
 // Every number comes from rule_config (geofence requirement) or the location
 // row (geofence centre and radius); nothing here is hard-coded.
-import { and, eq, isNull, sql } from 'drizzle-orm';
-import { activeRules } from './rules';
+import { and, asc, eq, gte, isNull, lt, lte, ne, or, sql } from 'drizzle-orm';
+import { activeRules, type RuleConfig } from './rules';
 import {
   auditLog,
   locations,
@@ -271,6 +271,10 @@ export async function checkIn(
       .select()
       .from(shifts)
       .where(and(eq(shifts.technicianId, tech.id), eq(shifts.date, today)));
+    // The day's first check-in: no row yet, or a row made ahead by a schedule
+    // that nobody has checked in on. A return after a check-out is not one,
+    // so the lateness recorded at the first check-in is kept, not recomputed.
+    const firstCheckInToday = !shift || (!shift.readyAt && !shift.checkedOutAt && !status?.shiftId);
     if (!shift) {
       [shift] = await tx
         .insert(shifts)
@@ -292,9 +296,34 @@ export async function checkIn(
         .returning();
     }
     if (!shift) throw new Error('shift upsert returned nothing');
-    const late = lateMinutes(now, tech.timezone, shift.scheduledStart);
-    if (late !== shift.lateMinutes && !shift.readyAt) {
+    const late = firstCheckInToday
+      ? lateMinutes(now, tech.timezone, shift.scheduledStart)
+      : shift.lateMinutes;
+    if (late !== shift.lateMinutes) {
       await tx.update(shifts).set({ lateMinutes: late }).where(eq(shifts.id, shift.id));
+    }
+    // Part 6: a late start posts the tier's start points, once per shift, at
+    // the first check-in of the day. An unset tier (null) posts nothing until
+    // the owner decides; the manager can adjust by hand.
+    const startPoints = lateStartPoints(rules, late);
+    if (startPoints !== null && startPoints !== 0 && firstCheckInToday) {
+      const [posted] = await tx
+        .select({ id: turnLedger.id })
+        .from(turnLedger)
+        .where(and(eq(turnLedger.shiftId, shift.id), eq(turnLedger.reasonType, 'late')))
+        .limit(1);
+      if (!posted) {
+        await postPoints(tx, {
+          organizationId: tech.organizationId,
+          locationId: tech.locationId,
+          technicianId: tech.id,
+          shiftId: shift.id,
+          delta: startPoints,
+          reasonType: 'late',
+          actorUserId: input.actor.userId,
+          note: `${late} min late`,
+        });
+      }
     }
 
     await tx
@@ -375,6 +404,20 @@ export async function transition(
       // The readiness checklist: the timestamp is kept on the shift.
       await tx.update(shifts).set({ readyAt: now }).where(eq(shifts.id, shiftId));
     }
+    // Part 6: coming back from an out that ran over the limit posts the
+    // penalty if the sweep has not already (design doc, Points).
+    if (from === 'out' && status?.outStartedAt && shiftId) {
+      const rules = await activeRules(tx, tech.locationId);
+      await postOutOverIfDue(tx, {
+        organizationId: tech.organizationId,
+        locationId: tech.locationId,
+        technicianId: tech.id,
+        shiftId,
+        outStartedAt: status.outStartedAt,
+        rules,
+        now,
+      });
+    }
     if (input.to === 'off' && shiftId) {
       await tx.update(shifts).set({ checkedOutAt: now }).where(eq(shifts.id, shiftId));
     }
@@ -402,6 +445,174 @@ export async function transition(
       reason: input.reason ?? null,
     });
     return { ok: true, status: input.to, shiftId: input.to === 'off' ? null : shiftId };
+  });
+}
+
+/** Start points for a late arrival: the highest tier reached, or null when
+ *  none is reached or that tier is still unset. Pure. */
+export function lateStartPoints(rules: RuleConfig, lateMinutes: number): number | null {
+  let hit: number | null | undefined;
+  for (const tier of rules.penalties.late_tiers) {
+    if (lateMinutes >= tier.after_minutes) hit = tier.start_points;
+  }
+  return hit === undefined ? null : hit;
+}
+
+/** Posts the out-over penalty for one out episode if it is due and not yet
+ *  posted. One row per episode: a row of reason out_over after out_started_at. */
+async function postOutOverIfDue(
+  tx: Tx,
+  input: {
+    organizationId: string;
+    locationId: string;
+    technicianId: string;
+    shiftId: string;
+    outStartedAt: Date;
+    rules: RuleConfig;
+    now: Date;
+  },
+): Promise<boolean> {
+  const limitMs = input.rules.penalties.out_over_minutes * 60_000;
+  if (input.now.getTime() - input.outStartedAt.getTime() < limitMs) return false;
+  if (input.rules.penalties.out_over_penalty === 0) return false;
+  const [posted] = await tx
+    .select({ id: turnLedger.id })
+    .from(turnLedger)
+    .where(
+      and(
+        eq(turnLedger.shiftId, input.shiftId),
+        eq(turnLedger.reasonType, 'out_over'),
+        gte(turnLedger.createdAt, input.outStartedAt),
+      ),
+    )
+    .limit(1);
+  if (posted) return false;
+  await postPoints(tx, {
+    organizationId: input.organizationId,
+    locationId: input.locationId,
+    technicianId: input.technicianId,
+    shiftId: input.shiftId,
+    delta: input.rules.penalties.out_over_penalty,
+    reasonType: 'out_over',
+    actorUserId: null,
+    note: `out over ${input.rules.penalties.out_over_minutes} min`,
+  });
+  return true;
+}
+
+/**
+ * The floor sweep (Part 6): run when the board or a phone loads. Posts the
+ * out-over penalty for anyone still out past the limit, and closes shifts
+ * left open from an earlier day (queue.reset daily_at_open): a technician who
+ * forgot to check out is checked out, unless they are in service or have an
+ * open call. Idempotent; every change is audited.
+ */
+export async function sweepFloor(
+  db: Db,
+  locationId: string,
+  now = new Date(),
+): Promise<{ outOverPosted: string[]; autoCheckedOut: string[] }> {
+  return db.transaction(async (tx) => {
+    const [loc] = await tx
+      .select({ organizationId: locations.organizationId, timezone: locations.timezone })
+      .from(locations)
+      .where(eq(locations.id, locationId));
+    if (!loc) return { outOverPosted: [], autoCheckedOut: [] };
+    const rules = await activeRules(tx, locationId);
+    const today = localDate(now, loc.timezone);
+    const outCutoff = new Date(now.getTime() - rules.penalties.out_over_minutes * 60_000);
+    // Scan without locks: a quiet floor touches nothing. Each candidate is
+    // then locked in the order transition() uses (technicians, then
+    // technician_status) and re-read, so a move saved meanwhile wins and
+    // the two can never wait on each other.
+    const candidates = await tx
+      .select({ technicianId: technicianStatus.technicianId })
+      .from(technicianStatus)
+      .innerJoin(technicians, eq(technicians.id, technicianStatus.technicianId))
+      .leftJoin(shifts, eq(shifts.id, technicianStatus.shiftId))
+      .where(
+        and(
+          eq(technicians.locationId, locationId),
+          eq(technicians.active, true),
+          ne(technicianStatus.status, 'off'),
+          or(
+            and(eq(technicianStatus.status, 'out'), lte(technicianStatus.outStartedAt, outCutoff)),
+            lt(shifts.date, today),
+          ),
+        ),
+      )
+      .orderBy(asc(technicianStatus.technicianId));
+
+    const outOverPosted: string[] = [];
+    const autoCheckedOut: string[] = [];
+    for (const c of candidates) {
+      await tx
+        .select({ id: technicians.id })
+        .from(technicians)
+        .where(eq(technicians.id, c.technicianId))
+        .for('update');
+      const [r] = await tx
+        .select({
+          status: technicianStatus.status,
+          shiftId: technicianStatus.shiftId,
+          outStartedAt: technicianStatus.outStartedAt,
+          shiftDate: shifts.date,
+          openCall: sql<number>`(select count(*) from ${turnCalls} oc where oc.technician_id = ${technicianStatus.technicianId} and oc.responded_at is null)`,
+        })
+        .from(technicianStatus)
+        .leftJoin(shifts, eq(shifts.id, technicianStatus.shiftId))
+        .where(eq(technicianStatus.technicianId, c.technicianId))
+        .for('update', { of: technicianStatus });
+      if (!r || r.status === 'off') continue;
+      const stale = r.shiftDate !== null && r.shiftDate < today;
+      if (stale) {
+        // Yesterday's shift: close it (no out-over on a day that is over).
+        if (r.status === 'in_service' || Number(r.openCall) > 0) continue;
+        if (r.shiftId) {
+          await tx
+            .update(shifts)
+            .set({ checkedOutAt: now })
+            .where(and(eq(shifts.id, r.shiftId), isNull(shifts.checkedOutAt)));
+        }
+        await tx
+          .update(technicianStatus)
+          .set({
+            status: 'off',
+            since: now,
+            shiftId: null,
+            outStartedAt: null,
+            expectedBackAt: null,
+            updatedAt: now,
+          })
+          .where(eq(technicianStatus.technicianId, c.technicianId));
+        await writeAudit(tx, {
+          organizationId: loc.organizationId,
+          locationId,
+          actorUserId: null,
+          entityType: 'technician_status',
+          entityId: c.technicianId,
+          action: 'auto_check_out',
+          before: { status: r.status, shiftId: r.shiftId, shiftDate: r.shiftDate },
+          after: { status: 'off' },
+          reason: 'shift from an earlier day was still open',
+        });
+        autoCheckedOut.push(c.technicianId);
+        continue;
+      }
+      if (r.status === 'out' && r.outStartedAt && r.shiftId) {
+        const posted = await postOutOverIfDue(tx, {
+          organizationId: loc.organizationId,
+          locationId,
+          technicianId: c.technicianId,
+          shiftId: r.shiftId,
+          outStartedAt: r.outStartedAt,
+          rules,
+          now,
+        });
+        if (posted) outOverPosted.push(c.technicianId);
+      }
+    }
+    return { outOverPosted, autoCheckedOut };
   });
 }
 

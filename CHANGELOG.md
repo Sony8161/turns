@@ -2,6 +2,34 @@
 
 One version per delivered part. Tags point at the commits.
 
+## v0.6.0, 2026-11-05: Part 6, eligibility, restrictions, overrides
+
+- Technician skills per service category, tags, and the five restrictions
+  (`/admin/staff/[technician]`, owner and manager); a new technician does
+  everything; every save audited with before and after.
+- Client attributes on a walk-in (woman or man, kid and age, two services at
+  the same time, optional name and phone with the phone as the Fresha match
+  key); `clients` table; the name and phone never reach a technician's phone
+  or the audit log, and a technician's own call row hides the queue snapshot.
+- The engine runs every eligibility filter from the design doc: status, open
+  call, double-booking guard, skills (must match / preferred / ignored),
+  restrictions, appointment buffer (table added; Part 7 fills it). The desk
+  sees who was passed over and why; a requested technician skips the queue
+  only when the rules say so.
+- Timers: out over the limit posts the penalty once (sweep on load, and on
+  return); the board lists who is on break or out; the phone shows the timer;
+  a late check-in posts the tier's start points once; shifts left open from an
+  earlier day are closed on load.
+- Overrides tab (owner and manager): reassign with optional deny penalty and an
+  explicit override of skills, restrictions and the buffer (never status);
+  excuse one of today's penalties once (reversing ledger row); adjust points
+  by half steps. Every one needs a reason (audit log only), is refused across
+  locations and on one's own points.
+- Migration 0017: technician_skills, technician_tags, technician_restrictions,
+  clients, appointments, visit attributes, ledger reversal link, `excuse`
+  ledger reason, read policies.
+- Sample data: three technicians with attributes and four canned walk-ins.
+
 ## v0.5.1, 2026-11-04: QA pass fixes
 
 - A salon made from a setup code gets the starting menu (eight services), not

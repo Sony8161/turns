@@ -1,5 +1,6 @@
 'use client';
 
+import Link from 'next/link';
 import { useActionState } from 'react';
 import { Button } from '@/components/ui';
 import { fill, type Dictionary } from '@/i18n/dictionary';
@@ -14,6 +15,9 @@ type Row = {
   active: boolean;
   technicianStatus: string | null;
   isMe: boolean;
+  technicianId: string | null;
+  /** Skills and restrictions in one line, for technicians (Part 6). */
+  profile: string | null;
 };
 
 const ROLES: Role[] = ['owner', 'manager', 'receptionist', 'technician'];
@@ -32,6 +36,7 @@ export function StaffPanel({
   t,
   roles,
   statuses,
+  editProfile,
 }: {
   rows: Row[];
   actorRole: Role;
@@ -39,6 +44,8 @@ export function StaffPanel({
   t: Dictionary['staff'];
   roles: Dictionary['roles'];
   statuses: Dictionary['board']['status'];
+  /** The link text for a technician's skills page, or null when this role cannot edit it. */
+  editProfile: string | null;
 }) {
   const [state, action, pending] = useActionState<StaffState, FormData>(staffAction, {});
   const inviteRoles = allowed(actorRole, 'technician');
@@ -104,6 +111,16 @@ export function StaffPanel({
                     {!r.active ? t.archived : status ? statuses[status] : ''}
                   </span>
                 </div>
+                {r.profile ? (
+                  <div className="flex flex-wrap items-center gap-3 text-small">
+                    <span className="text-slate/80">{r.profile}</span>
+                    {r.active && editProfile && r.technicianId ? (
+                      <Link href={`/admin/staff/${r.technicianId}`} className="underline">
+                        {editProfile}
+                      </Link>
+                    ) : null}
+                  </div>
+                ) : null}
                 {r.active && targets.length > 0 ? (
                   <div className="flex flex-wrap items-end gap-3">
                     <form action={action} className="flex flex-wrap items-end gap-3">

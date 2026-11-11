@@ -115,12 +115,49 @@ and Check out wait for the call. This is what Phu sees on Dec 4.
   at the rule's minutes (30). The receptionist or manager can switch on a
   long-wait notice for customers; the kiosk (Part 9) will show it.
 
-### Part 6. Eligibility, restrictions, overrides
+### Part 6. Eligibility, restrictions, overrides (done)
 
-Skills (gel, dip, acrylic...), tags, and restrictions (no male clients, no kids,
-not at the same time...). The engine skips technicians who do not match. Deny
-with a reason from a list. Break and out timers with the penalty. Manager
-override, reassign and excuse, each with a reason that goes to the log.
+- **Skills and restrictions** (owner and manager, Staff → Skills and
+  restrictions): skills are per service category ("does every service", or
+  only the ticked categories); tags are free words for the desk; the five
+  restrictions from the design doc (no male clients, no kids, client must be
+  at least N, not for two-at-once visits, and a free-text one the desk sees
+  but the engine does not apply). A new technician does everything with no
+  restrictions. Every save is checked first and goes to the audit log with
+  before and after.
+- **Client attributes at the desk** (Duong, Nov 4): the receptionist can say
+  whether the client is a woman or a man, a kid and about how old, whether two
+  services are wanted at the same time (two linked visits, two technicians),
+  and optionally a name and phone. The phone is the key a later Fresha import
+  will match on. The name and phone never reach a technician's phone or the
+  audit log; the attributes the engine used (woman or man, kid, age) are kept
+  on the visit and in its audit row, and a technician's own call never shows
+  them.
+- **The engine's filters**, in order, each with its own test: status, no open
+  call, no visit already in progress (the double-booking guard), skills,
+  restrictions, no appointment inside the buffer (the table exists now; Part 7
+  fills it). After "Call next" the desk sees who was passed over and why
+  ("Linh: no kids", "Mai: does not do full_set"); when nobody can take it,
+  the whole list. The rule builder's "skills: must match / preferred /
+  ignored", "honor restrictions", "appointment buffer" and "a requested
+  technician skips the queue" are now read.
+- **Timers**: out longer than the rule's minutes (60) posts the penalty once,
+  whether a manager is looking or not (the board and the phone sweep on load,
+  and coming back posts it too); the board lists who is on break or out and
+  for how long; the phone shows the technician their own timer and the
+  penalty. A late check-in posts the tier's start points once per day (the
+  60-minute tier stays unset until Phu decides). A shift left open from an
+  earlier day is checked out when the board loads, unless the technician is in
+  service or has an open call.
+- **Overrides** (owner and manager, the Overrides tab): move an open visit to
+  another technician, with "count it as a deny" and "override skills,
+  restrictions and the appointment buffer" switches (status is never
+  overridden: a technician on break stays on break); excuse any of today's
+  penalties once (a reversing ledger row; a deny also marks its call); adjust a
+  technician's points by half steps. Every one needs a reason, which goes to
+  the audit log only (the ledger the floor can read carries a fixed word);
+  nobody can excuse or adjust their own points; a manager at one location
+  cannot touch another.
 
 ### Part 7. Appointments and the second location
 

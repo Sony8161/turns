@@ -1,6 +1,6 @@
 import { openCallFor } from '@turn/db/engine';
 import { activeRules } from '@turn/db/rules';
-import { locationStatus } from '@turn/db/status';
+import { locationStatus, sweepFloor } from '@turn/db/status';
 import Link from 'next/link';
 import { AutoRefresh } from '@/components/AutoRefresh';
 import { formatPoints, secondsSince } from '@/components/Board';
@@ -20,6 +20,8 @@ import { StatusPanel } from './StatusPanel';
 export default async function MePage() {
   const [{ lang, t }, actor] = await Promise.all([getDictionary(), requireActor()]);
   const tech = await technicianForUser(actor.userId);
+  // Part 6: the out-over penalty posts even if nobody looked at the board.
+  if (tech) await sweepFloor(db(), tech.locationId);
   const [board, call, rules] = tech
     ? await Promise.all([
         locationStatus(db(), tech.locationId),
@@ -29,6 +31,18 @@ export default async function MePage() {
     : [[], null, null];
   const me = tech ? board.find((r) => r.technicianId === tech.id) : undefined;
   const status = me?.status ?? 'off';
+  const awayMinutes = me?.since ? Math.floor(secondsSince(me.since) / 60) : 0;
+  const outOver = !!rules && status === 'out' && awayMinutes >= rules.penalties.out_over_minutes;
+  const timerLine =
+    rules && status === 'out'
+      ? fill(outOver ? t.me.outOver : t.me.outTimer, {
+          minutes: awayMinutes,
+          limit: rules.penalties.out_over_minutes,
+          points: formatPoints(rules.penalties.out_over_penalty),
+        })
+      : status === 'break'
+        ? fill(t.me.breakTimer, { minutes: awayMinutes })
+        : null;
 
   return (
     <main className="mx-auto flex w-full max-w-md flex-1 flex-col gap-8 px-4 py-6">
@@ -61,6 +75,9 @@ export default async function MePage() {
               </span>
             </p>
             <p className="text-slate/70">{t.me.pointsToday}</p>
+            {timerLine ? (
+              <p className={outOver ? 'font-semibold text-polish' : 'text-slate/80'}>{timerLine}</p>
+            ) : null}
           </section>
           {call ? (
             <CallPanel

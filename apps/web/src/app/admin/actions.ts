@@ -5,35 +5,46 @@ import { revalidatePath } from 'next/cache';
 import { membershipWith, requireActor, type Membership } from '@/lib/auth';
 import { db } from '@/lib/db';
 import { can } from '@/lib/permissions';
+import { toSkippedLines, type SkippedLine } from './chips';
+import { walkInFromForm } from './form';
 
-export type DeskState = { error?: string; detail?: string };
+export type DeskState = {
+  error?: string;
+  detail?: string;
+  /** Who was passed over for the last call, and why (Part 6). */
+  skipped?: SkippedLine[];
+};
 
 async function deskMembership(): Promise<Membership | null> {
   const actor = await requireActor();
   return membershipWith(actor, 'enter_walkins');
 }
 
-/** The receptionist enters a walk-in: services only. The salon and location come
- *  from the membership, never from the form. */
+/** The receptionist enters a walk-in: services, and what the rules need to
+ *  know about the client. The salon and location come from the membership,
+ *  never from the form. */
 export async function enterWalkIn(_prev: DeskState, formData: FormData): Promise<DeskState> {
   const actor = await requireActor();
   const m = await deskMembership();
   if (!m) return { error: 'not_allowed' };
-  const serviceIds = formData.getAll('service').map(String).filter(Boolean);
-  const requested = String(formData.get('requestedTechnician') ?? '');
+  const w = walkInFromForm(formData);
   const result = await createWalkIn(db(), {
     organizationId: m.organizationId,
     locationId: m.locationId,
-    serviceIds,
-    requestedTechnicianId: requested || null,
-    note: String(formData.get('note') ?? ''),
+    serviceIds: w.serviceIds,
+    requestedTechnicianId: w.requestedTechnicianId,
+    note: w.note,
+    client: w.client,
+    attributes: w.attributes,
+    sameTime: w.sameTime,
     actor: { userId: actor.userId },
   });
   revalidatePath('/admin');
   return result.ok ? {} : { error: result.reason };
 }
 
-/** Call the next technician for a waiting visit. Also used to re-send after a deny. */
+/** Call the next technician for a waiting visit. Also used to re-send after a
+ *  deny. The desk sees who was passed over and why (design doc, Eligibility). */
 export async function callNextFor(_prev: DeskState, formData: FormData): Promise<DeskState> {
   const actor = await requireActor();
   const m = await deskMembership();
@@ -46,7 +57,9 @@ export async function callNextFor(_prev: DeskState, formData: FormData): Promise
   });
   revalidatePath('/admin');
   revalidatePath('/me');
-  return result.ok ? {} : { error: result.reason, detail: result.detail };
+  return result.ok
+    ? { skipped: toSkippedLines(result.skipped) }
+    : { error: result.reason, detail: result.detail, skipped: toSkippedLines(result.skipped) };
 }
 
 /** The desk clears a call nobody answered (after the rules' minutes): no

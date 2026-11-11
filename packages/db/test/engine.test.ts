@@ -241,10 +241,11 @@ describe('the call flow', () => {
   it('a manager can reassign an open call to another technician with a reason', async () => {
     const call = await openCallFor(db, a.id);
     expect(call).not.toBeNull();
+    const manager = { userId: null, organizationId: ORG, locationId: LOC };
     const noReason = await reassignVisit(db, {
       visitId: call!.visitId,
       toTechnicianId: b.id,
-      actor: desk,
+      actor: manager,
       reason: ' ',
     });
     expect(noReason).toEqual({ ok: false, reason: 'reason_required' });
@@ -252,7 +253,7 @@ describe('the call flow', () => {
     const moved = await reassignVisit(db, {
       visitId: call!.visitId,
       toTechnicianId: b.id,
-      actor: desk,
+      actor: manager,
       reason: 'called wrong',
     });
     expect(moved.ok).toBe(true);

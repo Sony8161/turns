@@ -52,6 +52,7 @@ export default async function RulesPage() {
           current="rules"
           canStaff={!!any && can(any.role, 'invite_staff')}
           canRules={false}
+          canManage={!!any && can(any.role, 'override_queue')}
         />
         <p className="max-w-[60ch] text-lead">{t.rules.notAllowed}</p>
       </main>
@@ -95,7 +96,13 @@ export default async function RulesPage() {
   return (
     <main className="mx-auto flex w-full max-w-5xl flex-1 flex-col gap-8 px-4 py-6 sm:px-8">
       {header}
-      <AdminNav t={t.nav} current="rules" canStaff={can(m.role, 'invite_staff')} canRules />
+      <AdminNav
+        t={t.nav}
+        current="rules"
+        canStaff={can(m.role, 'invite_staff')}
+        canRules
+        canManage={can(m.role, 'override_queue')}
+      />
       <section className="flex flex-col gap-2">
         <h1 className="text-heading font-semibold">{t.rules.title}</h1>
         <p className="max-w-[70ch] text-slate/80">{t.rules.lead}</p>

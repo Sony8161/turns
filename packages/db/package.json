@@ -14,7 +14,9 @@
     "./rate-limit": "./src/rate-limit.ts",
     "./rules": "./src/rules.ts",
     "./staff": "./src/staff.ts",
-    "./seed": "./src/seed.ts"
+    "./seed": "./src/seed.ts",
+    "./profile": "./src/profile.ts",
+    "./clients": "./src/clients.ts"
   },
   "scripts": {
     "typecheck": "tsc --noEmit",

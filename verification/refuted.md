@@ -3,6 +3,63 @@
 Claims from reviewers that were checked and found not to be bugs. Kept so they
 are not re-raised.
 
+## 2026-11-05, Part 6 (REQ-5336cf7a)
+
+- **General reviewer: "on a successful call the skipped list includes eligible
+  technicians ahead of a requested pick, labelled available."** Refuted by
+  reading `skippedOf` (engine.ts): it filters to `!eligible` first, so an
+  eligible technician never appears. Only the `detail` string on the
+  nobody_eligible error lists everyone, and it is a debugging string.
+- **General reviewer: "the `busy` guard's `called` half never matches because
+  assigned_technician_id is set only on accept."** True today, and kept on
+  purpose: the guard is the database-side backstop the design doc asks for
+  ("not already assigned to an open visit"), and a later writer (Part 7's
+  appointment arrival, the kiosk) may assign before accept.
+- **General reviewer: "a requested technician who is ineligible blocks the
+  call instead of falling back to the line."** Decided, not refuted: with
+  `requested_tech_bypasses_queue` on, the client asked for that person and
+  waits for them; the desk sees why (skipped list) and can clear the request
+  by re-entering the walk-in, or a manager can move it. The comment in
+  `callNext` now says so. Revisit with Phu (16-Questions, request handling).
+- **Both reviewers: "the eligibility tests share one database and depend on
+  order."** Accepted, as for the Part 4 engine tests: each file resets and
+  migrates once and the tests tell one story in order; the follow-up block
+  uses fresh technicians and rests the floor by SQL so it does not depend on
+  the earlier point totals. A fresh-database-per-test harness is a Part 10
+  item (Playwright and CI).
+- **General reviewer: "`normalizePhone` duplicates `parseContact`."** The two
+  share a regex but serve different callers: the sign-in page (email or
+  phone, with iOS invisible marks) and the engine (phone only). The db
+  package cannot import the web app, and the web app importing clients.ts
+  would pull server code into a client bundle. Each has its own test.
+- **TypeScript reviewer: "the Desk form sends isKid as true or false, never
+  'not asked'."** By design: the checkbox is the desk's answer; a kid of
+  unknown age is caught by `min_client_age` only when the box is ticked, which
+  is the information the receptionist has.
+- **TypeScript reviewer: "the Passed-over box stays up for a different visit
+  until the next call."** Known; it is the last call's result, labelled as
+  such, and the auto-refresh does not clear action state. Cosmetic; revisit
+  with the kiosk screens.
+- **Database reviewer: "a technician left in `out` from yesterday gets an
+  out-over penalty on yesterday's shift."** Fixed differently: the sweep now
+  closes a stale shift first and posts no out-over on a day that is over.
+- **Database reviewer: "nothing ties `turn_ledger.reverses_id` to the excuse
+  reason type."** The code refuses to excuse anything but a deny, out-over or
+  late row, the row is locked, and `unique(reverses_id)` blocks a second
+  excuse. A CHECK would need the `excuse` enum value in SQL, which the same
+  migration cannot use (see the comment in 0017). Add it in a later migration
+  if a second writer ever appears.
+- **Database reviewer: "the profile tables are not tied to the technician's
+  own location."** `saveProfile` reads the technician row in the same
+  transaction and copies its organization and location; the composite
+  location key still holds. A trigger is not worth its cost until a second
+  writer exists (Part 7's appointment import, which will get the same review).
+- **Security reviewer: "a manager can excuse any past penalty."** Fixed: today
+  only, and never one's own (`not_today`, `own_points`).
+- **Security reviewer: "clients and appointments are readable org-wide."**
+  Fixed: owners read the salon, managers and receptionists their own
+  location (0017, as 0009 does for the audit log).
+
 ## 2026-11-04, Part 5 (REQ-ecc2ba80)
 
 - **Security reviewer: "`rule_configs.created_by ... on delete restrict` blocks

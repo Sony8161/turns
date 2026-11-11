@@ -184,7 +184,7 @@ Supabase Studio: http://127.0.0.1:54323.
 npm test
 ```
 
-Expect 121 database tests and 92 web tests to pass. They reset the local database
+Expect 157 database tests and 98 web tests to pass. They reset the local database
 before each test file and leave the last file's data behind, so run
 `npx supabase db reset` and then step 6 (or `npm run up`) afterwards if you want
 clean seed data.
@@ -272,6 +272,74 @@ the distance.
    the block says "Thảo has not answered for 16 min" with **Clear the call**. Clear
    it: no penalty, the visit waits again, **Call next** is back.
 
+## 8e. Skills, client attributes, timers and overrides (Part 6)
+
+`npm run up` seeds three technicians with attributes and, the first time the
+salon has no visits, four sample walk-ins (see `dev-codes.txt`): Thảo takes no
+male clients; Linh takes no kids and nobody under 12; Mai does everything but
+full sets and no both-at-once visits.
+
+**Skills and restrictions** (owner or manager). Open **Staff**: each technician
+row now has a one-line summary ("all services · no men · fast") and a **Skills
+and restrictions** link.
+
+1. On Mai's page: "Only these categories" with full_set unticked, "Not for
+   two-at-once visits" ticked, the free-text note. Tick "No kids", **Save**:
+   "Saved."; back on Staff the line reads "no kids". Studio → `audit_log` has
+   `technician_profile_changed` with before and after.
+2. Untick every category under "Only these": "Pick at least one category, or
+   choose does every service". Put 0 in the minimum age: "Enter an age from 1
+   to 120". Nothing was saved either time.
+3. Sign in as Hạnh (receptionist): the page says owners and managers set skills.
+
+**Who is skipped and why** (anyone at the desk). Check Thảo, Linh and Mai in on
+their phones (/me, "I'm here", "I'm ready"). On the board the four sample
+walk-ins wait with chips: "man", "kid, 8", "together", and a plain full set.
+
+1. **Call next** on the man: Thảo is passed over; the amber box under Waiting
+   says "Thảo: no male clients". Accept and finish on that phone.
+2. **Call next** on the kid of 8: "Linh: no kids" (or, if Linh is not first,
+   nobody is skipped: the engine only reports who was ahead of the pick).
+3. The both-at-once pair is two lines, each with **Call next**; Mai is never
+   called for either ("Mai: not for same-time visits").
+4. The full set: with Thảo and Linh busy, "Nobody can be called right now.
+   Nobody can take it: Mai: does not do full_set; ...".
+5. New walk-in: tick "A kid", age 9, pick Linh as requested technician: Linh
+   cannot be called for it; with "Anyone", Linh is skipped with "client too
+   young for them".
+6. Enter a phone with the walk-in, e.g. (813) 555-0199, twice: Studio →
+   `clients` has one row with `+18135550199`. A phone like "12" says "Enter a
+   US phone number, or leave it blank."
+
+**Timers.** On Mai's phone tap **Out**: the phone says "Out for 0 min. After 60
+min, 1 is added to your points"; the board's Needs attention block lists "Mai
+out 0 min". To see the penalty now, in Studio run
+`update technician_status set since = now() - interval '61 minutes', out_started_at = now() - interval '61 minutes' where status = 'out'`
+and reload the board: "Mai out 61 min, over 60: penalty posted"; Mai's points
+went up by 1 once (reload again: still once). Mai taps "I'm ready": no second
+penalty.
+
+**Overrides** (owner or manager). Open **Overrides** in the top bar
+(http://localhost:3000/admin/manage).
+
+1. **Today's penalties** lists Mai's "+1 for out over the limit" (and any deny).
+   **Excuse** it with a reason: "Penalty excused.", the row shows "excused",
+   Mai's points are back down. Excuse it again: not possible (the button is
+   gone; the server also refuses: "already excused").
+2. **Open visits**: move the man's visit to Thảo with a reason: "That technician
+   cannot take it right now (no male clients)". Tick "Override skills,
+   restrictions and the appointment buffer", move again: "Visit moved."; Thảo's
+   phone shows the call. Studio → `audit_log`: `visit_reassigned` with
+   `"forced": "no_male_clients"` and the reason.
+3. Put Linh on break, try to move a visit to Linh with the override ticked:
+   still refused ("on break"). Status is never overridden.
+4. **Adjust points**: −½ for Thảo with a reason: "Points posted."; the board
+   re-sorts; `audit_log` has `points_adjusted`.
+5. Sign in as Hạnh: the Overrides tab is not in the bar and /admin/manage says
+   owners and managers make overrides.
+6. Two locations (automated only, `packages/db/test/eligibility.test.ts`): a
+   manager at Brandon cannot reassign, excuse or adjust at Heavenly main.
+
 ## 9. If something is off
 
 - **"Something went wrong on our side"** on sign-in: the local stack is probably
@@ -287,6 +355,6 @@ the distance.
 
 ## What is not here yet
 
-Skills and restrictions, client attributes at the desk, break and out timers,
-manager override and excuse screens (Part 6), appointments (Part 7), the audit log
-viewer (Part 8), the customer kiosk (Part 9), push to the phone and the Expo app.
+Appointments and the calendar feed (Part 7; the table and the buffer filter
+exist), the audit log viewer (Part 8), the customer kiosk (Part 9), push to the
+phone and the Expo app.

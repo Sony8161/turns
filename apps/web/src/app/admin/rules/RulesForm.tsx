@@ -76,12 +76,9 @@ export function RulesForm({
     </label>
   );
 
-  const section = (title: string, children: ReactNode, laterPart?: number) => (
+  const section = (title: string, children: ReactNode) => (
     <section className="flex flex-col gap-4 bg-board p-5">
       <h2 className="text-heading font-semibold">{title}</h2>
-      {laterPart ? (
-        <p className="text-small text-slate/70">{fill(t.laterNote, { part: laterPart })}</p>
-      ) : null}
       {children}
     </section>
   );
@@ -152,10 +149,9 @@ export function RulesForm({
             <span className="text-polish">{err('penalties.late_tiers')}</span>
           ) : null}
         </div>,
-        6,
       )}
 
-      {section(t.sections.queue, toggle('queue.auto_pass', t.fields.auto_pass), 6)}
+      {section(t.sections.queue, toggle('queue.auto_pass', t.fields.auto_pass))}
 
       {section(
         t.sections.eligibility,
@@ -176,7 +172,6 @@ export function RulesForm({
             })),
           )}
         </div>,
-        6,
       )}
 
       {section(
