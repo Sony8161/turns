@@ -1,5 +1,6 @@
 'use client';
 
+import { ErrorRef } from '@/components/ErrorRef';
 import { useActionState } from 'react';
 import { formatClock } from '@/components/Board';
 import { Button } from '@/components/ui';
@@ -106,6 +107,7 @@ export function Desk({
         {clearState.error ? (
           <p role="alert" className="text-polish">
             {t.errors[clearState.error] ?? clearState.error}
+            <ErrorRef refId={clearState.ref} />
           </p>
         ) : null}
         <p className={attention.longWait ? 'font-semibold text-polish' : 'text-slate/80'}>
@@ -143,6 +145,7 @@ export function Desk({
           {noticeState.error ? (
             <span role="alert" className="text-polish">
               {t.errors[noticeState.error] ?? noticeState.error}
+              <ErrorRef refId={noticeState.ref} />
             </span>
           ) : null}
         </form>
@@ -241,6 +244,7 @@ export function Desk({
           {entry.error ? (
             <p role="alert" className="text-polish">
               {t.errors[entry.error] ?? entry.error}
+              <ErrorRef refId={entry.ref} />
             </p>
           ) : null}
           <Button type="submit" disabled={entering}>
@@ -254,11 +258,13 @@ export function Desk({
           {reviewState.error ? (
             <p role="alert" className="text-polish">
               {t.errors[reviewState.error] ?? reviewState.error}
+              <ErrorRef refId={reviewState.ref} />
             </p>
           ) : null}
           {callState.error ? (
             <p role="alert" className="text-polish">
               {t.errors[callState.error] ?? callState.error}
+              <ErrorRef refId={callState.ref} />
               {callState.error === 'nobody_eligible' && callState.skipped?.length
                 ? ` ${fill(t.nobodyLine, {
                     list: callState.skipped

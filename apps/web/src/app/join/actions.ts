@@ -8,14 +8,23 @@ import { redirect } from 'next/navigation';
 import { db } from '@/lib/db';
 import { clientIp } from '@/lib/request';
 import { setInviteCookie } from './invite-cookie';
+import { guarded } from '@/lib/action';
 
 export type JoinState = {
+  /** Reference shown for an unplanned failure (v0.10.1). */
+  ref?: string;
   typed?: { code: string; name: string };
-  error?: 'unknown' | 'used' | 'expired' | 'name' | 'tooMany' | 'already_member';
+  error?: 'unknown' | 'used' | 'expired' | 'name' | 'tooMany' | 'already_member' | 'server';
 };
 
 /** Checks the code without using it, remembers it, then sends the person to sign in. */
 export async function startJoin(_prev: JoinState, formData: FormData): Promise<JoinState> {
+  return guarded('startJoin', { error: 'server' } as JoinState, () =>
+    startJoinRun(_prev, formData),
+  );
+}
+
+async function startJoinRun(_prev: JoinState, formData: FormData): Promise<JoinState> {
   const code = String(formData.get('code') ?? '').trim();
   const name = String(formData.get('name') ?? '')
     .trim()

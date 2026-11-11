@@ -17,8 +17,11 @@ import { db } from '@/lib/db';
 import { uuidOf } from '@/lib/ids';
 import { can } from '@/lib/permissions';
 import { appointmentFromForm } from './form';
+import { guarded } from '@/lib/action';
 
 export type AppointmentsState = {
+  /** Reference shown for an unplanned failure (v0.10.1). */
+  ref?: string;
   error?: string;
   detail?: string;
   done?: string;
@@ -56,6 +59,15 @@ const feedReason = (r: string) => (r === 'too_long' ? 'too_long_url' : r);
  * calendar link (T13).
  */
 export async function appointmentsAction(
+  _prev: AppointmentsState,
+  formData: FormData,
+): Promise<AppointmentsState> {
+  return guarded('appointmentsAction', { error: 'server' } as AppointmentsState, () =>
+    appointmentsActionRun(_prev, formData),
+  );
+}
+
+async function appointmentsActionRun(
   _prev: AppointmentsState,
   formData: FormData,
 ): Promise<AppointmentsState> {

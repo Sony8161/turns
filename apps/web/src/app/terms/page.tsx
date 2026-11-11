@@ -37,7 +37,8 @@ export default function TermsPage() {
       <h2>Availability</h2>
       <p>
         [Service level, if any. Planned maintenance notice. What happens to the floor when the
-        connection drops: the iPad shows an offline notice and pauses actions.]
+        connection drops: the iPad shows an offline notice, and taps on its buttons are blocked, not
+        queued, so nothing is sent later.]
       </p>
       <h2>Liability</h2>
       <p>[Limitation of liability and warranty disclaimer: attorney to draft.]</p>

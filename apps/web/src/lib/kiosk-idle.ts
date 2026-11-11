@@ -9,6 +9,7 @@ export const KIOSK_COOKIE = 'turn-kiosk';
 export const KIOSK_UNLOCK_COOKIE = 'turn-kiosk-unlock';
 export const KIOSK_SEEN_COOKIE = 'turn-kiosk-staff-seen';
 export const KIOSK_STAFF_IDLE_MS = 5 * 60_000;
+const FUTURE_SLACK_MS = 60_000;
 
 /** Has a staff session on a kiosk iPad gone idle? A missing or junk clock
  *  counts as idle: every sign-in on a kiosk sets it, so none means a session
@@ -19,5 +20,9 @@ export function kioskStaffIdle(
   idleMs = KIOSK_STAFF_IDLE_MS,
 ): boolean {
   if (!seen || !/^\d{10,16}$/.test(seen)) return true;
-  return now - Number(seen) > idleMs;
+  const at = Number(seen);
+  // A clock from the future would never go idle (v0.10.1, Part 10 review
+  // finding 4). A minute of slack covers a tablet whose clock runs fast.
+  if (at > now + FUTURE_SLACK_MS) return true;
+  return now - at > idleMs;
 }

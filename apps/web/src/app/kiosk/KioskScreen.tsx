@@ -5,6 +5,7 @@
 // screen clears itself after every check-in and after a minute untouched
 // (threat model T12). Nothing typed is ever shown back except the first name
 // on the thank-you screen.
+import { ErrorRef } from '@/components/ErrorRef';
 import { useRouter } from 'next/navigation';
 import { useActionState, useCallback, useEffect, useRef, useState, type ReactNode } from 'react';
 import { fill, type Dictionary } from '@/i18n/dictionary';
@@ -279,6 +280,7 @@ function KioskRound({
           {error ? (
             <p role="alert" className="text-lead font-semibold text-polish">
               {error}
+              <ErrorRef refId={stepError ? undefined : state.ref} />
             </p>
           ) : null}
 
@@ -392,6 +394,7 @@ function Unlock({ t, onCancel }: { t: Dictionary['kiosk']; onCancel: () => void 
         {state.error ? (
           <p role="alert" className="font-semibold text-polish">
             {t.errors[state.error] ?? state.error}
+            <ErrorRef refId={state.ref} />
           </p>
         ) : null}
         <div className="flex gap-3">

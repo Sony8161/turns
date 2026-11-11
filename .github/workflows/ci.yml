@@ -83,3 +83,12 @@ jobs:
 
       - name: Bundle scan (nothing secret reaches a browser)
         run: npm run bundle:scan
+
+      # v0.10.1: what server components send at run time is not in the bundle.
+      # Start the production server and scan the HTML of the public pages.
+      - name: Rendered page scan
+        run: |
+          npm run start -w web -- -p 3000 > /tmp/web.log 2>&1 &
+          echo $! > /tmp/web.pid
+          npm run pages:scan -- http://127.0.0.1:3000
+          kill "$(cat /tmp/web.pid)" || true

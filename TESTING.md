@@ -464,7 +464,7 @@ Use two browser windows: a normal one signed in as staff, and a **private**
 2. **Offline.** On the desk or the kiosk, turn the computer's Wi-Fi off (or in
    the browser's developer tools, Network, choose Offline). A red bar says
    "No internet connection" and the buttons look paused; tapping one does
-   nothing. Turn Wi-Fi back on: the bar goes away; **Try again** reloads.
+   nothing, and it is not sent later when Wi-Fi returns (blocked, not queued). Turn Wi-Fi back on: the bar goes away; **Try again** reloads.
 3. **Drafts.** http://localhost:3000/terms and /privacy show the red "DRAFT,
    needs attorney review" box. Links at the bottom of the start page.
 4. **Scans.** `npm run secrets:scan`, then `npm run build -w web` and

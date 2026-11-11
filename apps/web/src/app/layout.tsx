@@ -1,6 +1,7 @@
 import type { Metadata } from 'next';
 import { Be_Vietnam_Pro } from 'next/font/google';
 import { cookies } from 'next/headers';
+import { ErrorRefLabel } from '@/components/ErrorRef';
 import { KioskStaffGuard } from '@/components/KioskStaffGuard';
 import { OfflineBanner } from '@/components/OfflineBanner';
 import { getDictionary } from '@/i18n/lang';
@@ -31,7 +32,7 @@ export default async function RootLayout({ children }: { children: React.ReactNo
       <body className="flex min-h-full flex-col">
         <OfflineBanner text={t.app.offline} retry={t.app.offlineRetry} />
         {kioskStaff ? <KioskStaffGuard /> : null}
-        {children}
+        <ErrorRefLabel label={t.app.errorRef}>{children}</ErrorRefLabel>
       </body>
     </html>
   );

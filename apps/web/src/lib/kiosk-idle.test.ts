@@ -18,4 +18,9 @@ describe('kioskStaffIdle', () => {
     expect(kioskStaffIdle('soon', now)).toBe(true);
     expect(kioskStaffIdle('1e15', now)).toBe(true);
   });
+  it('a clock from the future counts as idle, with a minute of slack (v0.10.1)', () => {
+    expect(kioskStaffIdle(String(now + 30_000), now)).toBe(false);
+    expect(kioskStaffIdle(String(now + 61_000), now)).toBe(true);
+    expect(kioskStaffIdle(String(now + 365 * 24 * 3600_000), now)).toBe(true);
+  });
 });

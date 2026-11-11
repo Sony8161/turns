@@ -13,8 +13,11 @@ import { db } from '@/lib/db';
 import { uuidOf } from '@/lib/ids';
 import { can } from '@/lib/permissions';
 import { toSkippedLines, type SkippedLine } from '../chips';
+import { guarded } from '@/lib/action';
 
 export type ManageState = {
+  /** Reference shown for an unplanned failure (v0.10.1). */
+  ref?: string;
   error?: string;
   detail?: string;
   /** For target_not_eligible: the target and why, in the desk's words. */
@@ -27,6 +30,12 @@ const HALF_STEPS = new Set(['-2', '-1.5', '-1', '-0.5', '0.5', '1', '1.5', '2'])
 /** One action for the overrides screen; the form says what it wants. The
  *  manager's location comes from their membership, never from the form (T10). */
 export async function manageAction(_prev: ManageState, formData: FormData): Promise<ManageState> {
+  return guarded('manageAction', { error: 'server' } as ManageState, () =>
+    manageActionRun(_prev, formData),
+  );
+}
+
+async function manageActionRun(_prev: ManageState, formData: FormData): Promise<ManageState> {
   const actor = await requireActor();
   const m = membershipWith(actor, 'override_queue');
   if (!m) return { error: 'not_allowed' };

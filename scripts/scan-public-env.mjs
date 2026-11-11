@@ -10,8 +10,11 @@ import { join, dirname, basename } from 'node:path';
 import { SECRET_SHAPES } from './secret-shapes.mjs';
 
 const ROOT = dirname(dirname(fileURLToPath(import.meta.url)));
-const SCAN_EXT = /\.(ts|tsx|js|mjs|cjs|json|toml|md|ya?ml|sh|ps1|html)$/;
-const ENV_FILE = /^\.env(\..*)?$/;
+// v0.10.1 (Part 10 review finding 6): every text file, not a list of
+// extensions (the old list skipped .sql migrations, .pem, .key, .txt, .svg).
+// Only known binary types are skipped, and any file with a NUL byte.
+const BINARY_EXT =
+  /\.(png|jpe?g|gif|webp|avif|ico|icns|bmp|tiff?|pdf|woff2?|ttf|otf|eot|zip|gz|tgz|7z|rar|mp3|mp4|mov|webm|wav|ogg|psd|sketch|fig)$/i;
 const PUBLIC_PREFIX = /\b(NEXT_PUBLIC_|EXPO_PUBLIC_)([A-Z0-9_]+)/g;
 const ALLOWED_PUBLIC = new Set(['SUPABASE_URL', 'SUPABASE_ANON_KEY']);
 
@@ -28,16 +31,20 @@ function trackedFiles() {
 }
 
 const problems = [];
+let scanned = 0;
 for (const rel of trackedFiles()) {
   const name = basename(rel);
-  if (!SCAN_EXT.test(name) && !ENV_FILE.test(name)) continue;
+  if (BINARY_EXT.test(name)) continue;
   const file = join(ROOT, rel);
-  let text;
+  let buf;
   try {
-    text = readFileSync(file, 'utf8');
+    buf = readFileSync(file);
   } catch {
     continue; // deleted in the working tree
   }
+  if (buf.subarray(0, 8000).includes(0)) continue; // binary
+  const text = buf.toString('utf8');
+  scanned++;
   for (const m of text.matchAll(PUBLIC_PREFIX)) {
     if (!ALLOWED_PUBLIC.has(m[2])) {
       problems.push(`${rel}: public variable ${m[1]}${m[2]} is not on the allow list`);
@@ -55,4 +62,6 @@ if (problems.length) {
   console.error(problems.join('\n'));
   process.exit(1);
 }
-console.log('secrets:scan ok: tracked files carry no disallowed public variables or secret shapes');
+console.log(
+  `secrets:scan ok: ${scanned} tracked text files carry no disallowed public variables or secret shapes`,
+);

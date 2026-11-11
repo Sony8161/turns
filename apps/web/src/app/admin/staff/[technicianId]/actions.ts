@@ -7,12 +7,22 @@ import { membershipWith, requireActor } from '@/lib/auth';
 import { db } from '@/lib/db';
 import { isUuid } from '@/lib/ids';
 import { profileFromForm } from '../profile-form';
+import { guarded } from '@/lib/action';
 
-export type ProfileState = { error?: ProfileError; saved?: boolean };
+export type ProfileState = { error?: ProfileError | 'server'; saved?: boolean; ref?: string };
 
 /** Saves a technician's skills, tags and restrictions. The actor's role and
  *  location come from their membership, never from the form (T10). */
 export async function saveProfileAction(
+  _prev: ProfileState,
+  formData: FormData,
+): Promise<ProfileState> {
+  return guarded('saveProfileAction', { error: 'server' } as ProfileState, () =>
+    saveProfileActionRun(_prev, formData),
+  );
+}
+
+async function saveProfileActionRun(
   _prev: ProfileState,
   formData: FormData,
 ): Promise<ProfileState> {

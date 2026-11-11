@@ -766,6 +766,9 @@ export const kioskDevices = pgTable(
     // the staff sign-in; the browser holds the random token, this its hash.
     unlockTokenHash: text('unlock_token_hash'),
     unlockExpiresAt: timestamp('unlock_expires_at', { withTimezone: true }),
+    // v0.10.1 (Part 10 review finding 5): when the PIN opened the window, so
+    // sending codes cannot keep it open past a fixed cap.
+    unlockOpenedAt: timestamp('unlock_opened_at', { withTimezone: true }),
   },
   (t) => [
     locationFk(t, 'kiosk_devices_location_fk'),

@@ -13,9 +13,12 @@ import { revalidatePath } from 'next/cache';
 import { membershipWith, requireActor } from '@/lib/auth';
 import { db } from '@/lib/db';
 import { configFromForm, fieldFor } from './form';
+import { guarded } from '@/lib/action';
 
 export type RulesState = {
-  error?: 'not_allowed' | 'invalid' | 'stale';
+  /** Reference shown for an unplanned failure (v0.10.1). */
+  ref?: string;
+  error?: 'not_allowed' | 'invalid' | 'stale' | 'server';
   /** For 'stale': the version somebody else saved meanwhile. */
   latestVersion?: number;
   /** form field -> problem code, for the form to show under each field. */
@@ -44,6 +47,12 @@ function typedOf(fd: FormData): Record<string, string> {
 /** Preview re-sorts today's board under the typed rules; Save makes a new
  *  version. Owner only (design doc; Duong: rules edit is owner-only). */
 export async function rulesAction(_prev: RulesState, formData: FormData): Promise<RulesState> {
+  return guarded('rulesAction', { error: 'server' } as RulesState, () =>
+    rulesActionRun(_prev, formData),
+  );
+}
+
+async function rulesActionRun(_prev: RulesState, formData: FormData): Promise<RulesState> {
   const actor = await requireActor();
   const m = membershipWith(actor, 'manage_rules');
   if (!m) return { error: 'not_allowed' };

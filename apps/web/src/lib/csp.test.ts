@@ -22,6 +22,10 @@ describe('buildCsp', () => {
   it('connects only to itself and the Supabase origin', () => {
     expect(parts['connect-src']).toBe("'self' https://x.supabase.co");
   });
+  it('reports violations to our own endpoint (v0.10.1)', () => {
+    expect(parts['report-uri']).toBe('/api/csp-report');
+    expect(parts['report-to']).toBe('csp');
+  });
   it('a junk Supabase URL adds nothing', () => {
     expect(buildCsp({ nonce: 'n', dev: false, supabaseUrl: 'javascript:alert(1)' })).toContain(
       "connect-src 'self';",

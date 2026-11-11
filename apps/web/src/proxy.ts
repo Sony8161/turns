@@ -5,8 +5,9 @@
 // membership again.
 import { createServerClient } from '@supabase/ssr';
 import { NextResponse, type NextRequest } from 'next/server';
-import { buildCsp, newNonce } from '@/lib/csp';
+import { buildCsp, CSP_REPORTING_ENDPOINTS, newNonce } from '@/lib/csp';
 import { KIOSK_COOKIE, KIOSK_SEEN_COOKIE, kioskStaffIdle } from '@/lib/kiosk-idle';
+import { hasSessionCookie, underAny } from '@/lib/session-cookie';
 
 const STAFF_PREFIXES = ['/admin', '/me'];
 // Where the session matters (the matcher before Part 10).
@@ -31,11 +32,19 @@ export async function proxy(request: NextRequest) {
   const next = () => NextResponse.next({ request: { headers } });
   const send = (r: NextResponse) => {
     r.headers.set('Content-Security-Policy', csp);
+    r.headers.set('Reporting-Endpoints', CSP_REPORTING_ENDPOINTS);
     return r;
   };
 
   const path = request.nextUrl.pathname;
-  if (!SESSION_PREFIXES.some((p) => path.startsWith(p))) return send(next());
+  // v0.10.1 (Part 10 review finding 3): any page a signed-in browser opens
+  // refreshes the session here, where the rotated cookie can be saved. The
+  // root layout checks the user on every page of a kiosk iPad; without this a
+  // refresh on "/" or "/terms" would use up the token and throw the new one
+  // away. A browser with no session cookie skips the auth call.
+  if (!underAny(path, SESSION_PREFIXES) && !hasSessionCookie(request)) {
+    return send(next());
+  }
 
   let response = next();
   const supabase = createServerClient(
@@ -76,7 +85,7 @@ export async function proxy(request: NextRequest) {
     }
   }
 
-  if (!user && STAFF_PREFIXES.some((p) => path.startsWith(p))) {
+  if (!user && underAny(path, STAFF_PREFIXES)) {
     const url = request.nextUrl.clone();
     url.pathname = '/login';
     url.search = '';

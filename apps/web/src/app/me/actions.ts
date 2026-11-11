@@ -11,6 +11,8 @@ import { technicianForUser } from '@/lib/technician';
 import { guarded } from '@/lib/action';
 
 export type MeState = {
+  /** Reference shown for an unplanned failure (v0.10.1). */
+  ref?: string;
   error?:
     | 'illegal_transition'
     | 'outside_geofence'

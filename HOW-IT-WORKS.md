@@ -272,8 +272,9 @@ A second iPad at the front, so a walk-in can check in when the desk is busy.
   that matches the server log, never the error itself. A button whose action
   fails for an unplanned reason answers "try again" instead of an error page,
   on the desk, the technician phone and the kiosk.
-- **Offline iPad.** When the Wi-Fi drops, a red bar says so, every button
-  pauses (so nothing half-saves), and **Try again** reloads once it is back.
+- **Offline iPad.** When the Wi-Fi drops, a red bar says so, and every button
+  is blocked, not queued: a tap does nothing and is not sent later, so nothing
+  half-saves. **Try again** reloads once it is back.
 - **Accessibility.** Error messages are announced to screen readers; every
   repeated button on the waiting list says which customer it is for; keyboard
   focus shows on the kiosk's big choice buttons and moves to each new kiosk

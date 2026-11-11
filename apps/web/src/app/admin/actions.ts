@@ -12,6 +12,8 @@ import { walkInFromForm } from './form';
 import { guarded } from '@/lib/action';
 
 export type DeskState = {
+  /** Reference shown for an unplanned failure (v0.10.1). */
+  ref?: string;
   error?: string;
   detail?: string;
   /** Who was passed over for the last call, and why (Part 6). */

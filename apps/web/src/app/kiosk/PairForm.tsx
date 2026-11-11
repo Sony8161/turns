@@ -1,5 +1,6 @@
 'use client';
 
+import { ErrorRef } from '@/components/ErrorRef';
 import { useActionState } from 'react';
 import type { Dictionary } from '@/i18n/dictionary';
 import { pairThisIpad, type KioskState } from './actions';
@@ -23,6 +24,7 @@ export function PairForm({ t }: { t: Dictionary['kiosk'] }) {
       {state.error ? (
         <p role="alert" className="font-semibold text-polish">
           {t.errors[state.error] ?? state.error}
+          <ErrorRef refId={state.ref} />
         </p>
       ) : null}
       <button

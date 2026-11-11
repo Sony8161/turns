@@ -405,7 +405,7 @@ export async function openKioskUnlock(
   const expiresAt = new Date(now.getTime() + minutes * 60_000);
   await db
     .update(kioskDevices)
-    .set({ unlockTokenHash: hashToken(token), unlockExpiresAt: expiresAt })
+    .set({ unlockTokenHash: hashToken(token), unlockExpiresAt: expiresAt, unlockOpenedAt: now })
     .where(and(eq(kioskDevices.id, device.deviceId), isNull(kioskDevices.revokedAt)));
   return { token, expiresAt };
 }
@@ -432,21 +432,38 @@ export async function kioskUnlockOpen(
   return !!row;
 }
 
-/** Keep the open window a little longer (the sign-in code is on its way). */
-export async function extendKioskUnlock(db: Db, device: KioskDevice, until: Date): Promise<void> {
-  await db
+/** However often a code is sent, one PIN opens the sign-in for at most this
+ *  long (v0.10.1, Part 10 review finding 5). */
+export const UNLOCK_CAP_MIN = 15;
+
+/** Keep the open window a little longer (the sign-in code is on its way), but
+ *  never past UNLOCK_CAP_MIN after the PIN, and never re-open a closed one. */
+export async function extendKioskUnlock(
+  db: Db,
+  device: KioskDevice,
+  until: Date,
+): Promise<Date | null> {
+  const [row] = await db
     .update(kioskDevices)
-    .set({ unlockExpiresAt: until })
+    .set({
+      unlockExpiresAt: sql`least(${until.toISOString()}::timestamptz, coalesce(${kioskDevices.unlockOpenedAt}, ${kioskDevices.unlockExpiresAt}) + make_interval(mins => ${UNLOCK_CAP_MIN}))`,
+    })
     .where(
-      and(eq(kioskDevices.id, device.deviceId), sql`${kioskDevices.unlockTokenHash} is not null`),
-    );
+      and(
+        eq(kioskDevices.id, device.deviceId),
+        sql`${kioskDevices.unlockTokenHash} is not null`,
+        gt(kioskDevices.unlockExpiresAt, new Date()),
+      ),
+    )
+    .returning({ until: kioskDevices.unlockExpiresAt });
+  return row?.until ?? null;
 }
 
 /** Used up (signed in) or abandoned. */
 export async function closeKioskUnlock(db: Db, device: KioskDevice): Promise<void> {
   await db
     .update(kioskDevices)
-    .set({ unlockTokenHash: null, unlockExpiresAt: null })
+    .set({ unlockTokenHash: null, unlockExpiresAt: null, unlockOpenedAt: null })
     .where(eq(kioskDevices.id, device.deviceId));
 }
 

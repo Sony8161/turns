@@ -5,6 +5,10 @@
 // an injected string, no plugin, no framing, no form posting elsewhere.
 // Styles allow inline: Next and the error page inline small style blocks, and
 // a style cannot run code. Pure, so the tests read it.
+export const CSP_REPORT_PATH = '/api/csp-report';
+/** The Reporting-Endpoints header that goes with the policy. */
+export const CSP_REPORTING_ENDPOINTS = `csp="${CSP_REPORT_PATH}"`;
+
 export function buildCsp(input: { nonce: string; dev: boolean; supabaseUrl: string }): string {
   const supabase = safeOrigin(input.supabaseUrl);
   const script = ["'self'", `'nonce-${input.nonce}'`, "'strict-dynamic'"];
@@ -23,6 +27,11 @@ export function buildCsp(input: { nonce: string; dev: boolean; supabaseUrl: stri
     "form-action 'self'",
     "frame-ancestors 'none'",
     ...(input.dev ? [] : ['upgrade-insecure-requests']),
+    // v0.10.1 (Part 10 review finding 8): violations are reported to
+    // /api/csp-report. report-to names the endpoint in the Reporting-Endpoints
+    // header (CSP_REPORTING_ENDPOINTS); report-uri is for older browsers.
+    `report-uri ${CSP_REPORT_PATH}`,
+    'report-to csp',
   ];
   return directives.join('; ');
 }

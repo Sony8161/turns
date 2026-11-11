@@ -12,9 +12,12 @@ import {
 import { revalidatePath } from 'next/cache';
 import { membershipWith, requireActor } from '@/lib/auth';
 import { db } from '@/lib/db';
+import { guarded } from '@/lib/action';
 
 export type StaffState = {
-  error?: StaffError | 'bad_role';
+  /** Reference shown for an unplanned failure (v0.10.1). */
+  ref?: string;
+  error?: StaffError | 'bad_role' | 'server';
   /** A fresh invite code, shown once. */
   code?: string;
   expiresAt?: string;
@@ -31,6 +34,12 @@ function roleOf(raw: FormDataEntryValue | null): Role | null {
 /** One action for the staff screen; the form says what it wants. The actor's
  *  role and location come from their membership, never from the form (T10). */
 export async function staffAction(_prev: StaffState, formData: FormData): Promise<StaffState> {
+  return guarded('staffAction', { error: 'server' } as StaffState, () =>
+    staffActionRun(_prev, formData),
+  );
+}
+
+async function staffActionRun(_prev: StaffState, formData: FormData): Promise<StaffState> {
   const actor = await requireActor();
   const m = membershipWith(actor, 'invite_staff');
   if (!m) return { error: 'not_allowed' };

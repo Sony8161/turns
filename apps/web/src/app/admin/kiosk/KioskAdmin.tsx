@@ -1,5 +1,6 @@
 'use client';
 
+import { ErrorRef } from '@/components/ErrorRef';
 import { useActionState } from 'react';
 import { Button } from '@/components/ui';
 import { fill, type Dictionary } from '@/i18n/dictionary';
@@ -61,7 +62,12 @@ export function KioskAdmin({
   const [again, repair, repairing] = useActionState<KioskAdminState, FormData>(repairKiosk, {});
   const [gone, revoke, revoking] = useActionState<KioskAdminState, FormData>(revokeKioskAction, {});
   const err = (s: KioskAdminState) =>
-    s.error ? <p className="text-polish">{t.errors[s.error] ?? s.error}</p> : null;
+    s.error ? (
+      <p className="text-polish">
+        {t.errors[s.error] ?? s.error}
+        <ErrorRef refId={s.ref} />
+      </p>
+    ) : null;
   const fields = (
     <>
       <label className="flex flex-col gap-1">

@@ -8,10 +8,13 @@ import { redirect } from 'next/navigation';
 import { db } from '@/lib/db';
 import { clientIp } from '@/lib/request';
 import { setInviteCookie } from '../join/invite-cookie';
+import { guarded } from '@/lib/action';
 
 export type SetupState = {
+  /** Reference shown for an unplanned failure (v0.10.1). */
+  ref?: string;
   typed?: { code: string; name: string; salonName: string; locationName: string };
-  error?: 'unknown' | 'used' | 'expired' | 'fields' | 'tooMany';
+  error?: 'unknown' | 'used' | 'expired' | 'fields' | 'tooMany' | 'server';
 };
 
 const field = (formData: FormData, key: string, max: number) =>
@@ -21,6 +24,12 @@ const field = (formData: FormData, key: string, max: number) =>
 
 /** Checks the setup code without using it, remembers the answers, then sign-in. */
 export async function startSetup(_prev: SetupState, formData: FormData): Promise<SetupState> {
+  return guarded('startSetup', { error: 'server' } as SetupState, () =>
+    startSetupRun(_prev, formData),
+  );
+}
+
+async function startSetupRun(_prev: SetupState, formData: FormData): Promise<SetupState> {
   const typed = {
     code: field(formData, 'code', 20),
     name: field(formData, 'name', 80),

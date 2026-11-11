@@ -31,8 +31,10 @@ export default function PrivacyPage() {
       <ul>
         <li>
           A first name and, if given, a phone number, typed at the desk or on the check-in iPad. A
-          number typed on the iPad is kept only with that visit until the desk confirms the customer
-          is there.
+          number typed on the iPad stays with that visit only until the desk answers: when the desk
+          confirms the customer is there, the name and number are saved to the salon&apos;s customer
+          list; when the desk marks them not here, the number is deleted. [How long the customer
+          list keeps a number: owner and attorney to decide.]
         </li>
         <li>
           What the desk or the customer says the visit needs: services, and, when asked, woman or

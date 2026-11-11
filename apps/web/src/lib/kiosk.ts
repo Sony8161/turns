@@ -76,10 +76,10 @@ export async function dropStaleKioskCookie(): Promise<void> {
 
 /** The sign-in code is on its way: keep the window open long enough to type it. */
 export async function holdKioskUnlock(device: KioskDevice, minutes = 10): Promise<void> {
-  const until = new Date(Date.now() + minutes * 60_000);
-  await extendKioskUnlock(db(), device, until);
+  // The database caps it at 15 minutes after the PIN (v0.10.1).
+  const until = await extendKioskUnlock(db(), device, new Date(Date.now() + minutes * 60_000));
   const token = (await cookies()).get(KIOSK_UNLOCK_COOKIE)?.value;
-  if (token) {
+  if (token && until) {
     (await cookies()).set(KIOSK_UNLOCK_COOKIE, token, {
       httpOnly: true,
       sameSite: 'strict',

@@ -1,5 +1,6 @@
 'use client';
 
+import { ErrorRef } from '@/components/ErrorRef';
 import { useActionState, useEffect, useRef, useState } from 'react';
 import { Button } from '@/components/ui';
 import { fill, type Dictionary } from '@/i18n/dictionary';
@@ -83,6 +84,7 @@ export function StatusPanel({
       {error ? (
         <p role="alert" className="text-polish">
           {error}
+          <ErrorRef refId={state.ref} />
         </p>
       ) : null}
       <div className="flex flex-col gap-3">

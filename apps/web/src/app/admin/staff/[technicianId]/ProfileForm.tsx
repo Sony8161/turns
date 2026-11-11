@@ -1,5 +1,6 @@
 'use client';
 
+import { ErrorRef } from '@/components/ErrorRef';
 import { useActionState, useState } from 'react';
 import { Button } from '@/components/ui';
 import type { Dictionary } from '@/i18n/dictionary';
@@ -36,7 +37,12 @@ export function ProfileForm({
   return (
     <form action={action} className="flex flex-col gap-6">
       <input type="hidden" name="technicianId" value={technicianId} />
-      {state.error ? <p className="text-polish">{t.errors[state.error] ?? state.error}</p> : null}
+      {state.error ? (
+        <p className="text-polish">
+          {t.errors[state.error] ?? state.error}
+          <ErrorRef refId={state.ref} />
+        </p>
+      ) : null}
       {state.saved ? <p className="font-semibold text-teal">{t.saved}</p> : null}
 
       <section className="flex flex-col gap-3 bg-board p-5">

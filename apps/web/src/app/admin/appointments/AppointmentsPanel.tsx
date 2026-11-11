@@ -1,5 +1,6 @@
 'use client';
 
+import { ErrorRef } from '@/components/ErrorRef';
 import { useActionState } from 'react';
 import { Button } from '@/components/ui';
 import { fill, type Dictionary } from '@/i18n/dictionary';
@@ -55,6 +56,7 @@ export function AppointmentsPanel({
   const message = state.error ? (
     <p role="alert" className="text-polish">
       {t.errors[state.error] ?? state.error}
+      <ErrorRef refId={state.ref} />
       {state.detail ? ` (${state.detail})` : ''}
     </p>
   ) : state.done ? (

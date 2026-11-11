@@ -17,10 +17,16 @@ import { clientIp } from '@/lib/request';
 import { adminAuth } from '@/lib/supabase/admin';
 import { createClient } from '@/lib/supabase/server';
 import { clearInviteCookie, readInviteCookie } from '../join/invite-cookie';
+import { guarded, guardedVoid } from '@/lib/action';
 
 export type LoginState =
-  | { step: 'contact'; typed?: string; error?: 'invalidContact' | 'tooMany' | 'unknown' }
-  | { step: 'code'; contact: Contact; error?: 'badCode' | 'unknown' };
+  | {
+      step: 'contact';
+      typed?: string;
+      error?: 'invalidContact' | 'tooMany' | 'unknown' | 'server';
+      ref?: string;
+    }
+  | { step: 'code'; contact: Contact; error?: 'badCode' | 'unknown' | 'server'; ref?: string };
 
 // Threat model T7: codes per contact and per address, in a 15-minute window.
 const WINDOW = 15 * 60;
@@ -29,6 +35,16 @@ const PER_IP = 20;
 
 /** One action for the whole sign-in: the form says which step it is on. */
 export async function login(prev: LoginState, formData: FormData): Promise<LoginState> {
+  return guarded(
+    'login',
+    (prev.step === 'code'
+      ? { ...prev, error: 'server' }
+      : { step: 'contact', error: 'server' }) as LoginState,
+    () => loginRun(prev, formData),
+  );
+}
+
+async function loginRun(prev: LoginState, formData: FormData): Promise<LoginState> {
   const intent = formData.get('intent');
   if (intent === 'back') return { step: 'contact' };
   if (intent === 'verify' && prev.step === 'code') return verifyCode(prev, formData);
@@ -133,6 +149,10 @@ async function verifyCode(
 }
 
 export async function signOut(): Promise<void> {
+  return guardedVoid('signOut', () => signOutRun());
+}
+
+async function signOutRun(): Promise<void> {
   const supabase = await createClient();
   await supabase.auth.signOut();
   await clearInviteCookie();

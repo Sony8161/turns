@@ -1,27 +1,19 @@
 // SEC-001 task 7: after `npm run build -w web`, nothing a browser downloads may
-// carry a secret. Scans apps/web/.next/static (every file the site serves to
-// browsers) for secret shapes, database connection strings and the names of
-// server-only variables, and fails when a source map is published.
+// carry a secret. Scans apps/web/.next/static and apps/web/public (every file
+// the site serves as is) for secret shapes, database connection strings and
+// the names of server-only variables, and fails when a source map is
+// published. Rendered pages are scanned by scan-pages.mjs (v0.10.1).
 // Usage: node scripts/scan-bundle.mjs   (exit 1 on any hit)
 import { readdirSync, readFileSync, statSync } from 'node:fs';
 import { dirname, join, relative } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { SECRET_SHAPES } from './secret-shapes.mjs';
+import { BROWSER_SHAPES } from './secret-shapes.mjs';
 
 const ROOT = dirname(dirname(fileURLToPath(import.meta.url)));
 const STATIC = join(ROOT, 'apps', 'web', '.next', 'static');
+const PUBLIC = join(ROOT, 'apps', 'web', 'public');
 
-const BUNDLE_SHAPES = [
-  ...SECRET_SHAPES,
-  { name: 'database connection string', re: /postgres(?:ql)?:\/\/[^\s'"`]+:[^\s'"`@]+@/ },
-  { name: 'Stripe test key', re: /\bsk_test_[A-Za-z0-9]{10,}/ },
-  // Names of server-only variables: if one is in a browser file, a server
-  // module was pulled into the client.
-  {
-    name: 'server-only variable name',
-    re: /\b(SUPABASE_SERVICE_ROLE_KEY|DATABASE_URL|CRON_SECRET)\b/,
-  },
-];
+const BUNDLE_SHAPES = BROWSER_SHAPES;
 
 function walk(dir) {
   const out = [];
@@ -40,6 +32,11 @@ try {
   console.error(`scan-bundle: ${relative(ROOT, STATIC)} not found; run npm run build -w web first`);
   process.exit(1);
 }
+try {
+  files.push(...walk(PUBLIC));
+} catch {
+  // no public folder: nothing to add
+}
 
 const problems = [];
 let scanned = 0;
@@ -49,7 +46,7 @@ for (const file of files) {
     problems.push(`${rel}: source map published to browsers`);
     continue;
   }
-  if (!/\.(js|css|html|json|txt)$/.test(file)) continue;
+  if (!/\.(js|mjs|css|html|json|txt|svg|xml|webmanifest)$/.test(file)) continue;
   const text = readFileSync(file, 'utf8');
   scanned++;
   for (const shape of BUNDLE_SHAPES) {

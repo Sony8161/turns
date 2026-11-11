@@ -1,5 +1,6 @@
 'use client';
 
+import { ErrorRef } from '@/components/ErrorRef';
 import { useActionState } from 'react';
 import { Button, Field } from '@/components/ui';
 import { fill, type Dictionary } from '@/i18n/dictionary';
@@ -39,6 +40,7 @@ export function LoginForm({ t }: { t: Dictionary['login'] }) {
         >
           {t.changeContact}
         </button>
+        <ErrorRef refId={state.ref} />
       </form>
     );
   }
@@ -61,6 +63,7 @@ export function LoginForm({ t }: { t: Dictionary['login'] }) {
       <Button type="submit" name="intent" value="send" disabled={pending}>
         {t.sendCode}
       </Button>
+      <ErrorRef refId={state.ref} />
     </form>
   );
 }

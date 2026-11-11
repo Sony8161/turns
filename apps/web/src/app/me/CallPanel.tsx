@@ -1,5 +1,6 @@
 'use client';
 
+import { ErrorRef } from '@/components/ErrorRef';
 import { useActionState, useState } from 'react';
 import { Button } from '@/components/ui';
 import { fill, type Dictionary } from '@/i18n/dictionary';
@@ -43,6 +44,7 @@ export function CallPanel({
       {state.error ? (
         <p role="alert" className="text-polish">
           {t.errors[state.error]}
+          <ErrorRef refId={state.ref} />
         </p>
       ) : null}
       {!denying ? (

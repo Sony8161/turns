@@ -9,6 +9,7 @@ const en = {
   app: {
     offline: 'No internet connection. Buttons are paused until it is back; nothing was saved.',
     offlineRetry: 'Try again',
+    errorRef: 'Reference: {ref}',
     name: 'Turn board',
   },
   lang: {
@@ -46,6 +47,7 @@ const en = {
     verify: 'Sign in',
     changeContact: 'Use a different email or phone',
     errors: {
+      server: 'Something went wrong on our side. Try again in a moment.',
       invalidContact: 'Enter an email address or a US phone number.',
       badCode: "That code didn't match. Check it and try again.",
       tooMany: 'Too many codes requested. Wait a few minutes and try again.',
@@ -62,6 +64,7 @@ const en = {
     signedInAs:
       "You're signed in as {name}. An invite code is for a new account, so sign out first, then enter the code.",
     errors: {
+      server: 'Something went wrong on our side. Try again in a moment.',
       unknown: "That invite code isn't valid. Ask the owner for a new one.",
       used: 'That invite code has been used. Ask the owner for a new one.',
       expired: 'That invite code has expired. Ask the owner for a new one.',
@@ -81,6 +84,7 @@ const en = {
     locationName: 'Location name (for example, Main or Brandon)',
     continue: 'Continue',
     errors: {
+      server: 'Something went wrong on our side. Try again in a moment.',
       unknown: "That setup code isn't valid.",
       used: 'That setup code has been used.',
       expired: 'That setup code has expired.',
@@ -283,6 +287,7 @@ const en = {
       adjust: 'Points posted.',
     },
     errors: {
+      server: 'Something went wrong on our side. Try again in a moment.',
       not_allowed: 'Your role cannot do that.',
       wrong_location: 'That is at another location.',
       unknown_visit: 'That visit is gone. Refresh.',
@@ -360,6 +365,7 @@ const en = {
       synced: 'Sync done.',
     } as Record<string, string>,
     errors: {
+      server: 'Something went wrong on our side. Try again in a moment.',
       not_allowed: 'Your role cannot do that.',
       wrong_location: 'That is at another location.',
       unknown_appointment: 'That appointment is gone. Refresh.',
@@ -434,6 +440,7 @@ const en = {
     } as Record<string, string>,
     edit: 'Skills and restrictions',
     errors: {
+      server: 'Something went wrong on our side. Try again in a moment.',
       not_allowed: 'Your role cannot do that.',
       wrong_location: 'That technician is at another location.',
       unknown_technician: 'That technician is not here any more. Refresh.',
@@ -454,6 +461,7 @@ const en = {
     invalidVersion: 'does not pass the checks; the engine skips it',
     noValid: 'No version passes the checks. Ask for help before the next shift.',
     notAllowed: 'Only the owner changes the rules.',
+    server: 'Something went wrong on our side. Try again in a moment.',
     sections: {
       points: 'Points',
       categories: 'Points per service category',
@@ -541,6 +549,7 @@ const en = {
       restore: 'Restored.',
     },
     errors: {
+      server: 'Something went wrong on our side. Try again in a moment.',
       not_allowed: 'Your role cannot do that.',
       wrong_location: 'That person is at another location.',
       unknown_member: 'That person is not here any more. Refresh.',
@@ -764,6 +773,7 @@ const en = {
     newCode: 'New pairing code',
     revoke: 'Revoke',
     errors: {
+      server: 'Something went wrong on our side. Try again in a moment.',
       bad_name: 'Give the iPad a name.',
       bad_pin: 'The PIN is four digits.',
       bad_code: 'Pairing failed. Try again.',
@@ -785,6 +795,7 @@ const vi: Dictionary = {
   app: {
     offline: 'Mất kết nối mạng. Các nút tạm khóa cho đến khi có mạng lại; không có gì bị lưu.',
     offlineRetry: 'Thử lại',
+    errorRef: 'Mã tham chiếu: {ref}',
     name: 'Bảng lượt',
   },
   lang: {
@@ -822,6 +833,7 @@ const vi: Dictionary = {
     verify: 'Đăng nhập',
     changeContact: 'Dùng email hoặc số điện thoại khác',
     errors: {
+      server: 'Có lỗi từ phía chúng tôi. Thử lại sau giây lát.',
       invalidContact: 'Nhập địa chỉ email hoặc số điện thoại Mỹ.',
       badCode: 'Mã không đúng. Kiểm tra lại và thử lần nữa.',
       tooMany: 'Yêu cầu mã quá nhiều lần. Chờ vài phút rồi thử lại.',
@@ -838,6 +850,7 @@ const vi: Dictionary = {
     signedInAs:
       'Bạn đang đăng nhập là {name}. Mã mời dành cho tài khoản mới, nên hãy đăng xuất trước rồi nhập mã.',
     errors: {
+      server: 'Có lỗi từ phía chúng tôi. Thử lại sau giây lát.',
       unknown: 'Mã mời không hợp lệ. Hỏi chủ tiệm để lấy mã mới.',
       used: 'Mã mời này đã được dùng. Hỏi chủ tiệm để lấy mã mới.',
       expired: 'Mã mời đã hết hạn. Hỏi chủ tiệm để lấy mã mới.',
@@ -857,6 +870,7 @@ const vi: Dictionary = {
     locationName: 'Tên chi nhánh (ví dụ: Chính hoặc Brandon)',
     continue: 'Tiếp tục',
     errors: {
+      server: 'Có lỗi từ phía chúng tôi. Thử lại sau giây lát.',
       unknown: 'Mã lập tiệm không hợp lệ.',
       used: 'Mã lập tiệm này đã được dùng.',
       expired: 'Mã lập tiệm đã hết hạn.',
@@ -1056,6 +1070,7 @@ const vi: Dictionary = {
       adjust: 'Đã ghi điểm.',
     },
     errors: {
+      server: 'Có lỗi từ phía chúng tôi. Thử lại sau giây lát.',
       not_allowed: 'Vai trò của bạn không làm được việc này.',
       wrong_location: 'Việc này ở chi nhánh khác.',
       unknown_visit: 'Lượt khách này không còn. Tải lại trang.',
@@ -1132,6 +1147,7 @@ const vi: Dictionary = {
       synced: 'Đồng bộ xong.',
     } as Record<string, string>,
     errors: {
+      server: 'Có lỗi từ phía chúng tôi. Thử lại sau giây lát.',
       not_allowed: 'Vai trò của bạn không làm được việc này.',
       wrong_location: 'Việc này ở chi nhánh khác.',
       unknown_appointment: 'Lịch hẹn này không còn. Hãy tải lại.',
@@ -1206,6 +1222,7 @@ const vi: Dictionary = {
     } as Record<string, string>,
     edit: 'Kỹ năng và giới hạn',
     errors: {
+      server: 'Có lỗi từ phía chúng tôi. Thử lại sau giây lát.',
       not_allowed: 'Vai trò của bạn không làm được việc này.',
       wrong_location: 'Thợ này ở chi nhánh khác.',
       unknown_technician: 'Thợ này không còn ở đây. Tải lại trang.',
@@ -1226,6 +1243,7 @@ const vi: Dictionary = {
     invalidVersion: 'không qua kiểm tra; hệ thống bỏ qua',
     noValid: 'Không có phiên bản nào qua kiểm tra. Hỏi hỗ trợ trước ca tiếp theo.',
     notAllowed: 'Chỉ chủ tiệm đổi được quy tắc.',
+    server: 'Có lỗi từ phía chúng tôi. Thử lại sau giây lát.',
     sections: {
       points: 'Điểm',
       categories: 'Điểm theo nhóm dịch vụ',
@@ -1313,6 +1331,7 @@ const vi: Dictionary = {
       restore: 'Đã khôi phục.',
     },
     errors: {
+      server: 'Có lỗi từ phía chúng tôi. Thử lại sau giây lát.',
       not_allowed: 'Vai trò của bạn không làm được việc này.',
       wrong_location: 'Người này ở chi nhánh khác.',
       unknown_member: 'Người này không còn ở đây. Tải lại trang.',
@@ -1536,6 +1555,7 @@ const vi: Dictionary = {
     newCode: 'Mã ghép mới',
     revoke: 'Thu hồi',
     errors: {
+      server: 'Có lỗi từ phía chúng tôi. Thử lại sau giây lát.',
       bad_name: 'Hãy đặt tên cho iPad.',
       bad_pin: 'Mã PIN gồm bốn số.',
       bad_code: 'Ghép không được. Hãy thử lại.',

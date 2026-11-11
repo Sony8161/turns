@@ -1,8 +1,9 @@
 'use client';
 
 // Part 10: the salon iPad loses Wi-Fi. A banner says so, every form submit is
-// held back (a tap would otherwise fail halfway and leave the person unsure
-// what happened), and "Try again" reloads once the connection is back. The
+// blocked, not queued (a tap would otherwise fail halfway and leave the person
+// unsure what happened; nothing is sent later), and "Try again" reloads once
+// the connection is back. The
 // browser's own online/offline events drive it; a server that is down but
 // reachable shows the normal "Something went wrong" answers instead.
 import { useRouter } from 'next/navigation';
@@ -21,7 +22,7 @@ export function OfflineBanner({ text, retry }: { text: string; retry: string }) 
     };
     // Capture phase on window: runs before React's own submit listener, so a
     // form action is never started while offline.
-    const hold = (e: Event) => {
+    const block = (e: Event) => {
       if (navigator.onLine) return;
       e.preventDefault();
       e.stopPropagation();
@@ -30,11 +31,11 @@ export function OfflineBanner({ text, retry }: { text: string; retry: string }) 
     sync();
     window.addEventListener('online', sync);
     window.addEventListener('offline', sync);
-    window.addEventListener('submit', hold, true);
+    window.addEventListener('submit', block, true);
     return () => {
       window.removeEventListener('online', sync);
       window.removeEventListener('offline', sync);
-      window.removeEventListener('submit', hold, true);
+      window.removeEventListener('submit', block, true);
     };
   }, []);
 

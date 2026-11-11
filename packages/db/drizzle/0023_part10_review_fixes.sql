@@ -1,0 +1,1 @@
+ALTER TABLE "kiosk_devices" ADD COLUMN "unlock_opened_at" timestamp with time zone;

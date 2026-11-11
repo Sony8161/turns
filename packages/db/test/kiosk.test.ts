@@ -25,6 +25,7 @@ import {
   listKiosks,
   newPairingCode,
   openKioskUnlock,
+  extendKioskUnlock,
   pairKiosk,
   reviewKioskVisit,
   revokeKiosk,
@@ -589,6 +590,21 @@ describe('review fixes', () => {
     const other = await paired(manager, 'Other unlock');
     const o = await openKioskUnlock(db, other.device, now);
     expect(await kioskUnlockOpen(db, device, o.token, now)).toBe(false);
+  });
+
+  it('v0.10.1: sending codes cannot keep the unlock open past 15 minutes', async () => {
+    const opened = new Date(Date.now() - 14 * 60_000);
+    const u = await openKioskUnlock(db, device, opened, 20);
+    // Asking for ten more minutes stops at the cap: 15 minutes after the PIN.
+    const until = await extendKioskUnlock(db, device, new Date(Date.now() + 10 * 60_000));
+    expect(until?.getTime()).toBe(opened.getTime() + 15 * 60_000);
+    expect(
+      await kioskUnlockOpen(db, device, u.token, new Date(opened.getTime() + 16 * 60_000)),
+    ).toBe(false);
+    // A window that has closed is not re-opened by a late code request.
+    await sql`update kiosk_devices set unlock_expires_at = now() - interval '1 minute' where id = ${device.deviceId}`;
+    expect(await extendKioskUnlock(db, device, new Date(Date.now() + 10 * 60_000))).toBeNull();
+    await closeKioskUnlock(db, device);
   });
 
   it('5: unconfirmed check-ins do not lengthen the wait estimate', async () => {

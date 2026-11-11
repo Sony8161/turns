@@ -1,5 +1,6 @@
 'use client';
 
+import { ErrorRef } from '@/components/ErrorRef';
 import { useActionState } from 'react';
 import { Button, Field } from '@/components/ui';
 import type { Dictionary } from '@/i18n/dictionary';
@@ -46,6 +47,7 @@ export function JoinForm({ t, initialError }: { t: Dictionary['join']; initialEr
       <Button type="submit" disabled={pending}>
         {t.continue}
       </Button>
+      <ErrorRef refId={state.ref} />
     </form>
   );
 }

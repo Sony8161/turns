@@ -15,7 +15,13 @@ import { createClient, getAuthUser } from '@/lib/supabase/server';
 import { kioskFromForm } from './form';
 import { guarded } from '@/lib/action';
 
-export type KioskState = { error?: string; done?: boolean; name?: string; at?: number };
+export type KioskState = {
+  error?: string;
+  done?: boolean;
+  name?: string;
+  at?: number;
+  ref?: string;
+};
 
 // Limits (T7, T25): a stolen or scripted kiosk cannot flood the queue, and the
 // PIN and pairing code cannot be guessed. Generous for a real front desk.

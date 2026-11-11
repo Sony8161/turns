@@ -1,5 +1,6 @@
 'use client';
 
+import { ErrorRef } from '@/components/ErrorRef';
 import { useActionState, type ReactNode } from 'react';
 import { formatPoints } from '@/components/Board';
 import { Button } from '@/components/ui';
@@ -96,6 +97,12 @@ export function RulesForm({
         <p className="text-polish">{fill(t.stale, { version: state.latestVersion ?? '?' })}</p>
       ) : null}
       {state.error === 'not_allowed' ? <p className="text-polish">{t.notAllowed}</p> : null}
+      {state.error === 'server' ? (
+        <p role="alert" className="text-polish">
+          {t.server}
+          <ErrorRef refId={state.ref} />
+        </p>
+      ) : null}
 
       {section(
         t.sections.points,

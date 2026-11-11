@@ -1,5 +1,6 @@
 'use client';
 
+import { ErrorRef } from '@/components/ErrorRef';
 import { useActionState } from 'react';
 import { formatPoints } from '@/components/Board';
 import { Button } from '@/components/ui';
@@ -50,6 +51,7 @@ export function ManagePanel({
           ? skipText(state.skipped[0], skip)
           : (skip[state.detail ?? ''] ?? state.detail ?? ''),
       })}
+      <ErrorRef refId={state.ref} />
     </p>
   ) : state.done ? (
     <p className="font-semibold text-teal">{t.done[state.done]}</p>

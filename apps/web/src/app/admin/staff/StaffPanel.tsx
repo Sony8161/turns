@@ -1,5 +1,6 @@
 'use client';
 
+import { ErrorRef } from '@/components/ErrorRef';
 import Link from 'next/link';
 import { useActionState } from 'react';
 import { Button } from '@/components/ui';
@@ -84,7 +85,10 @@ export function StaffPanel({
       </form>
 
       {state.error ? (
-        <p className="text-polish">{t.errors[state.error] ?? state.error}</p>
+        <p className="text-polish">
+          {t.errors[state.error] ?? state.error}
+          <ErrorRef refId={state.ref} />
+        </p>
       ) : state.done ? (
         <p className="font-semibold text-teal">{t.done[state.done]}</p>
       ) : null}
