@@ -103,6 +103,7 @@ export default async function StaffPage() {
         canStaff
         canRules={can(m.role, 'manage_rules')}
         canManage={can(m.role, 'override_queue')}
+        canLog={can(m.role, 'view_audit')}
       />
       <section className="flex flex-col gap-2">
         <h1 className="text-heading font-semibold">

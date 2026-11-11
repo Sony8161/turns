@@ -53,6 +53,7 @@ export default async function ManagePage() {
           canStaff={!!any && can(any.role, 'invite_staff')}
           canRules={!!any && can(any.role, 'manage_rules')}
           canManage={false}
+          canLog={!!any && can(any.role, 'view_audit')}
         />
         <p className="max-w-[60ch] text-lead">{t.manage.notAllowed}</p>
       </main>
@@ -76,6 +77,7 @@ export default async function ManagePage() {
         canStaff={can(m.role, 'invite_staff')}
         canRules={can(m.role, 'manage_rules')}
         canManage
+        canLog={can(m.role, 'view_audit')}
       />
       <section className="flex flex-col gap-2">
         <h1 className="text-heading font-semibold">

@@ -58,6 +58,7 @@ export default async function AppointmentsPage() {
           canStaff={!!any && can(any.role, 'invite_staff')}
           canRules={!!any && can(any.role, 'manage_rules')}
           canManage={!!any && can(any.role, 'override_queue')}
+          canLog={!!any && can(any.role, 'view_audit')}
         />
         <p className="max-w-[60ch] text-lead">{t.appointments.notAllowed}</p>
       </main>
@@ -115,6 +116,7 @@ export default async function AppointmentsPage() {
         canStaff={can(m.role, 'invite_staff')}
         canRules={isOwner}
         canManage={can(m.role, 'override_queue')}
+        canLog={can(m.role, 'view_audit')}
       />
       <section className="flex flex-col gap-2">
         <h1 className="text-heading font-semibold">

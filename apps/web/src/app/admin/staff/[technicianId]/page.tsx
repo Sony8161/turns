@@ -92,6 +92,7 @@ export default async function TechnicianProfilePage({
         canStaff
         canRules={can(m.role, 'manage_rules')}
         canManage={can(m.role, 'override_queue')}
+        canLog={can(m.role, 'view_audit')}
       />
       <section className="flex flex-col gap-2">
         <Link href="/admin/staff" className="text-small underline">

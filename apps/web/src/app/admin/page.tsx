@@ -3,6 +3,7 @@ import { locations, serviceCategories, services, turnCalls } from '@turn/db';
 import { appointmentsBetween } from '@turn/db/appointments';
 import { compareQueue, floorAttention, todayCounts, waitingVisits } from '@turn/db/engine';
 import { feedSummary, FEED_STALE_MIN } from '@turn/db/feeds';
+import { ensureDailySummary, localDate, previousDate } from '@turn/db/reports';
 import { activeRules } from '@turn/db/rules';
 import { locationStatus, sweepFloor } from '@turn/db/status';
 import Link from 'next/link';
@@ -66,6 +67,13 @@ export default async function AdminPage() {
   });
   const nextAppointments = upcoming.filter((a) => !a.arrivedAt && !a.cancelledAt).slice(0, 4);
   const owner = !!membership && can(membership.role, 'manage_rules');
+  // Part 8: the owner's end-of-day summary for yesterday (written once, then read).
+  const yesterday =
+    owner && membership ? previousDate(localDate(now, loc?.timezone ?? 'America/New_York')) : null;
+  const lastDay =
+    yesterday && membership
+      ? await ensureDailySummary(db(), membership.locationId, yesterday, now)
+      : null;
 
   return (
     <main className="mx-auto flex w-full max-w-5xl flex-1 flex-col gap-8 px-4 py-6 sm:px-8">
@@ -95,6 +103,7 @@ export default async function AdminPage() {
             canStaff={can(membership.role, 'invite_staff')}
             canRules={can(membership.role, 'manage_rules')}
             canManage={can(membership.role, 'override_queue')}
+            canLog={can(membership.role, 'view_audit')}
           />
           <section className="flex flex-col gap-4">
             <h1 className="text-heading font-semibold">
@@ -105,6 +114,22 @@ export default async function AdminPage() {
             </h1>
             <Board rows={rows} t={t} compact />
             <p className="text-slate/80">{fill(t.admin.today, counts)}</p>
+            {lastDay ? (
+              <p className="text-slate/80">
+                {fill(t.admin.yesterday, {
+                  date: lastDay.date,
+                  visits: lastDay.visits,
+                  denies: lastDay.denies,
+                  overrides: lastDay.overrides,
+                })}{' '}
+                <Link
+                  href={`/admin/reports?date=${lastDay.date}`}
+                  className="font-semibold underline"
+                >
+                  {t.admin.seeReport}
+                </Link>
+              </p>
+            ) : null}
           </section>
           {calendar && (calendar.feeds > 0 || nextAppointments.length > 0) ? (
             <section

@@ -14,26 +14,35 @@ export function AdminNav({
   canRules,
   canManage = false,
   canAppointments = true,
+  canLog = false,
 }: {
   t: Dictionary['nav'];
-  current: 'board' | 'staff' | 'rules' | 'manage' | 'appointments';
+  current: 'board' | 'staff' | 'rules' | 'manage' | 'appointments' | 'log' | 'reports';
   canStaff: boolean;
   canRules: boolean;
   canManage?: boolean;
   /** Every staff role that sees the board sees appointments (Part 7). */
   canAppointments?: boolean;
+  /** Owners and managers: the audit log and reports (Part 8). */
+  canLog?: boolean;
 }) {
   const items: Item[] = [{ href: '/admin', label: t.board }];
   if (canAppointments) items.push({ href: '/admin/appointments', label: t.appointments });
   if (canManage) items.push({ href: '/admin/manage', label: t.manage });
   if (canStaff) items.push({ href: '/admin/staff', label: t.staff });
   if (canRules) items.push({ href: '/admin/rules', label: t.rules });
+  if (canLog) {
+    items.push({ href: '/admin/log', label: t.log });
+    items.push({ href: '/admin/reports', label: t.reports });
+  }
   const active = {
     board: '/admin',
     staff: '/admin/staff',
     rules: '/admin/rules',
     manage: '/admin/manage',
     appointments: '/admin/appointments',
+    log: '/admin/log',
+    reports: '/admin/reports',
   }[current];
   return (
     <nav aria-label="Admin" className="flex flex-wrap items-center gap-2">
