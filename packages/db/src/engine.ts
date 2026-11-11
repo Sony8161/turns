@@ -4,7 +4,7 @@
 // Every number comes from rule_config (rules.ts); nothing here is hard-coded.
 import { randomUUID } from 'node:crypto';
 import { and, asc, desc, eq, gt, inArray, isNull, lt, sql } from 'drizzle-orm';
-import { upsertClient, type ClientGender, type ClientInput } from './clients';
+import { normalizePhone, upsertClient, type ClientGender, type ClientInput } from './clients';
 import { doesEverything, loadProfiles, restrictionOf, type TechnicianProfile } from './profile';
 import { activeRules, visitPointsUnder, type RuleConfig } from './rules';
 import {
@@ -86,8 +86,10 @@ export async function createWalkIn(
     client?: ClientInput | null;
     attributes?: ClientAttributes | null;
     sameTime?: boolean;
-    /** Part 9: a kiosk check-in waits for the desk to confirm (kiosk.ts). */
-    kiosk?: { deviceId: string; name: string } | null;
+    /** Part 9: a kiosk check-in waits for the desk to confirm (kiosk.ts). The
+     *  phone stays on the visit; no client row is touched until the desk
+     *  confirms (v0.9.1). */
+    kiosk?: { deviceId: string; name: string; phone?: string | null } | null;
   },
 ): Promise<{ ok: true; visitId: string; visitIds: string[] } | EngineError> {
   if (input.serviceIds.length === 0) return { ok: false, reason: 'no_services' };
@@ -129,13 +131,22 @@ export async function createWalkIn(
       if (!t) return { ok: false, reason: 'unknown_technician' };
     }
     const gender = input.attributes?.gender ?? input.client?.gender ?? null;
-    const client = await upsertClient(tx, {
-      organizationId: input.organizationId,
-      locationId: input.locationId,
-      name: input.client?.name ?? null,
-      phone: input.client?.phone ?? null,
-      gender,
-    });
+    // A kiosk check-in is unverified input: it keeps the phone on the visit and
+    // touches no client row until the desk confirms (review finding 1).
+    let kioskPhone: string | null = null;
+    if (input.kiosk?.phone?.trim()) {
+      kioskPhone = normalizePhone(input.kiosk.phone);
+      if (!kioskPhone) return { ok: false, reason: 'bad_phone' };
+    }
+    const client = input.kiosk
+      ? ({ ok: true, clientId: null } as const)
+      : await upsertClient(tx, {
+          organizationId: input.organizationId,
+          locationId: input.locationId,
+          name: input.client?.name ?? null,
+          phone: input.client?.phone ?? null,
+          gender,
+        });
     if (!client.ok) return { ok: false, reason: client.reason };
 
     const rules = await activeRules(tx, input.locationId);
@@ -144,20 +155,20 @@ export async function createWalkIn(
     const groups = sameTime ? rows.map((s) => [s]) : [rows];
     const visitIds: string[] = [];
     for (const group of groups) {
+      // A same-time pair: the request goes with the first visit; the second
+      // one needs a second technician. An appointment keeps its source with
+      // its booked technician (Part 7). A kiosk request stays self_checkin
+      // until the desk accepts it (v0.9.1, review finding 2).
+      const requested = visitIds.length === 0 ? (input.requestedTechnicianId ?? null) : null;
+      const storedSource =
+        requested && source !== 'appointment' && !input.kiosk ? 'request' : source;
       const [visit] = await tx
         .insert(visits)
         .values({
           organizationId: input.organizationId,
           locationId: input.locationId,
-          // A same-time pair: the request goes with the first visit; the
-          // second one needs a second technician.
-          // An appointment keeps its source with its booked technician (Part 7).
-          source:
-            input.requestedTechnicianId && visitIds.length === 0 && source !== 'appointment'
-              ? 'request'
-              : source,
-          requestedTechnicianId:
-            visitIds.length === 0 ? (input.requestedTechnicianId ?? null) : null,
+          source: storedSource,
+          requestedTechnicianId: requested,
           note: input.note?.trim().slice(0, 300) || null,
           createdBy: input.actor.userId,
           clientId: client.clientId,
@@ -167,6 +178,7 @@ export async function createWalkIn(
           groupId,
           kioskDeviceId: input.kiosk?.deviceId ?? null,
           kioskName: input.kiosk?.name ?? null,
+          kioskPhone,
           needsConfirm: !!input.kiosk,
         })
         .returning({ id: visits.id });
@@ -188,7 +200,8 @@ export async function createWalkIn(
         entityId: visit.id,
         action: input.kiosk ? 'kiosk_check_in' : 'visit_created',
         after: {
-          source,
+          source: storedSource,
+          requestedTechnicianId: requested,
           ...(input.kiosk ? { kioskDeviceId: input.kiosk.deviceId } : {}),
           serviceIds: group.map((s) => s.id),
           gender,
@@ -764,6 +777,9 @@ export async function reassignVisit(
     if (visit.status === 'completed' || visit.status === 'cancelled') {
       return { ok: false, reason: 'visit_closed' };
     }
+    // Part 9: the desk confirms a kiosk check-in first (the call trigger would
+    // refuse anyway; this keeps the answer clean, review finding 3).
+    if (visit.needsConfirm) return { ok: false, reason: 'needs_confirm' };
     const now = new Date();
     // Decide first, write after: a refusal must leave the visit, its open
     // call and the first technician exactly as they were (a returned error
@@ -1042,6 +1058,8 @@ export async function floorAttention(
       and(
         eq(visits.locationId, locationId),
         inArray(visits.status, ['waiting', 'called', 'in_service']),
+        // An unconfirmed kiosk check-in may be nobody (v0.9.1, review finding 5).
+        eq(visits.needsConfirm, false),
       ),
     )
     .orderBy(asc(visits.arrivedAt));

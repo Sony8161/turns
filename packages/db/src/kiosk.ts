@@ -9,7 +9,8 @@
 // phone typed is already on file (no enumeration).
 import { createHash, randomBytes, scrypt as scryptCb, timingSafeEqual } from 'node:crypto';
 import { promisify } from 'node:util';
-import { and, desc, eq, gt, inArray, isNull, lt, or, sql } from 'drizzle-orm';
+import { and, asc, desc, eq, gt, inArray, isNull, lt, or, sql } from 'drizzle-orm';
+import { upsertClient } from './clients';
 import { createWalkIn, floorAttention, type ClientAttributes, type ManagerActor } from './engine';
 import { generateCode, hashCode } from './invites';
 import { kioskDevices, serviceCategories, services, technicians, visits } from './schema';
@@ -19,6 +20,10 @@ import { writeAudit } from './status';
 const scrypt = promisify(scryptCb) as (pw: string, salt: Buffer, len: number) => Promise<Buffer>;
 
 export const PAIRING_TTL_MIN = 15;
+/** The right PIN opens the staff sign-in on this iPad for this long. */
+export const UNLOCK_TTL_MIN = 2;
+/** A token nobody has used for this long stops working (re-pair the iPad). */
+export const TOKEN_IDLE_DAYS = 90;
 export const KIOSK_NAME_MAX = 40;
 const DEVICE_NAME_MAX = 60;
 // lastSeenAt is a hint for the admin list; writing it on every tap is noise.
@@ -278,7 +283,32 @@ export async function pairKiosk(
         locationId: kioskDevices.locationId,
         name: kioskDevices.name,
       });
-    if (!row) return { ok: false as const, reason: 'bad_code' as const };
+    if (!row) {
+      // A code that once belonged to a device (expired): audited there. A code
+      // that matches nothing has no salon to log it under; the caller's per
+      // address limit covers guessing (v0.9.1, review finding 7).
+      const [known] = await tx
+        .select({
+          id: kioskDevices.id,
+          organizationId: kioskDevices.organizationId,
+          locationId: kioskDevices.locationId,
+          revokedAt: kioskDevices.revokedAt,
+        })
+        .from(kioskDevices)
+        .where(eq(kioskDevices.pairingCodeHash, hashCode(input.code)));
+      if (known) {
+        await writeAudit(tx, {
+          organizationId: known.organizationId,
+          locationId: known.locationId,
+          actorUserId: null,
+          entityType: 'kiosk_devices',
+          entityId: known.id,
+          action: 'kiosk_pair_failed',
+          after: { why: known.revokedAt ? 'revoked' : 'expired' },
+        });
+      }
+      return { ok: false as const, reason: 'bad_code' as const };
+    }
     await writeAudit(tx, {
       organizationId: row.organizationId,
       locationId: row.locationId,
@@ -315,7 +345,14 @@ export async function kioskFromToken(
       name: kioskDevices.name,
     })
     .from(kioskDevices)
-    .where(and(eq(kioskDevices.tokenHash, hashToken(token)), isNull(kioskDevices.revokedAt)));
+    .where(
+      and(
+        eq(kioskDevices.tokenHash, hashToken(token)),
+        isNull(kioskDevices.revokedAt),
+        // Not used for TOKEN_IDLE_DAYS: the iPad must be paired again (finding 7).
+        sql`coalesce(${kioskDevices.lastSeenAt}, ${kioskDevices.pairedAt}, ${kioskDevices.createdAt}) > ${new Date(now.getTime() - TOKEN_IDLE_DAYS * 86_400_000).toISOString()}::timestamptz`,
+      ),
+    );
   if (!row) return null;
   await db
     .update(kioskDevices)
@@ -351,6 +388,66 @@ export async function checkKioskPin(db: Db, device: KioskDevice, pin: unknown): 
     }),
   );
   return ok;
+}
+
+/**
+ * After the right PIN: a random token for a short-lived cookie that lets this
+ * iPad reach the staff sign-in (v0.9.1, review finding 4). Only its hash is
+ * stored; a new unlock replaces the old one.
+ */
+export async function openKioskUnlock(
+  db: Db,
+  device: KioskDevice,
+  now: Date = new Date(),
+  minutes: number = UNLOCK_TTL_MIN,
+): Promise<{ token: string; expiresAt: Date }> {
+  const token = randomBytes(32).toString('base64url');
+  const expiresAt = new Date(now.getTime() + minutes * 60_000);
+  await db
+    .update(kioskDevices)
+    .set({ unlockTokenHash: hashToken(token), unlockExpiresAt: expiresAt })
+    .where(and(eq(kioskDevices.id, device.deviceId), isNull(kioskDevices.revokedAt)));
+  return { token, expiresAt };
+}
+
+/** Is this browser's unlock token the open one for this iPad? */
+export async function kioskUnlockOpen(
+  db: Db,
+  device: KioskDevice,
+  token: string | null | undefined,
+  now: Date = new Date(),
+): Promise<boolean> {
+  if (!token || token.length > 100) return false;
+  const [row] = await db
+    .select({ id: kioskDevices.id })
+    .from(kioskDevices)
+    .where(
+      and(
+        eq(kioskDevices.id, device.deviceId),
+        eq(kioskDevices.unlockTokenHash, hashToken(token)),
+        gt(kioskDevices.unlockExpiresAt, now),
+        isNull(kioskDevices.revokedAt),
+      ),
+    );
+  return !!row;
+}
+
+/** Keep the open window a little longer (the sign-in code is on its way). */
+export async function extendKioskUnlock(db: Db, device: KioskDevice, until: Date): Promise<void> {
+  await db
+    .update(kioskDevices)
+    .set({ unlockExpiresAt: until })
+    .where(
+      and(eq(kioskDevices.id, device.deviceId), sql`${kioskDevices.unlockTokenHash} is not null`),
+    );
+}
+
+/** Used up (signed in) or abandoned. */
+export async function closeKioskUnlock(db: Db, device: KioskDevice): Promise<void> {
+  await db
+    .update(kioskDevices)
+    .set({ unlockTokenHash: null, unlockExpiresAt: null })
+    .where(eq(kioskDevices.id, device.deviceId));
 }
 
 /** What the kiosk offers: the menu and the technicians a customer may ask for.
@@ -415,12 +512,12 @@ export async function kioskCheckIn(
     actor: { userId: null },
     source: 'self_checkin',
     requestedTechnicianId: input.requestedTechnicianId ?? null,
-    // The phone alone is the match key; a name without a phone would make a
-    // new client row on every check-in. A known phone keeps its stored name.
-    client: phone ? { name, phone } : null,
+    // Nothing typed here edits or makes a client row: the phone waits on the
+    // visit, and the desk's confirm links it (v0.9.1, review finding 1).
+    client: null,
     attributes: input.attributes ?? null,
     sameTime: input.sameTime,
-    kiosk: { deviceId: input.device.deviceId, name },
+    kiosk: { deviceId: input.device.deviceId, name, phone },
   });
   if (!r.ok) {
     const known: KioskCheckInError[] = [
@@ -440,32 +537,55 @@ export async function kioskCheckIn(
   return { ok: true, visitIds: r.visitIds };
 }
 
+export type KioskDecision = 'confirm' | 'confirm_no_request' | 'decline';
+
 /**
  * The desk confirms a kiosk check-in (the engine may then call), or declines
  * it (nobody there, a test, a duplicate): the visit is cancelled. A same-time
  * pair is confirmed or declined together.
+ *
+ * v0.9.1 (review findings 1, 2, 6): the whole group is locked in one ordered
+ * statement, so two desks on the two halves cannot deadlock. Only a confirm
+ * links the typed phone to a client: a known phone is linked and never filled
+ * in, a new one gets a row with the typed name (never the gender). "confirm"
+ * accepts a requested technician (the visit becomes a request); with
+ * "confirm_no_request" the request is dropped and the line decides.
  */
 export async function reviewKioskVisit(
   db: Db,
-  input: { actor: ManagerActor; visitId: string; decision: 'confirm' | 'decline'; now?: Date },
+  input: { actor: ManagerActor; visitId: string; decision: KioskDecision; now?: Date },
 ): Promise<
   | { ok: true; visitIds: string[] }
   | { ok: false; reason: 'unknown_visit' | 'wrong_location' | 'not_pending' }
 > {
   const now = input.now ?? new Date();
   return db.transaction(async (tx) => {
-    const [visit] = await tx
+    const [first] = await tx
+      .select({ groupId: visits.groupId })
+      .from(visits)
+      .where(eq(visits.id, input.visitId));
+    if (!first) return { ok: false as const, reason: 'unknown_visit' as const };
+    const rows = await tx
       .select({
         id: visits.id,
         locationId: visits.locationId,
         organizationId: visits.organizationId,
-        groupId: visits.groupId,
         needsConfirm: visits.needsConfirm,
         status: visits.status,
+        source: visits.source,
+        requestedTechnicianId: visits.requestedTechnicianId,
+        kioskName: visits.kioskName,
+        kioskPhone: visits.kioskPhone,
       })
       .from(visits)
-      .where(eq(visits.id, input.visitId))
+      .where(
+        first.groupId
+          ? or(eq(visits.id, input.visitId), eq(visits.groupId, first.groupId))
+          : eq(visits.id, input.visitId),
+      )
+      .orderBy(asc(visits.id))
       .for('update');
+    const visit = rows.find((r) => r.id === input.visitId);
     if (!visit) return { ok: false as const, reason: 'unknown_visit' as const };
     if (
       visit.locationId !== input.actor.locationId ||
@@ -476,42 +596,80 @@ export async function reviewKioskVisit(
     if (!visit.needsConfirm || visit.status !== 'waiting') {
       return { ok: false as const, reason: 'not_pending' as const };
     }
-    const group = visit.groupId
-      ? await tx
-          .select({ id: visits.id })
-          .from(visits)
-          .where(
-            and(
-              eq(visits.groupId, visit.groupId),
-              eq(visits.locationId, visit.locationId),
-              eq(visits.needsConfirm, true),
-              eq(visits.status, 'waiting'),
-            ),
-          )
-          .for('update')
-      : [{ id: visit.id }];
+    const group = rows.filter(
+      (r) => r.locationId === visit.locationId && r.needsConfirm && r.status === 'waiting',
+    );
     const ids = group.map((g) => g.id);
-    await tx
-      .update(visits)
-      .set(
-        input.decision === 'confirm'
-          ? {
-              needsConfirm: false,
-              confirmedBy: input.actor.userId,
-              confirmedAt: now,
-              updatedAt: now,
-            }
-          : { needsConfirm: false, status: 'cancelled', cancelledAt: now, updatedAt: now },
-      )
-      .where(inArray(visits.id, ids));
-    for (const id of ids) {
+
+    if (input.decision === 'decline') {
+      await tx
+        .update(visits)
+        .set({
+          needsConfirm: false,
+          status: 'cancelled',
+          cancelledAt: now,
+          kioskPhone: null,
+          updatedAt: now,
+        })
+        .where(inArray(visits.id, ids));
+      for (const id of ids) {
+        await writeAudit(tx, {
+          organizationId: visit.organizationId,
+          locationId: visit.locationId,
+          actorUserId: input.actor.userId,
+          entityType: 'visits',
+          entityId: id,
+          action: 'kiosk_declined',
+        });
+      }
+      return { ok: true as const, visitIds: ids };
+    }
+
+    const phone = group.find((g) => g.kioskPhone)?.kioskPhone ?? null;
+    let clientId: string | null = null;
+    if (phone) {
+      const c = await upsertClient(tx, {
+        organizationId: visit.organizationId,
+        locationId: visit.locationId,
+        name: group.find((g) => g.kioskName)?.kioskName ?? null,
+        phone,
+        gender: null,
+        fillBlanks: false,
+      });
+      clientId = c.ok ? c.clientId : null;
+    }
+    for (const g of group) {
+      const keepRequest = input.decision === 'confirm' && !!g.requestedTechnicianId;
+      const source = keepRequest ? 'request' : g.source;
+      const requestedTechnicianId = keepRequest ? g.requestedTechnicianId : null;
+      await tx
+        .update(visits)
+        .set({
+          needsConfirm: false,
+          confirmedBy: input.actor.userId,
+          confirmedAt: now,
+          source,
+          requestedTechnicianId,
+          kioskPhone: null,
+          ...(clientId ? { clientId } : {}),
+          updatedAt: now,
+        })
+        .where(eq(visits.id, g.id));
       await writeAudit(tx, {
         organizationId: visit.organizationId,
         locationId: visit.locationId,
         actorUserId: input.actor.userId,
         entityType: 'visits',
-        entityId: id,
-        action: input.decision === 'confirm' ? 'kiosk_confirmed' : 'kiosk_declined',
+        entityId: g.id,
+        action: 'kiosk_confirmed',
+        after: {
+          source,
+          requestedTechnicianId,
+          ...(g.requestedTechnicianId && !keepRequest
+            ? { droppedRequestTechnicianId: g.requestedTechnicianId }
+            : {}),
+          hasClient: clientId !== null,
+        },
       });
     }
     return { ok: true as const, visitIds: ids };

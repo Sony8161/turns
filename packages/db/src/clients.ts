@@ -36,7 +36,12 @@ export type ClientInput = {
  */
 export async function upsertClient(
   tx: Tx,
-  input: { organizationId: string; locationId: string } & ClientInput,
+  input: {
+    organizationId: string;
+    locationId: string;
+    /** false: a known phone is only linked, never filled in (kiosk input, v0.9.1). */
+    fillBlanks?: boolean;
+  } & ClientInput,
 ): Promise<{ ok: true; clientId: string | null } | { ok: false; reason: 'bad_phone' }> {
   const name = input.name?.trim().slice(0, 120) || null;
   const rawPhone = input.phone?.trim() ?? '';
@@ -58,6 +63,7 @@ export async function upsertClient(
         ),
       )
       .for('update');
+    if (existing && input.fillBlanks === false) return { ok: true, clientId: existing.id };
     if (existing) {
       await tx
         .update(clients)

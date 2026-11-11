@@ -143,6 +143,7 @@ export const AUDIT_ACTIONS = [
   'kiosk_revoked',
   'kiosk_unlocked',
   'kiosk_pin_failed',
+  'kiosk_pair_failed',
   'rule_config_changed',
   'technician_profile_changed',
   'role_changed',

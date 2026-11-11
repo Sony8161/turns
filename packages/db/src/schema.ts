@@ -557,6 +557,10 @@ export const visits = pgTable(
       onDelete: 'restrict',
     }),
     kioskName: text('kiosk_name'),
+    // v0.9.1: the phone the customer typed (E.164), held on the visit until the
+    // desk confirms; only then is it matched to a client row, and it is cleared
+    // either way. Kiosk input never edits a stored client (review finding 1).
+    kioskPhone: text('kiosk_phone'),
     needsConfirm: boolean('needs_confirm').notNull().default(false),
     confirmedBy: uuid('confirmed_by').references(() => profiles.id, { onDelete: 'restrict' }),
     confirmedAt: timestamp('confirmed_at', { withTimezone: true }),
@@ -758,6 +762,10 @@ export const kioskDevices = pgTable(
     lastSeenAt: timestamp('last_seen_at', { withTimezone: true }),
     revokedAt: timestamp('revoked_at', { withTimezone: true }),
     revokedBy: uuid('revoked_by').references(() => profiles.id, { onDelete: 'restrict' }),
+    // v0.9.1: the right PIN opens a short window in which this iPad may reach
+    // the staff sign-in; the browser holds the random token, this its hash.
+    unlockTokenHash: text('unlock_token_hash'),
+    unlockExpiresAt: timestamp('unlock_expires_at', { withTimezone: true }),
   },
   (t) => [
     locationFk(t, 'kiosk_devices_location_fk'),

@@ -6,16 +6,25 @@
 // app role can read the kiosk table (threat model T7, T12, T20, T25).
 import { randomUUID } from 'node:crypto';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
-import { callNext, type ManagerActor } from '../src/engine';
+import {
+  callNext,
+  createWalkIn,
+  floorAttention,
+  reassignVisit,
+  type ManagerActor,
+} from '../src/engine';
 import {
   checkKioskPin,
   cleanKioskName,
+  closeKioskUnlock,
   createKioskDevice,
   kioskCheckIn,
   kioskFromToken,
   kioskMenu,
+  kioskUnlockOpen,
   listKiosks,
   newPairingCode,
+  openKioskUnlock,
   pairKiosk,
   reviewKioskVisit,
   revokeKiosk,
@@ -424,6 +433,222 @@ describe('desk confirm', () => {
         (e: Error) => e,
       );
     expect(String(err)).toMatch(/another location/);
+  });
+});
+
+// v0.9.1: the independent review of Part 9 (findings 1 to 7).
+describe('review fixes', () => {
+  const desk = (): ManagerActor => ({ userId: deskId, organizationId: ORG, locationId: LOC });
+
+  it('1: kiosk input makes no client row until the desk confirms; decline leaves none', async () => {
+    const r = await kioskCheckIn(db, {
+      device,
+      name: 'Stranger',
+      phone: '813-555-0191',
+      serviceIds: [manicure],
+      attributes: { gender: 'male', isKid: false, age: null },
+    });
+    if (!r.ok) throw new Error(r.reason);
+    const none = await sql`select id from clients where phone = '+18135550191'`;
+    expect(none).toHaveLength(0);
+    const [v] = await sql<
+      { client_id: string | null; kiosk_phone: string | null }[]
+    >`select client_id, kiosk_phone from visits where id = ${r.visitIds[0]!}`;
+    expect(v).toEqual({ client_id: null, kiosk_phone: '+18135550191' });
+    await reviewKioskVisit(db, { actor: desk(), visitId: r.visitIds[0]!, decision: 'decline' });
+    expect(await sql`select id from clients where phone = '+18135550191'`).toHaveLength(0);
+    const [after] = await sql<
+      { kiosk_phone: string | null }[]
+    >`select kiosk_phone from visits where id = ${r.visitIds[0]!}`;
+    expect(after!.kiosk_phone).toBeNull();
+  });
+
+  it('1: confirm links a known phone without filling its blanks, or makes a new row without gender', async () => {
+    await sql`insert into clients (organization_id, location_id, phone) values (${ORG}, ${LOC}, '+18135550192')`;
+    const known = await kioskCheckIn(db, {
+      device,
+      name: 'Fake Name',
+      phone: '813-555-0192',
+      serviceIds: [manicure],
+      attributes: { gender: 'male', isKid: false, age: null },
+    });
+    if (!known.ok) throw new Error(known.reason);
+    await reviewKioskVisit(db, { actor: desk(), visitId: known.visitIds[0]!, decision: 'confirm' });
+    const [c] = await sql<
+      { id: string; name: string | null; gender: string | null }[]
+    >`select id, name, gender from clients where phone = '+18135550192'`;
+    expect(c).toMatchObject({ name: null, gender: null });
+    const [kv] = await sql<
+      { client_id: string; kiosk_phone: string | null }[]
+    >`select client_id, kiosk_phone from visits where id = ${known.visitIds[0]!}`;
+    expect(kv).toEqual({ client_id: c!.id, kiosk_phone: null });
+
+    const fresh = await kioskCheckIn(db, {
+      device,
+      name: 'Ngoc',
+      phone: '813-555-0193',
+      serviceIds: [manicure],
+      attributes: { gender: 'female', isKid: false, age: null },
+    });
+    if (!fresh.ok) throw new Error(fresh.reason);
+    await reviewKioskVisit(db, { actor: desk(), visitId: fresh.visitIds[0]!, decision: 'confirm' });
+    const [n] = await sql<
+      { name: string; gender: string | null }[]
+    >`select name, gender from clients where phone = '+18135550193'`;
+    expect(n).toEqual({ name: 'Ngoc', gender: null });
+  });
+
+  it('2: a kiosk request waits as self_checkin; the desk accepts it or drops it', async () => {
+    const asked = await kioskCheckIn(db, {
+      device,
+      name: 'Req',
+      serviceIds: [manicure],
+      requestedTechnicianId: techId,
+    });
+    if (!asked.ok) throw new Error(asked.reason);
+    const id = asked.visitIds[0]!;
+    const [v] = await sql<
+      { source: string; requested_technician_id: string }[]
+    >`select source, requested_technician_id from visits where id = ${id}`;
+    expect(v).toEqual({ source: 'self_checkin', requested_technician_id: techId });
+    const [a] = await sql<
+      { after: { source: string; requestedTechnicianId: string | null } }[]
+    >`select after from audit_log where entity_id = ${id} and action = 'kiosk_check_in'`;
+    expect(a!.after).toMatchObject({ source: 'self_checkin', requestedTechnicianId: techId });
+    await reviewKioskVisit(db, { actor: desk(), visitId: id, decision: 'confirm' });
+    const [ok] = await sql<
+      { source: string; requested_technician_id: string }[]
+    >`select source, requested_technician_id from visits where id = ${id}`;
+    expect(ok).toEqual({ source: 'request', requested_technician_id: techId });
+    const [ca] = await sql<
+      { after: { source: string; requestedTechnicianId: string | null } }[]
+    >`select after from audit_log where entity_id = ${id} and action = 'kiosk_confirmed'`;
+    expect(ca!.after).toMatchObject({ source: 'request', requestedTechnicianId: techId });
+
+    const dropped = await kioskCheckIn(db, {
+      device,
+      name: 'Req2',
+      serviceIds: [manicure],
+      requestedTechnicianId: techId,
+    });
+    if (!dropped.ok) throw new Error(dropped.reason);
+    await reviewKioskVisit(db, {
+      actor: desk(),
+      visitId: dropped.visitIds[0]!,
+      decision: 'confirm_no_request',
+    });
+    const [d] = await sql<
+      { source: string; requested_technician_id: string | null }[]
+    >`select source, requested_technician_id from visits where id = ${dropped.visitIds[0]!}`;
+    expect(d).toEqual({ source: 'self_checkin', requested_technician_id: null });
+  });
+
+  it('2: a desk walk-in audits the stored source and the requested technician', async () => {
+    const w = await createWalkIn(db, {
+      organizationId: ORG,
+      locationId: LOC,
+      serviceIds: [manicure],
+      actor: { userId: deskId },
+      requestedTechnicianId: techId,
+    });
+    if (!w.ok) throw new Error(w.reason);
+    const [a] = await sql<
+      { after: { source: string; requestedTechnicianId: string | null } }[]
+    >`select after from audit_log where entity_id = ${w.visitId} and action = 'visit_created'`;
+    expect(a!.after).toMatchObject({ source: 'request', requestedTechnicianId: techId });
+  });
+
+  it('3: reassign refuses a visit the desk has not confirmed, cleanly', async () => {
+    const r = await kioskCheckIn(db, { device, name: 'Wait', serviceIds: [manicure] });
+    if (!r.ok) throw new Error(r.reason);
+    expect(
+      await reassignVisit(db, {
+        visitId: r.visitIds[0]!,
+        toTechnicianId: techId,
+        actor: manager,
+        reason: 'test',
+        force: true,
+      }),
+    ).toEqual({ ok: false, reason: 'needs_confirm' });
+  });
+
+  it('4: the PIN opens a short unlock window; only the hash is stored', async () => {
+    const now = new Date();
+    const u = await openKioskUnlock(db, device, now);
+    expect(await kioskUnlockOpen(db, device, u.token, now)).toBe(true);
+    expect(await kioskUnlockOpen(db, device, 'wrong', now)).toBe(false);
+    expect(await kioskUnlockOpen(db, device, null, now)).toBe(false);
+    expect(await kioskUnlockOpen(db, device, u.token, new Date(now.getTime() + 3 * 60_000))).toBe(
+      false,
+    );
+    const [row] = await sql`select * from kiosk_devices where id = ${device.deviceId}`;
+    expect(JSON.stringify(row)).not.toContain(u.token);
+    await closeKioskUnlock(db, device);
+    expect(await kioskUnlockOpen(db, device, u.token, now)).toBe(false);
+    // Another kiosk's window does not open this one.
+    const other = await paired(manager, 'Other unlock');
+    const o = await openKioskUnlock(db, other.device, now);
+    expect(await kioskUnlockOpen(db, device, o.token, now)).toBe(false);
+  });
+
+  it('5: unconfirmed check-ins do not lengthen the wait estimate', async () => {
+    const before = await floorAttention(db, LOC);
+    const r = await kioskCheckIn(db, { device, name: 'Est', serviceIds: [manicure] });
+    if (!r.ok) throw new Error(r.reason);
+    const mid = await floorAttention(db, LOC);
+    expect(mid.estimatedWaitMin).toBe(before.estimatedWaitMin);
+    await reviewKioskVisit(db, { actor: desk(), visitId: r.visitIds[0]!, decision: 'confirm' });
+    const after = await floorAttention(db, LOC);
+    if (mid.estimatedWaitMin !== null) {
+      expect(after.estimatedWaitMin!).toBeGreaterThan(mid.estimatedWaitMin);
+    }
+  });
+
+  it('6: two desks reviewing both halves of a pair at once do not deadlock', async () => {
+    for (let i = 0; i < 5; i++) {
+      const r = await kioskCheckIn(db, {
+        device,
+        name: `Race${i}`,
+        serviceIds: [manicure, pedicure],
+        sameTime: true,
+      });
+      if (!r.ok) throw new Error(r.reason);
+      const [x, y] = await Promise.all([
+        reviewKioskVisit(db, { actor: desk(), visitId: r.visitIds[0]!, decision: 'confirm' }),
+        reviewKioskVisit(db, { actor: desk(), visitId: r.visitIds[1]!, decision: 'confirm' }),
+      ]);
+      const oks = [x, y].filter((z) => z.ok);
+      expect(oks).toHaveLength(1);
+      expect([x, y].find((z) => !z.ok)).toEqual({ ok: false, reason: 'not_pending' });
+    }
+  });
+
+  it('7: an expired code is audited as kiosk_pair_failed; an unknown one finds nothing', async () => {
+    const late = await createKioskDevice(db, { actor: manager, name: 'Late2', pin: '1111' });
+    if (!late.ok) throw new Error(late.reason);
+    expect(
+      await pairKiosk(db, { code: late.pairingCode, now: new Date(Date.now() + 16 * 60_000) }),
+    ).toEqual({ ok: false, reason: 'bad_code' });
+    const rows = await sql<
+      { action: string }[]
+    >`select action from audit_log where entity_id = ${late.deviceId} order by at`;
+    expect(rows.map((r) => r.action)).toEqual(['kiosk_created', 'kiosk_pair_failed']);
+    const [n0] = await sql<
+      { n: number }[]
+    >`select count(*)::int as n from audit_log where action = 'kiosk_pair_failed'`;
+    expect(await pairKiosk(db, { code: 'ZZZZZ-ZZZZZ' })).toEqual({ ok: false, reason: 'bad_code' });
+    const [n1] = await sql<
+      { n: number }[]
+    >`select count(*)::int as n from audit_log where action = 'kiosk_pair_failed'`;
+    expect(n1!.n).toBe(n0!.n);
+  });
+
+  it('7: a token not seen for 90 days stops working', async () => {
+    const k = await paired(manager, 'Idle iPad');
+    await sql`update kiosk_devices set last_seen_at = now() - interval '89 days' where id = ${k.device.deviceId}`;
+    expect(await kioskFromToken(db, k.token)).not.toBeNull();
+    await sql`update kiosk_devices set last_seen_at = now() - interval '91 days' where id = ${k.device.deviceId}`;
+    expect(await kioskFromToken(db, k.token)).toBeNull();
   });
 });
 
