@@ -457,6 +457,23 @@ Use two browser windows: a normal one signed in as staff, and a **private**
 9. **Long wait.** On the desk switch "Show the long-wait notice to
    customers" on; the kiosk's thank-you screen says "We are busy right now".
 
+## 8i. Hardening (Part 10)
+
+1. **Not found.** Open http://localhost:3000/no-such-page: "This page does not
+   exist", in both languages, with a way back.
+2. **Offline.** On the desk or the kiosk, turn the computer's Wi-Fi off (or in
+   the browser's developer tools, Network, choose Offline). A red bar says
+   "No internet connection" and the buttons look paused; tapping one does
+   nothing. Turn Wi-Fi back on: the bar goes away; **Try again** reloads.
+3. **Drafts.** http://localhost:3000/terms and /privacy show the red "DRAFT,
+   needs attorney review" box. Links at the bottom of the start page.
+4. **Scans.** `npm run secrets:scan`, then `npm run build -w web` and
+   `npm run bundle:scan`: both say "ok". The full report is
+   `docs/security/SEC-001-report.md`.
+5. **Screen reader (optional).** With VoiceOver on the iPad (or Narrator on
+   Windows), a wrong kiosk answer is read out, and each **Call next** says
+   whose visit it is.
+
 ## 9. If something is off
 
 - **"Something went wrong on our side"** on sign-in: the local stack is probably

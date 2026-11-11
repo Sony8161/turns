@@ -54,14 +54,24 @@ export async function unlockThisKiosk(device: KioskDevice): Promise<void> {
  * is behind the cookie, so the caller can extend or close the window.
  */
 export async function kioskSignInGate(): Promise<
-  { blocked: false; device: KioskDevice | null } | { blocked: true }
+  { blocked: false; device: KioskDevice | null; stale: boolean } | { blocked: true }
 > {
   const jar = await cookies();
-  if (!jar.has(KIOSK_COOKIE)) return { blocked: false, device: null };
+  if (!jar.has(KIOSK_COOKIE)) return { blocked: false, device: null, stale: false };
   const device = await currentKiosk();
-  if (!device) return { blocked: false, device: null };
+  // A revoked or expired kiosk: this browser is no kiosk any more.
+  if (!device) return { blocked: false, device: null, stale: true };
   const open = await kioskUnlockOpen(db(), device, jar.get(KIOSK_UNLOCK_COOKIE)?.value);
-  return open ? { blocked: false, device } : { blocked: true };
+  return open ? { blocked: false, device, stale: false } : { blocked: true };
+}
+
+/** Sign-in on a browser whose kiosk was revoked or expired: drop its cookie,
+ *  or the kiosk idle sign-out (proxy) would end every staff session at once.
+ *  Server actions only (a page cannot change cookies). */
+export async function dropStaleKioskCookie(): Promise<void> {
+  const jar = await cookies();
+  jar.delete(KIOSK_COOKIE);
+  jar.delete(KIOSK_UNLOCK_COOKIE);
 }
 
 /** The sign-in code is on its way: keep the window open long enough to type it. */

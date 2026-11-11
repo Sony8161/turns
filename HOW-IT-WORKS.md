@@ -242,22 +242,55 @@ A second iPad at the front, so a walk-in can check in when the desk is busy.
   That key can do one thing: add a waiting customer at that one location. A
   lost iPad is switched off with **Revoke**. The kiosk never runs with a staff
   sign-in on the same browser.
+- **Nothing typed is trusted until the desk says so** (v0.9.1). A phone typed
+  on the kiosk waits on the visit; only **Confirm** links it to a client (a
+  known one is never changed, a new one gets the typed name). A technician
+  picked on the kiosk is only a wish until the desk presses **Confirm**;
+  **Confirm, no request** sends the visit to the line instead.
 - **Getting out of it.** Tap the salon name five times, then the 4-digit PIN
-  the owner set: staff sign-in. A paired receptionist iPad has a **Kiosk
-  mode** button to go the other way.
+  the owner set: staff sign-in. The PIN opens a 2-minute window; without it,
+  the sign-in page sends a paired iPad back to the kiosk. Staff signed in on a
+  kiosk iPad are signed out after 5 minutes without a tap. A paired
+  receptionist iPad has a **Kiosk mode** button to go the other way.
 - **Abuse limits.** A phone can check in 3 times in 30 minutes, a kiosk 30
   times in 10 minutes; PIN and code guesses are capped. The answer is the same
   whether or not the phone is already known, so the kiosk cannot be used to
   look people up.
 
-### Part 10. Hardening, the App Store, handoff
+### Part 10. Hardening (done for the web app)
 
-Error handling, offline behaviour on the iPad, Vietnamese checked with the
-staff, accessibility, Terms and Privacy pages, the full security review, App
-Store (unlisted) submission, training, and a one-page guide in both languages.
-**Also here: the compliance pass** (refund policy, terms, liability wording,
-employee tracking consent, data retention) with a Florida attorney before a
-second salon pays. See `../13-Turn-System-GRC-Scoping.md`.
+- **Secrets audit (SEC-001).** The code, all of git history and the files a
+  browser downloads were scanned: clean. `npm run bundle:scan` fails if a key,
+  a database address or a source map ever reaches the browser. Report:
+  `docs/security/SEC-001-report.md`.
+- **CI.** `.github/workflows/ci.yml` runs every check on each push: format,
+  types, lint, both secret scans, gitleaks over the history, all tests against
+  the same Postgres the local stack uses, the build and the bundle scan. It
+  runs once the code is on GitHub.
+- **When something breaks.** A missing page says so in both languages. A page
+  that fails shows "Something went wrong on our side" with a reference number
+  that matches the server log, never the error itself. A button whose action
+  fails for an unplanned reason answers "try again" instead of an error page,
+  on the desk, the technician phone and the kiosk.
+- **Offline iPad.** When the Wi-Fi drops, a red bar says so, every button
+  pauses (so nothing half-saves), and **Try again** reloads once it is back.
+- **Accessibility.** Error messages are announced to screen readers; every
+  repeated button on the waiting list says which customer it is for; keyboard
+  focus shows on the kiosk's big choice buttons and moves to each new kiosk
+  question; small grey text is dark enough to read.
+- **Security headers.** Every page has a strict Content Security Policy with
+  a fresh random value per request, so only the app's own scripts run; no
+  framing, no plugins, forms post only to the app; HTTPS pinned in production.
+- **Terms and Privacy** (`/terms`, `/privacy`): drafts marked "needs attorney
+  review". They describe what the app does; every legal term is a bracket for
+  the attorney.
+
+Still to come: Vietnamese checked with two techs and the front desk, the full
+security run with the other scanners, browser tests for every role, the App
+Store (unlisted), training and the one-page guide. **The compliance pass**
+(refund policy, terms, liability wording, employee tracking consent, data
+retention) with a Florida attorney comes before a second salon pays. See
+`../13-Turn-System-GRC-Scoping.md`.
 
 ## How the pieces talk to each other
 

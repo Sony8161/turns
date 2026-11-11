@@ -7,7 +7,12 @@ import { consumeRateLimit } from '@turn/db/rate-limit';
 import { redirect } from 'next/navigation';
 import { parseContact, type Contact } from '@/lib/contact';
 import { db } from '@/lib/db';
-import { finishKioskUnlock, holdKioskUnlock, kioskSignInGate } from '@/lib/kiosk';
+import {
+  dropStaleKioskCookie,
+  finishKioskUnlock,
+  holdKioskUnlock,
+  kioskSignInGate,
+} from '@/lib/kiosk';
 import { clientIp } from '@/lib/request';
 import { adminAuth } from '@/lib/supabase/admin';
 import { createClient } from '@/lib/supabase/server';
@@ -121,6 +126,7 @@ async function verifyCode(
       : await supabase.auth.verifyOtp({ phone: prev.contact.value, token, type: 'sms' });
   if (error || !data.user) return { ...prev, error: 'badCode' };
   if (gate.device) await finishKioskUnlock(gate.device);
+  else if (gate.stale) await dropStaleKioskCookie();
 
   const invite = await readInviteCookie();
   redirect(invite ? '/join/finish' : '/admin');

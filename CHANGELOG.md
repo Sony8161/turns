@@ -2,6 +2,43 @@
 
 One version per delivered part. Tags point at the commits.
 
+## v0.10.0, 2026-11-11: Part 10, hardening
+
+- **SEC-001 secrets audit: clean.** gitleaks 8.30.1 over all history and the
+  source folders, the tracked-file scan, and a new browser bundle scan
+  (`npm run bundle:scan`: secret shapes, connection strings, server-only
+  variable names, source maps). Only hit: the local Supabase CLI's own keys in
+  the git-ignored `supabase/.temp`. Report in `docs/security/SEC-001-report.md`
+  with a draft rotation runbook. Nothing rotated, nothing found.
+- **CI** (`.github/workflows/ci.yml`, not run yet: not pushed): format,
+  typecheck, lint with no warnings, both secret scans, gitleaks on the full
+  history, every test against `supabase/postgres:17.11.0.018` as a service
+  (checked locally: the db suite passes against that image alone), build,
+  bundle scan.
+- **Errors.** Bilingual not-found page; `global-error` for a failing root
+  layout; the error page shows only the reference digest. Desk, technician
+  and kiosk actions go through `guarded()`: an unplanned failure answers "try
+  again" in the person's language and logs the action name and error class
+  only.
+- **Offline iPad.** A banner, held submits (window capture listener, so no
+  action starts offline), paused-looking buttons, and **Try again**.
+- **Accessibility.** Errors are `role="alert"`; row buttons name their
+  customer; the desk's gender choice is a labelled radio group; visible focus
+  on the kiosk's hidden-input choices; focus moves to each new kiosk question
+  and the step counter is announced; 13 px grey text raised to 6.7:1.
+- **Security headers.** Per-request nonce CSP from the proxy on every page
+  (`script-src 'self' 'nonce-…' 'strict-dynamic'`, `object-src 'none'`,
+  `frame-ancestors 'none'`, `form-action 'self'`, `connect-src` to the
+  Supabase origin only), checked in a browser: every script carries the
+  nonce, no violations. Plus `Cross-Origin-Opener-Policy`, HSTS in
+  production, no `X-Powered-By`, browser source maps off explicitly.
+- **Terms and Privacy drafts** at `/terms` and `/privacy`, marked "DRAFT,
+  needs attorney review". They state only what the code does; legal terms are
+  brackets.
+- **Fix found in the browser check:** a browser holding a revoked or expired
+  kiosk cookie was signed out right after every staff sign-in (the idle check
+  found no clock). Signing in now drops the stale kiosk cookie.
+
 ## v0.9.1, 2026-11-11: Part 9 review fixes
 
 The independent review of Part 9 found three medium and four low issues. All
