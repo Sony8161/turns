@@ -2,6 +2,40 @@
 
 One version per delivered part. Tags point at the commits.
 
+## v0.7.0, 2026-11-11: Part 7, appointments, calendar feed, second location
+
+- Appointments screen `/admin/appointments` (owner, manager, receptionist):
+  today and the next week; add by hand, change and cancel a hand-entered one
+  (a calendar row is changed in the calendar); every change audited with times
+  and technicians, never the client's name.
+- Client arrived: the appointment becomes a visit (source `appointment`) for
+  the booked technician, who is called at once; when they cannot take it the
+  visit waits for them. The discount applies at Finished; an appointment full
+  set posts 0 and the board shows 00. The rules' queue order is now applied
+  (`had_appointment_last`: 0 before 00). An arrived appointment no longer holds
+  its technician in the buffer.
+- Calendar feed per technician (Fresha gives one link per team member): owner
+  sets or removes the link; stored server-side only (`calendar_feeds`, no app
+  grant), shown as host and last four characters, never in the audit log.
+  Fetch: https only, public addresses only (checked after DNS, connection
+  pinned, every redirect re-checked), 2 MB, 10 s. Upserts the window (12 h back,
+  31 days ahead), moves moved events, cancels dropped ones, leaves arrived ones.
+  Scheduled poll at `/api/feeds/poll` (Bearer `CRON_SECRET`), "Sync now" on the
+  screen. Board: last synced, next appointments, a red line for a failed or
+  stale (45 min) calendar; a failed poll writes `feed_sync_failed`.
+- Second location: `db:add-location` (starting menu, rules v1, the salon's
+  owners become owners there); a Location switch in the admin bar for someone
+  at two locations. Visits, visit services and calls are now read per location
+  (they were salon-wide for managers and receptionists).
+- The technician's phone lists their own coming appointments (times only).
+- Dev: second location with Kim (receptionist) and Châu (technician), two
+  sample appointments, `feed:local` to sync from an .ics file or `--sample`.
+- Migration 0019. Tests: 191 database, 103 web.
+- **Open**: what Heavenly's Fresha feed actually contains (client names or only
+  times, lag): needs fifteen minutes on Phu's Fresha account. Whether an
+  appointment may fall back to the line when its technician cannot take it
+  (with Phu, like a request). The second location's real name.
+
 ## v0.6.0, 2026-11-05: Part 6, eligibility, restrictions, overrides
 
 - Technician skills per service category, tags, and the five restrictions

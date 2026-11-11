@@ -1,7 +1,11 @@
 import { and, eq, isNull } from 'drizzle-orm';
-import { serviceCategories, services, turnCalls } from '@turn/db';
-import { floorAttention, todayCounts, waitingVisits } from '@turn/db/engine';
+import { locations, serviceCategories, services, turnCalls } from '@turn/db';
+import { appointmentsBetween } from '@turn/db/appointments';
+import { compareQueue, floorAttention, todayCounts, waitingVisits } from '@turn/db/engine';
+import { feedSummary, FEED_STALE_MIN } from '@turn/db/feeds';
+import { activeRules } from '@turn/db/rules';
 import { locationStatus, sweepFloor } from '@turn/db/status';
+import Link from 'next/link';
 import { redirect } from 'next/navigation';
 import { AdminNav } from '@/components/AdminNav';
 import { AutoRefresh } from '@/components/AutoRefresh';
@@ -27,7 +31,8 @@ export default async function AdminPage() {
   // Part 6: out-over penalties and shifts left open from an earlier day are
   // settled before the board is read. Idempotent.
   if (membership) await sweepFloor(db(), membership.locationId);
-  const [rows, menu, waiting, counts, attention] = membership
+  const now = new Date();
+  const [rows, menu, waiting, counts, attention, calendar, upcoming, loc] = membership
     ? await Promise.all([
         boardRows(membership.locationId),
         db()
@@ -39,8 +44,28 @@ export default async function AdminPage() {
         waitingVisits(db(), membership.locationId),
         todayCounts(db(), membership.locationId),
         floorAttention(db(), membership.locationId),
+        // Part 7: the calendar's state (T15) and the next appointments.
+        feedSummary(db(), membership.locationId, now),
+        appointmentsBetween(
+          db(),
+          membership.locationId,
+          new Date(now.getTime() - 30 * 60_000),
+          new Date(now.getTime() + 4 * 3_600_000),
+        ),
+        db()
+          .select({ timezone: locations.timezone })
+          .from(locations)
+          .where(eq(locations.id, membership.locationId))
+          .then((r) => r[0]),
       ])
-    : [[], [], [], { visits: 0, denies: 0, overrides: 0 }, null];
+    : [[], [], [], { visits: 0, denies: 0, overrides: 0 }, null, null, [], undefined];
+  const clock = new Intl.DateTimeFormat(lang === 'vi' ? 'vi-VN' : 'en-US', {
+    timeZone: loc?.timezone ?? 'America/New_York',
+    hour: 'numeric',
+    minute: '2-digit',
+  });
+  const nextAppointments = upcoming.filter((a) => !a.arrivedAt && !a.cancelledAt).slice(0, 4);
+  const owner = !!membership && can(membership.role, 'manage_rules');
 
   return (
     <main className="mx-auto flex w-full max-w-5xl flex-1 flex-col gap-8 px-4 py-6 sm:px-8">
@@ -81,6 +106,55 @@ export default async function AdminPage() {
             <Board rows={rows} t={t} compact />
             <p className="text-slate/80">{fill(t.admin.today, counts)}</p>
           </section>
+          {calendar && (calendar.feeds > 0 || nextAppointments.length > 0) ? (
+            <section
+              aria-live="polite"
+              className={`flex flex-col gap-1 border-l-[12px] bg-board p-4 ${
+                calendar.failing.length || calendar.stale.length ? 'border-polish' : 'border-teal'
+              }`}
+            >
+              {calendar.feeds > 0 ? (
+                <p className="text-slate/80">
+                  {calendar.lastSyncedAt
+                    ? fill(t.appointments.lastSynced, { time: clock.format(calendar.lastSyncedAt) })
+                    : t.appointments.neverSynced}
+                </p>
+              ) : null}
+              {calendar.failing.map((f) => (
+                <p key={f.technicianName} className="font-semibold text-polish">
+                  {fill(t.appointments.failing, {
+                    name: f.technicianName,
+                    error: t.appointments.feedErrors[f.error] ?? f.error,
+                  })}
+                  {owner ? '' : ` ${t.appointments.tellOwner}`}
+                </p>
+              ))}
+              {calendar.stale.length ? (
+                <p className="font-semibold text-polish">
+                  {fill(t.appointments.stale, {
+                    minutes: FEED_STALE_MIN,
+                    names: calendar.stale.join(', '),
+                  })}
+                </p>
+              ) : null}
+              {nextAppointments.length ? (
+                <p className="text-slate/80">
+                  <span className="font-medium">{t.appointments.upcomingOnBoard}: </span>
+                  {nextAppointments
+                    .map((a) =>
+                      fill(t.appointments.upcomingLine, {
+                        time: clock.format(a.startAt),
+                        name: a.technicianName,
+                      }),
+                    )
+                    .join(' · ')}
+                </p>
+              ) : null}
+              <Link href="/admin/appointments" className="font-semibold text-navy underline">
+                {t.appointments.open}
+              </Link>
+            </section>
+          ) : null}
           {can(membership.role, 'enter_walkins') && attention ? (
             <Desk
               services={menu}
@@ -132,31 +206,33 @@ export default async function AdminPage() {
   );
 }
 
-// Queue order (design doc): lowest points first, then earlier check-in. A
+// Queue order (design doc, rules' queue.sort): lowest points first, 0 before 00, then earlier check-in. A
 // technician with an open call shows as "called" with the time waited.
 async function boardRows(locationId: string): Promise<BoardRow[]> {
-  const [rows, open] = await Promise.all([
+  const [rows, open, rules] = await Promise.all([
     locationStatus(db(), locationId),
     db()
       .select({ technicianId: turnCalls.technicianId, calledAt: turnCalls.calledAt })
       .from(turnCalls)
       .where(and(eq(turnCalls.locationId, locationId), isNull(turnCalls.respondedAt))),
+    activeRules(db(), locationId),
   ]);
   const called = new Map(open.map((c) => [c.technicianId, c.calledAt]));
-  return rows
-    .filter((r) => r.status !== 'off')
-    .sort(
-      (a, b) =>
-        a.points - b.points || (a.checkedInAt?.getTime() ?? 0) - (b.checkedInAt?.getTime() ?? 0),
-    )
-    .map((r) => {
-      const calledAt = called.get(r.technicianId);
-      return {
-        id: r.technicianId,
-        name: r.displayName,
-        points: r.points,
-        status: calledAt ? 'called' : (r.status as BoardRow['status']),
-        seconds: secondsSince(calledAt ?? r.since),
-      };
-    });
+  return (
+    rows
+      .filter((r) => r.status !== 'off')
+      // The engine's own order, so 0 sits above 00 (Part 7).
+      .sort((a, b) => compareQueue(rules, a, b))
+      .map((r) => {
+        const calledAt = called.get(r.technicianId);
+        return {
+          id: r.technicianId,
+          name: r.displayName,
+          points: r.points,
+          hadAppointmentLast: r.hadAppointmentLast,
+          status: calledAt ? 'called' : (r.status as BoardRow['status']),
+          seconds: secondsSince(calledAt ?? r.since),
+        };
+      })
+  );
 }

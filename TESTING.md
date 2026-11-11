@@ -340,6 +340,52 @@ penalty.
 6. Two locations (automated only, `packages/db/test/eligibility.test.ts`): a
    manager at Brandon cannot reassign, excuse or adjust at Heavenly main.
 
+## 8f. Appointments, the calendar feed, the second location (Part 7)
+
+`npm run up` (or `db:seed:dev`) adds two appointments at the desk: Thảo in 25
+minutes and Linh in two hours.
+
+1. Sign in as Hạnh (`813 555 0102`) → **Appointments**. Both are listed,
+   "entered at the desk". Check Thảo in on her phone: on the board, Call next on
+   any walk-in skips her with "appointment in 25 min".
+2. **Client arrived** on Thảo's: tick "Acrylic full set", press it. The board
+   shows "Acrylic full set · for Thảo" and her phone is called (only her, even
+   if someone else is ahead in line). Accept, Finished: she posts 0, and her
+   row on the board reads **00**, under anyone else at a true 0.
+3. Put Linh on break, then Client arrived on Linh's: "The visit is open and
+   waits on the board for the booked technician." Back from break, Call next
+   calls Linh.
+4. **Add an appointment** by hand, then **Change** it and **Cancel it** with a
+   reason. Studio → `audit_log`: `appointment_added`, `appointment_changed`,
+   `appointment_cancelled`, with times only, no client name.
+5. **The calendar feed from a local file** (the real fetch refuses anything not
+   on the public internet, so a local server cannot be used):
+   ```
+   $env:DATABASE_URL = "postgresql://postgres:postgres@127.0.0.1:54322/postgres"
+   npm run -w @turn/db feed:local -- "Mai" --sample
+   ```
+   It prints `added: 2` (a third, cancelled event is skipped). Appointments now
+   shows two rows for Mai "from the calendar", without a Change button; the
+   board says "Calendar last synced …". Run it again: `added: 0`. Any .ics file
+   works in place of `--sample`; `packages/db/test/fixtures/sample.ics` is the
+   test fixture.
+6. **Calendar links** (owner): sign in as Phu → Appointments → Calendar links.
+   Paste `http://example.com/a.ics`: "must start with https://". Paste
+   `https://127.0.0.1/a.ics`: "points inside a private network". A real https
+   link is saved and shown only as its host and last four characters; Studio
+   cannot show the URL to an app user (`calendar_feeds` has no app grant).
+7. **A failing calendar**: Studio → `calendar_feeds` → set `last_error` to
+   `http_404` on Mai's row. The board shows a red line naming Mai's calendar,
+   with "Tell the owner." for the desk.
+8. **The scheduled poll**: set `CRON_SECRET` (32+ characters) in
+   `apps/web/.env.local`, restart the web app, then
+   `curl.exe -H "Authorization: Bearer <secret>" http://localhost:3000/api/feeds/poll`
+   answers counts. Without the header: 401. Without `CRON_SECRET` set: always 401.
+9. **The second location**: Phu's admin bar has a **Location** switch;
+   choose "Heavenly Nails second" and the board, the desk and appointments are
+   that location's. Kim (`813 555 0106`) signs in there as receptionist and
+   sees only its rows; Châu (`813 555 0107`) is its technician.
+
 ## 9. If something is off
 
 - **"Something went wrong on our side"** on sign-in: the local stack is probably
@@ -355,6 +401,5 @@ penalty.
 
 ## What is not here yet
 
-Appointments and the calendar feed (Part 7; the table and the buffer filter
-exist), the audit log viewer (Part 8), the customer kiosk (Part 9), push to the
-phone and the Expo app.
+The audit log viewer (Part 8), the customer kiosk (Part 9), push to the phone
+and the Expo app. Heavenly's real Fresha feed has not been opened yet.

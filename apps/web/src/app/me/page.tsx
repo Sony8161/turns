@@ -1,4 +1,7 @@
+import { locations } from '@turn/db';
+import { upcomingFor } from '@turn/db/appointments';
 import { openCallFor } from '@turn/db/engine';
+import { eq } from 'drizzle-orm';
 import { activeRules } from '@turn/db/rules';
 import { locationStatus, sweepFloor } from '@turn/db/status';
 import Link from 'next/link';
@@ -22,13 +25,26 @@ export default async function MePage() {
   const tech = await technicianForUser(actor.userId);
   // Part 6: the out-over penalty posts even if nobody looked at the board.
   if (tech) await sweepFloor(db(), tech.locationId);
-  const [board, call, rules] = tech
+  const [board, call, rules, upcoming, loc] = tech
     ? await Promise.all([
         locationStatus(db(), tech.locationId),
         openCallFor(db(), tech.id),
         activeRules(db(), tech.locationId),
+        // Part 7: own appointments, times only (the phone never shows clients, T11).
+        upcomingFor(db(), tech.id),
+        db()
+          .select({ timezone: locations.timezone })
+          .from(locations)
+          .where(eq(locations.id, tech.locationId))
+          .then((r) => r[0]),
       ])
-    : [[], null, null];
+    : [[], null, null, [], undefined];
+  const timeOf = new Intl.DateTimeFormat(lang === 'vi' ? 'vi-VN' : 'en-US', {
+    timeZone: loc?.timezone ?? 'America/New_York',
+    weekday: 'short',
+    hour: 'numeric',
+    minute: '2-digit',
+  });
   const me = tech ? board.find((r) => r.technicianId === tech.id) : undefined;
   const status = me?.status ?? 'off';
   const awayMinutes = me?.since ? Math.floor(secondsSince(me.since) / 60) : 0;
@@ -69,9 +85,9 @@ export default async function MePage() {
             <h1 className="text-heading font-semibold">{actor.displayName}</h1>
             <p className="text-lead">{fill(t.me.statusLine, { status: t.board.status[status] })}</p>
             <p className="points text-slate">
-              <span aria-hidden>{formatPoints(me?.points ?? 0)}</span>
+              <span aria-hidden>{formatPoints(me?.points ?? 0, me?.hadAppointmentLast)}</span>
               <span className="sr-only">
-                {formatPoints(me?.points ?? 0)} {t.board.points}
+                {formatPoints(me?.points ?? 0, me?.hadAppointmentLast)} {t.board.points}
               </span>
             </p>
             <p className="text-slate/70">{t.me.pointsToday}</p>
@@ -89,6 +105,21 @@ export default async function MePage() {
             />
           ) : null}
           <StatusPanel status={status} called={!!call} t={t.me} />
+          {upcoming.length > 0 ? (
+            <section className="flex flex-col gap-2">
+              <h2 className="text-lead font-semibold">{t.me.upcoming}</h2>
+              <ul className="flex flex-col gap-1">
+                {upcoming.map((a) => (
+                  <li key={a.startAt.toISOString()} className="text-slate/80">
+                    {fill(t.me.upcomingLine, {
+                      start: timeOf.format(a.startAt),
+                      end: timeOf.format(a.endAt),
+                    })}
+                  </li>
+                ))}
+              </ul>
+            </section>
+          ) : null}
         </>
       )}
     </main>

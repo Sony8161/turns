@@ -611,8 +611,43 @@ export const turnCalls = pgTable(
 
 // Appointments (table in Part 6, filled in Part 7) ----------------------------
 
+// Calendar feeds (Part 7). Fresha gives one calendar link per team member
+// (threat model Q5), so a feed belongs to one technician: the mapping
+// technician <-> calendar is this row. The URL is a secret (T14): no app role
+// has any grant on this table; only the server reads it, and the screens see
+// `url_hint` (host and last four characters) and the sync state.
+export const calendarFeeds = pgTable(
+  'calendar_feeds',
+  {
+    id: id(),
+    organizationId: uuid('organization_id').notNull(),
+    locationId: uuid('location_id').notNull(),
+    technicianId: uuid('technician_id')
+      .notNull()
+      .references(() => technicians.id, { onDelete: 'restrict' }),
+    url: text('url').notNull(),
+    urlHint: text('url_hint').notNull(),
+    lastAttemptAt: timestamp('last_attempt_at', { withTimezone: true }),
+    lastSyncedAt: timestamp('last_synced_at', { withTimezone: true }),
+    // A short code (dns_refused, http_404, too_large, timeout, parse...), never the URL.
+    lastError: text('last_error'),
+    lastEventCount: integer('last_event_count'),
+    // Removed by the owner: the URL is blanked, the row stays for the
+    // appointments that came from it. Setting a feed again re-opens the row.
+    archivedAt: timestamp('archived_at', { withTimezone: true }),
+    createdBy: uuid('created_by').references(() => profiles.id, { onDelete: 'restrict' }),
+    createdAt: createdAt(),
+    updatedAt: updatedAt(),
+  },
+  (t) => [
+    locationFk(t, 'calendar_feeds_location_fk'),
+    unique('calendar_feeds_technician').on(t.technicianId),
+    index('calendar_feeds_location').on(t.locationId),
+  ],
+).enableRLS();
+
 // The eligibility filter "no appointment starting within the buffer" reads
-// this table now; the ICS poll and the manual entry that fill it are Part 7.
+// this table; the manual entry and the calendar poll fill it (Part 7).
 export const appointmentSourceEnum = pgEnum('appointment_source', ['ics', 'manual']);
 
 export const appointments = pgTable(
@@ -630,13 +665,22 @@ export const appointments = pgTable(
     startAt: timestamp('start_at', { withTimezone: true }).notNull(),
     endAt: timestamp('end_at', { withTimezone: true }).notNull(),
     source: appointmentSourceEnum('source').notNull().default('manual'),
+    // The feed an ics row came from: a re-poll cancels rows its feed dropped.
+    feedId: uuid('feed_id').references(() => calendarFeeds.id, { onDelete: 'restrict' }),
     syncedAt: timestamp('synced_at', { withTimezone: true }),
     cancelledAt: timestamp('cancelled_at', { withTimezone: true }),
+    // "Client arrived": the visit it became. An arrived appointment no longer
+    // holds its technician out of the queue (buffer filter).
+    arrivedAt: timestamp('arrived_at', { withTimezone: true }),
+    visitId: uuid('visit_id').references(() => visits.id, { onDelete: 'restrict' }),
+    createdBy: uuid('created_by').references(() => profiles.id, { onDelete: 'restrict' }),
     createdAt: createdAt(),
     updatedAt: updatedAt(),
   },
   (t) => [
     locationFk(t, 'appointments_location_fk'),
+    unique('appointments_visit').on(t.visitId),
+    index('appointments_feed').on(t.feedId),
     index('appointments_technician_start').on(t.technicianId, t.startAt),
     // The buffer filter: a location's appointments around now.
     index('appointments_location_start').on(t.locationId, t.startAt),
@@ -680,6 +724,7 @@ export const TENANT_TABLES = [
   'technician_tags',
   'technician_restrictions',
   'clients',
+  'calendar_feeds',
   'appointments',
   'visits',
   'visit_services',

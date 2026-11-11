@@ -1,5 +1,6 @@
 import Link from 'next/link';
 import type { Dictionary } from '@/i18n/dictionary';
+import { LocationSwitch } from './LocationSwitch';
 
 type Item = { href: string; label: string };
 
@@ -12,14 +13,18 @@ export function AdminNav({
   canStaff,
   canRules,
   canManage = false,
+  canAppointments = true,
 }: {
   t: Dictionary['nav'];
-  current: 'board' | 'staff' | 'rules' | 'manage';
+  current: 'board' | 'staff' | 'rules' | 'manage' | 'appointments';
   canStaff: boolean;
   canRules: boolean;
   canManage?: boolean;
+  /** Every staff role that sees the board sees appointments (Part 7). */
+  canAppointments?: boolean;
 }) {
   const items: Item[] = [{ href: '/admin', label: t.board }];
+  if (canAppointments) items.push({ href: '/admin/appointments', label: t.appointments });
   if (canManage) items.push({ href: '/admin/manage', label: t.manage });
   if (canStaff) items.push({ href: '/admin/staff', label: t.staff });
   if (canRules) items.push({ href: '/admin/rules', label: t.rules });
@@ -28,9 +33,10 @@ export function AdminNav({
     staff: '/admin/staff',
     rules: '/admin/rules',
     manage: '/admin/manage',
+    appointments: '/admin/appointments',
   }[current];
   return (
-    <nav aria-label="Admin" className="flex flex-wrap gap-2">
+    <nav aria-label="Admin" className="flex flex-wrap items-center gap-2">
       {items.map((i) => (
         <Link
           key={i.href}
@@ -43,6 +49,7 @@ export function AdminNav({
           {i.label}
         </Link>
       ))}
+      <LocationSwitch t={t} />
     </nav>
   );
 }

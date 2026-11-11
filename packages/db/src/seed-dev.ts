@@ -7,10 +7,20 @@ import { writeFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { and, eq, inArray } from 'drizzle-orm';
+import { addAppointment } from './appointments';
 import { createWalkIn } from './engine';
 import { createInvite, type Role } from './invites';
+import { addLocation } from './locations';
 import { loadProfiles, saveProfile, type ProfileInput } from './profile';
-import { memberships, profiles, serviceCategories, services, technicians, visits } from './schema';
+import {
+  appointments,
+  memberships,
+  profiles,
+  serviceCategories,
+  services,
+  technicians,
+  visits,
+} from './schema';
 import { HEAVENLY, seedHeavenly } from './seed';
 import { createDb, type Db } from './server';
 import { createSetupCode } from './setup';
@@ -24,6 +34,16 @@ export const SAMPLE_ACCOUNTS: { name: string; email: string; phone: string; role
   { name: 'Thảo', email: 'thao@example.test', phone: '+18135550103', role: 'technician' },
   { name: 'Linh', email: 'linh@example.test', phone: '+18135550104', role: 'technician' },
   { name: 'Mai', email: 'mai@example.test', phone: '+18135550105', role: 'technician' },
+];
+// Part 7: Heavenly's second location (placeholder name until Phu gives it),
+// with its own receptionist and technician. Phu is owner at both.
+export const SECOND_LOCATION = {
+  id: '00000000-0000-4000-8000-000000000003',
+  name: 'Heavenly Nails second',
+} as const;
+export const SECOND_ACCOUNTS: { name: string; email: string; phone: string; role: Role }[] = [
+  { name: 'Kim', email: 'kim@example.test', phone: '+18135550106', role: 'receptionist' },
+  { name: 'Châu', email: 'chau@example.test', phone: '+18135550107', role: 'technician' },
 ];
 export const SPARE_TEST_PHONE = '+18135550109';
 export const TEST_CODE = '123456';
@@ -120,6 +140,44 @@ async function seedProfiles(db: Db, ownerId: string): Promise<void> {
   }
 }
 
+// Part 7: two hand-entered appointments, added once (when the location has
+// none): Thảo in 25 minutes (inside the 30-minute buffer, so she is skipped
+// until the client arrives) and Linh in two hours.
+async function seedAppointments(db: Db, receptionistId: string): Promise<void> {
+  const any = await db
+    .select({ id: appointments.id })
+    .from(appointments)
+    .where(eq(appointments.locationId, HEAVENLY.locationId))
+    .limit(1);
+  if (any.length) return;
+  const techs = await db
+    .select({ id: technicians.id, name: technicians.displayName })
+    .from(technicians)
+    .where(eq(technicians.locationId, HEAVENLY.locationId));
+  const byName = new Map(techs.map((t) => [t.name, t.id]));
+  const at = (min: number) => new Date(Math.ceil(Date.now() / 300_000) * 300_000 + min * 60_000);
+  const actor = {
+    userId: receptionistId,
+    organizationId: HEAVENLY.organizationId,
+    locationId: HEAVENLY.locationId,
+  };
+  for (const s of [
+    { name: 'Thảo', start: 25, minutes: 75, client: 'Sample: full set' },
+    { name: 'Linh', start: 120, minutes: 45, client: 'Sample: gel manicure' },
+  ]) {
+    const technicianId = byName.get(s.name);
+    if (!technicianId) continue;
+    const r = await addAppointment(db, {
+      actor,
+      technicianId,
+      clientName: s.client,
+      startAt: at(s.start),
+      endAt: at(s.start + s.minutes),
+    });
+    if (!r.ok) throw new Error(`sample appointment for ${s.name}: ${r.reason}`);
+  }
+}
+
 async function seedWalkIns(db: Db, ownerId: string): Promise<void> {
   const any = await db
     .select({ id: visits.id })
@@ -195,7 +253,11 @@ async function ensureLocalAuthUser(email: string, phone: string): Promise<string
   return existing.id;
 }
 
-async function ensureAccount(db: Db, a: (typeof SAMPLE_ACCOUNTS)[number]): Promise<string> {
+async function ensureAccount(
+  db: Db,
+  a: (typeof SAMPLE_ACCOUNTS)[number],
+  locationId: string = HEAVENLY.locationId,
+): Promise<string> {
   const userId = await ensureLocalAuthUser(a.email, a.phone);
   await db
     .insert(profiles)
@@ -206,7 +268,7 @@ async function ensureAccount(db: Db, a: (typeof SAMPLE_ACCOUNTS)[number]): Promi
     .values({
       userId,
       organizationId: HEAVENLY.organizationId,
-      locationId: HEAVENLY.locationId,
+      locationId,
       role: a.role,
     })
     .onConflictDoNothing();
@@ -216,7 +278,7 @@ async function ensureAccount(db: Db, a: (typeof SAMPLE_ACCOUNTS)[number]): Promi
       .values({
         userId,
         organizationId: HEAVENLY.organizationId,
-        locationId: HEAVENLY.locationId,
+        locationId,
         displayName: a.name,
       })
       .onConflictDoNothing();
@@ -232,10 +294,30 @@ export async function seedDev(
   const db = createDb(url);
   try {
     let ownerId = '';
+    let receptionistId = '';
     for (const a of SAMPLE_ACCOUNTS) {
       const id = await ensureAccount(db, a);
       if (a.role === 'owner') ownerId = id;
+      if (a.role === 'receptionist') receptionistId = id;
     }
+    // After the owner exists, so Phu becomes owner of the second location too.
+    const second = await addLocation(db, {
+      organizationId: HEAVENLY.organizationId,
+      name: SECOND_LOCATION.name,
+      id: SECOND_LOCATION.id,
+      actorUserId: ownerId,
+    });
+    if (!second.ok) throw new Error(`second location: ${second.reason}`);
+    await db
+      .insert(memberships)
+      .values({
+        userId: ownerId,
+        organizationId: HEAVENLY.organizationId,
+        locationId: second.locationId,
+        role: 'owner',
+      })
+      .onConflictDoNothing();
+    for (const a of SECOND_ACCOUNTS) await ensureAccount(db, a, second.locationId);
     const base = {
       organizationId: HEAVENLY.organizationId,
       locationId: HEAVENLY.locationId,
@@ -246,6 +328,7 @@ export async function seedDev(
     const setup = await createSetupCode(db, { note: 'dev seed' });
     await seedProfiles(db, ownerId);
     await seedWalkIns(db, ownerId);
+    await seedAppointments(db, receptionistId);
 
     const lines = [
       `Local sample data, written ${new Date().toISOString()} by npm run db:seed:dev`,
@@ -253,6 +336,11 @@ export async function seedDev(
       '',
       'Accounts at Heavenly Nails main:',
       ...SAMPLE_ACCOUNTS.map(
+        (a) => `  ${a.role.padEnd(13)} ${a.name.padEnd(6)} phone ${a.phone}   email ${a.email}`,
+      ),
+      '',
+      `Accounts at ${SECOND_LOCATION.name} (Part 7; Phu is owner here too, switch with "Location" in the admin nav):`,
+      ...SECOND_ACCOUNTS.map(
         (a) => `  ${a.role.padEnd(13)} ${a.name.padEnd(6)} phone ${a.phone}   email ${a.email}`,
       ),
       '',
@@ -268,6 +356,9 @@ export async function seedDev(
       'Mai does everything but full sets and no both-at-once visits. Staff -> Skills and restrictions to change.',
       'Sample walk-ins (added once, when the salon had no visits): a man, a kid of 8, a both-at-once pair, a full set.',
       'Check the three technicians in and press Call next on each to watch who is skipped and why.',
+      'Sample appointments (Part 7, added once): Thảo in 25 min (she is skipped until the client arrives), Linh in 2 h.',
+      'Appointments -> pick services -> Client arrived. A calendar sync from a local file:',
+      '  npm run -w @turn/db feed:local -- "Mai" --sample',
     ];
     const notes = lines.join('\n');
     const root = join(dirname(fileURLToPath(import.meta.url)), '..', '..', '..');

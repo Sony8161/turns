@@ -15,6 +15,7 @@ import {
   technicians,
   turnCalls,
   turnLedger,
+  visits,
 } from './schema';
 import type { Db } from './server';
 
@@ -616,6 +617,18 @@ export async function sweepFloor(
   });
 }
 
+/**
+ * The last visit posted on the technician's current shift came from an
+ * appointment. With `had_appointment_last` in the queue sort, such a
+ * technician sorts after one at the same points who did not: 0 before 00.
+ */
+export const HAD_APPOINTMENT_LAST = sql<boolean | null>`(
+  select v.source = 'appointment' from ${turnLedger} l
+  join ${visits} v on v.id = l.visit_id
+  where l.shift_id = ${technicianStatus.shiftId} and l.reason_type = 'visit'
+  order by l.created_at desc limit 1
+)`;
+
 /** Status and today's points for every technician at a location, for the board. */
 export async function locationStatus(db: Db, locationId: string) {
   const rows = await db
@@ -628,6 +641,7 @@ export async function locationStatus(db: Db, locationId: string) {
       expectedBackAt: technicianStatus.expectedBackAt,
       checkedInAt: shifts.checkedInAt,
       points: sql<string>`coalesce((select sum(${turnLedger.delta}) from ${turnLedger} where ${turnLedger.shiftId} = ${technicianStatus.shiftId}), 0)`,
+      hadAppointmentLast: HAD_APPOINTMENT_LAST,
     })
     .from(technicians)
     .leftJoin(technicianStatus, eq(technicianStatus.technicianId, technicians.id))
@@ -637,5 +651,6 @@ export async function locationStatus(db: Db, locationId: string) {
     ...r,
     status: (r.status ?? 'off') as TechnicianState,
     points: Number(r.points),
+    hadAppointmentLast: r.hadAppointmentLast === true,
   }));
 }

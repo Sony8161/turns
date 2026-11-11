@@ -23,7 +23,7 @@ import {
   visits,
 } from './schema';
 import type { Db } from './server';
-import { postPoints, transition, writeAudit, type Actor } from './status';
+import { HAD_APPOINTMENT_LAST, postPoints, transition, writeAudit, type Actor } from './status';
 
 type Tx = Parameters<Parameters<Db['transaction']>[0]>[0];
 
@@ -142,7 +142,11 @@ export async function createWalkIn(
           locationId: input.locationId,
           // A same-time pair: the request goes with the first visit; the
           // second one needs a second technician.
-          source: input.requestedTechnicianId && visitIds.length === 0 ? 'request' : source,
+          // An appointment keeps its source with its booked technician (Part 7).
+          source:
+            input.requestedTechnicianId && visitIds.length === 0 && source !== 'appointment'
+              ? 'request'
+              : source,
           requestedTechnicianId:
             visitIds.length === 0 ? (input.requestedTechnicianId ?? null) : null,
           note: input.note?.trim().slice(0, 300) || null,
@@ -227,6 +231,8 @@ export type Candidate = {
   note?: string;
   /** With skill_match "preferred": does the technician have every skill? */
   skilled: boolean;
+  /** The last visit this shift was an appointment: sorts after a true 0 (shows 00). */
+  hadAppointmentLast: boolean;
 };
 
 /** What the engine needs to know about the visit being called. */
@@ -285,6 +291,7 @@ export async function queueFor(
         status: technicianStatus.status,
         checkedInAt: shifts.checkedInAt,
         points: sql<string>`coalesce((select sum(${turnLedger.delta}) from ${turnLedger} where ${turnLedger.shiftId} = ${technicianStatus.shiftId}), 0)`,
+        hadAppointmentLast: HAD_APPOINTMENT_LAST,
         openCall: sql<number>`(select count(*) from ${turnCalls} c where c.technician_id = ${technicians.id} and c.responded_at is null)`,
         // The double-booking guard: a visit already in progress on this technician.
         openVisit: sql<number>`(select count(*) from ${visits} v where v.assigned_technician_id = ${technicians.id} and v.status in ('called', 'in_service'))`,
@@ -307,6 +314,8 @@ export async function queueFor(
         and(
           eq(appointments.locationId, locationId),
           isNull(appointments.cancelledAt),
+          // An appointment whose client is here is a visit now (Part 7).
+          isNull(appointments.arrivedAt),
           gt(appointments.endAt, now),
           lt(appointments.startAt, bufferEnd),
         ),
@@ -336,6 +345,7 @@ export async function queueFor(
         checkedInAt: r.checkedInAt,
         status: r.status,
         skilled,
+        hadAppointmentLast: r.hadAppointmentLast === true,
         ...(custom ? { note: custom } : {}),
       };
       const skip = (why: SkipReason, detail?: string): Candidate => ({
@@ -366,10 +376,27 @@ export async function queueFor(
       if (rules.eligibility.skill_match === 'preferred' && a.skilled !== b.skilled) {
         return a.skilled ? -1 : 1;
       }
-      return (
-        a.points - b.points || (a.checkedInAt?.getTime() ?? 0) - (b.checkedInAt?.getTime() ?? 0)
-      );
+      return compareQueue(rules, a, b);
     });
+}
+
+/** Queue order from the rules' `queue.sort` keys, in their order; check-in breaks a last tie. */
+export function compareQueue(
+  rules: RuleConfig,
+  a: { points: number; hadAppointmentLast: boolean; checkedInAt: Date | null },
+  b: { points: number; hadAppointmentLast: boolean; checkedInAt: Date | null },
+): number {
+  const checkIn = (a.checkedInAt?.getTime() ?? 0) - (b.checkedInAt?.getTime() ?? 0);
+  for (const key of rules.queue.sort) {
+    const d =
+      key === 'points_asc'
+        ? a.points - b.points
+        : key === 'had_appointment_last'
+          ? Number(a.hadAppointmentLast) - Number(b.hadAppointmentLast)
+          : checkIn;
+    if (d !== 0) return d;
+  }
+  return checkIn;
 }
 
 /** The engine's view of a visit: its categories and the client attributes. */
@@ -435,11 +462,15 @@ export async function callNext(
     const queue = await queueFor(tx, visit.locationId, await contextOf(tx, visit));
     // With the bypass rule on, a requested technician is the only pick: when
     // they cannot take it, the visit waits for them and the desk sees why. With
-    // the rule off, the request is a note and the line decides.
-    const pick =
-      visit.requestedTechnicianId && rules.requests.requested_tech_bypasses_queue
-        ? queue.find((c) => c.technicianId === visit.requestedTechnicianId && c.eligible)
-        : queue.find((c) => c.eligible);
+    // the rule off, the request is a note and the line decides. An appointment
+    // always belongs to the technician it was booked with (Part 7); whether it
+    // may fall back to the line is not decided (open with Phu).
+    const bookedOnly =
+      !!visit.requestedTechnicianId &&
+      (visit.source === 'appointment' || rules.requests.requested_tech_bypasses_queue);
+    const pick = bookedOnly
+      ? queue.find((c) => c.technicianId === visit.requestedTechnicianId && c.eligible)
+      : queue.find((c) => c.eligible);
     if (!pick) {
       return {
         ok: false,

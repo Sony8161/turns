@@ -2,7 +2,7 @@
 
 What each part is for, what it does today, and what it is meant to do when
 finished. Plain language; the code is the detail. Design source:
-`../Turn System Design Doc.md`. Updated 2026-11-04 after Part 3.
+`../Turn System Design Doc.md`. Updated 2026-11-11 after Part 7.
 
 ## The idea in one paragraph
 
@@ -159,12 +159,45 @@ and Check out wait for the call. This is what Phu sees on Dec 4.
   nobody can excuse or adjust their own points; a manager at one location
   cannot touch another.
 
-### Part 7. Appointments and the second location
+### Part 7. Appointments and the second location (done)
 
-Appointments arrive from Fresha through a calendar feed and show on the board
-against the technician they are booked with. "Client arrived" turns one into a
-visit with the −0.5 discount. The receptionist can also tap an appointment in by
-hand. The second Heavenly location is configured.
+- **Appointments screen** (`/admin/appointments`, every desk role): today and
+  the next week, each with its technician, the client's name when known, and
+  whether it came from the calendar or the desk. The desk can add one by hand
+  (technician, start, minutes, optional name), change or cancel a hand-entered
+  one; a calendar row is changed in the calendar. Every change is in the audit
+  log with times and technicians, never the client's name.
+- **Client arrived**: pick the services and tap it. The appointment becomes a
+  visit with source "appointment" for the technician it was booked with, and
+  that technician is called at once. When they cannot take it (on break, busy)
+  the visit waits on the board for them; whether an appointment may fall back
+  to the line is Phu's call, like a request. At Finished the rules' appointment
+  discount applies: an appointment full set posts 0, and the board shows **00**.
+  At equal points, 00 sorts after a true 0 (the rule builder's queue order). An
+  appointment whose client has arrived no longer holds its technician out of
+  the queue.
+- **Calendar feed**: Fresha gives one calendar link per team member, so the
+  owner pastes a link per technician on the same screen. The link is a secret:
+  no app role can read the table, the audit log and the screen get only its
+  host and last four characters, and the input is never pre-filled. The server
+  fetches it only over https, refuses any address that is not on the public
+  internet (checked after DNS, with the connection pinned to the checked
+  address, on every redirect), at most 2 MB, 10 seconds. Events from 12 hours
+  ago to a month ahead are kept in step: new ones added, moved ones moved,
+  dropped or cancelled ones cancelled; one that already became a visit is left
+  alone. A scheduler calls `/api/feeds/poll` every 15 minutes with a secret
+  (Fresha itself lags up to 15); the desk has "Sync now" (once a minute).
+- **On the board**: "Calendar last synced", the next appointments, and a red
+  line when a calendar failed ("tell the owner" for the desk) or has not
+  synced for 45 minutes. A failed poll also writes an audit row.
+- **Second location**: `db:add-location` (operator) creates it with the
+  starting menu and rules, and makes the salon's owners owners there. Someone
+  at two locations gets a Location switch in the admin bar; it only reorders
+  their own memberships. Visits and calls are now read per location, like the
+  Part 6 tables. The technician's phone lists their own coming appointments,
+  times only.
+- **Not yet checked**: what Heavenly's real Fresha feed contains (client names
+  or only times, and its lag). Fifteen minutes on Phu's Fresha account.
 
 ### Part 8. The audit log viewer and reports
 

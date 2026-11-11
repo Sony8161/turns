@@ -16,7 +16,10 @@
     "./staff": "./src/staff.ts",
     "./seed": "./src/seed.ts",
     "./profile": "./src/profile.ts",
-    "./clients": "./src/clients.ts"
+    "./clients": "./src/clients.ts",
+    "./appointments": "./src/appointments.ts",
+    "./feeds": "./src/feeds.ts",
+    "./locations": "./src/locations.ts"
   },
   "scripts": {
     "typecheck": "tsc --noEmit",
@@ -25,7 +28,9 @@
     "db:migrate": "tsx src/migrate.ts",
     "db:seed": "tsx src/seed.ts",
     "db:seed:dev": "tsx src/seed-dev.ts",
-    "db:setup-code": "tsx src/setup-code.ts"
+    "db:setup-code": "tsx src/setup-code.ts",
+    "db:add-location": "tsx src/locations.ts",
+    "feed:local": "tsx src/feed-local.ts"
   },
   "dependencies": {
     "drizzle-orm": "0.45.4",

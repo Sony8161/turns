@@ -3,6 +3,31 @@
 Claims from reviewers that were checked and found not to be bugs. Kept so they
 are not re-raised.
 
+## 2026-11-11, Part 7 (REQ-0c2b89ef)
+
+Review: the build ran as a sub-agent, which cannot start a second reviewer, so
+the security and correctness pass was a self-review of the diff (SSRF, feed URL
+leakage, RLS, the 00 order). One certain bug found and fixed before delivery:
+visits, visit services and calls were readable salon-wide by any manager or
+receptionist, so a second-location receptionist saw the first location's
+visits (now per location in 0019, tested). An independent review is still owed
+before Part 10 ships.
+
+- **A technician can read the client name on their own appointments** through
+  the row-level policy from 0017 (`appointments_select_own`). Declined for now:
+  the phone screen shows times only, the name is what Fresha already shows the
+  technician, and the web app reads through the server. Revisit with the Expo
+  app (T11, T16).
+- **The rule builder's preview sorts by points and check-in only**, not by
+  `had_appointment_last`. Declined: rules.ts cannot import the engine (cycle);
+  the preview is about points, and the board and the engine do use the full
+  order.
+- **Recurring calendar events (RRULE) are not expanded.** Declined: an
+  appointment feed has single events; revisit if Heavenly's feed shows
+  otherwise.
+- **The owner is not alerted outside the app** when a calendar fails (the board
+  line and the audit row only). Push and text come with the Expo app.
+
 ## 2026-11-05, Part 6 (REQ-5336cf7a)
 
 - **General reviewer: "on a successful call the skipped list includes eligible

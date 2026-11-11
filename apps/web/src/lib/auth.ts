@@ -3,6 +3,7 @@ import 'server-only';
 import { and, asc, eq } from 'drizzle-orm';
 import { locations, memberships, profiles } from '@turn/db';
 import type { Role } from '@turn/db/invites';
+import { cookies } from 'next/headers';
 import { redirect } from 'next/navigation';
 import { db } from './db';
 import { can, type Capability } from './permissions';
@@ -14,6 +15,10 @@ export type Membership = {
   locationName: string;
   role: Role;
 };
+
+/** The location this browser chose to work at (Part 7, T10): a preference
+ *  only. It reorders the actor's own memberships and can never add one. */
+export const LOCATION_COOKIE = 'turn-location';
 
 export type Actor = {
   userId: string;
@@ -42,14 +47,28 @@ export async function getActor(): Promise<Actor | null> {
       .innerJoin(locations, eq(locations.id, memberships.locationId))
       .where(and(eq(memberships.userId, user.id), eq(memberships.active, true)))
       // Oldest membership first, so a multi-location user gets a stable default.
-      // Part 3 adds an explicit location choice before any write uses it (T10).
+      // The location switch in the admin nav reorders these (LOCATION_COOKIE).
       .orderBy(asc(memberships.createdAt)),
   ]);
+  const chosen = (await cookies()).get(LOCATION_COOKIE)?.value;
+  // A stable sort: the chosen location's memberships first, the rest as they were.
+  const ordered = chosen
+    ? [...rows].sort((a, b) => Number(b.locationId === chosen) - Number(a.locationId === chosen))
+    : rows;
   return {
     userId: user.id,
     displayName: profile?.displayName ?? user.email ?? user.phone ?? '',
-    memberships: rows,
+    memberships: ordered,
   };
+}
+
+/** The distinct locations this actor works at, the current one first. */
+export function locationsOf(actor: Actor): { id: string; name: string }[] {
+  const seen = new Map<string, string>();
+  for (const m of actor.memberships) {
+    if (m.role !== 'technician' && !seen.has(m.locationId)) seen.set(m.locationId, m.locationName);
+  }
+  return [...seen].map(([id, name]) => ({ id, name }));
 }
 
 /** The first membership that may do this; its location scopes the action (T10). */
