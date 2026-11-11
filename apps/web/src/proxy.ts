@@ -1,11 +1,16 @@
-// Runs before every matched request: refreshes the Supabase session cookie and
-// sends signed-out visitors away from staff pages. This is an optimistic check;
-// every page and action verifies the user and membership again.
+// Runs before every page request. Sets the Content Security Policy with a
+// fresh nonce (Part 10). On the staff and sign-in paths it also refreshes the
+// Supabase session cookie and sends signed-out visitors away from staff pages.
+// This is an optimistic check; every page and action verifies the user and
+// membership again.
 import { createServerClient } from '@supabase/ssr';
 import { NextResponse, type NextRequest } from 'next/server';
+import { buildCsp, newNonce } from '@/lib/csp';
 import { KIOSK_COOKIE, KIOSK_SEEN_COOKIE, kioskStaffIdle } from '@/lib/kiosk-idle';
 
 const STAFF_PREFIXES = ['/admin', '/me'];
+// Where the session matters (the matcher before Part 10).
+const SESSION_PREFIXES = ['/admin', '/me', '/login', '/join', '/setup', '/kiosk'];
 
 // Bracket access on purpose: a literal dotted process.env read of a public
 // variable is inlined at build time, and a build without the variable would
@@ -15,7 +20,24 @@ function env(name: string): string {
 }
 
 export async function proxy(request: NextRequest) {
-  let response = NextResponse.next({ request });
+  const csp = buildCsp({
+    nonce: newNonce(),
+    dev: process.env['NODE_ENV'] !== 'production',
+    supabaseUrl: env('NEXT_PUBLIC_SUPABASE_URL'),
+  });
+  // Next reads the nonce from the request's CSP header for its own scripts.
+  const headers = new Headers(request.headers);
+  headers.set('content-security-policy', csp);
+  const next = () => NextResponse.next({ request: { headers } });
+  const send = (r: NextResponse) => {
+    r.headers.set('Content-Security-Policy', csp);
+    return r;
+  };
+
+  const path = request.nextUrl.pathname;
+  if (!SESSION_PREFIXES.some((p) => path.startsWith(p))) return send(next());
+
+  let response = next();
   const supabase = createServerClient(
     env('NEXT_PUBLIC_SUPABASE_URL'),
     env('NEXT_PUBLIC_SUPABASE_ANON_KEY'),
@@ -26,7 +48,8 @@ export async function proxy(request: NextRequest) {
         },
         setAll(toSet) {
           for (const { name, value } of toSet) request.cookies.set(name, value);
-          response = NextResponse.next({ request });
+          headers.set('cookie', request.cookies.toString());
+          response = next();
           for (const { name, value, options } of toSet) response.cookies.set(name, value, options);
         },
       },
@@ -36,8 +59,6 @@ export async function proxy(request: NextRequest) {
   const {
     data: { user },
   } = await supabase.auth.getUser();
-
-  const path = request.nextUrl.pathname;
 
   // v0.9.1 (review finding 4): a staff session on a kiosk iPad ends after five
   // minutes without a tap (the clock is kept by KioskStaffGuard).
@@ -51,7 +72,7 @@ export async function proxy(request: NextRequest) {
       const out = NextResponse.redirect(url);
       for (const c of response.cookies.getAll()) out.cookies.set(c);
       out.cookies.delete(KIOSK_SEEN_COOKIE);
-      return out;
+      return send(out);
     }
   }
 
@@ -59,11 +80,13 @@ export async function proxy(request: NextRequest) {
     const url = request.nextUrl.clone();
     url.pathname = '/login';
     url.search = '';
-    return NextResponse.redirect(url);
+    return send(NextResponse.redirect(url));
   }
-  return response;
+  return send(response);
 }
 
 export const config = {
-  matcher: ['/admin/:path*', '/me', '/login', '/join/:path*', '/setup', '/kiosk'],
+  // Every page; not the build's static files, images, the icon or the API
+  // routes (they answer JSON or CSV, not HTML).
+  matcher: ['/((?!_next/static|_next/image|favicon.ico|api/).*)'],
 };

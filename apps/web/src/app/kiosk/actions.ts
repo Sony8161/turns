@@ -13,6 +13,7 @@ import { currentKiosk, setKioskCookie, unlockThisKiosk } from '@/lib/kiosk';
 import { clientIp } from '@/lib/request';
 import { createClient, getAuthUser } from '@/lib/supabase/server';
 import { kioskFromForm } from './form';
+import { guarded } from '@/lib/action';
 
 export type KioskState = { error?: string; done?: boolean; name?: string; at?: number };
 
@@ -30,7 +31,13 @@ async function limited(key: string, rule: { limit: number; windowS: number }): P
 }
 
 /** The iPad redeems the pairing code from Admin → Kiosk. */
-export async function pairThisIpad(_prev: KioskState, formData: FormData): Promise<KioskState> {
+export async function pairThisIpad(prev: KioskState, formData: FormData): Promise<KioskState> {
+  return guarded('pairThisIpad', { error: 'server' } as KioskState, () =>
+    pairThisIpadRun(prev, formData),
+  );
+}
+
+async function pairThisIpadRun(_prev: KioskState, formData: FormData): Promise<KioskState> {
   if (await getAuthUser()) return { error: 'staff_signed_in' };
   if (await limited(`kiosk:pair:ip:${await clientIp()}`, PAIR_TRIES)) {
     return { error: 'too_many' };
@@ -43,7 +50,13 @@ export async function pairThisIpad(_prev: KioskState, formData: FormData): Promi
 }
 
 /** A customer checks in. The same answer whether or not the phone is on file. */
-export async function checkInAction(_prev: KioskState, formData: FormData): Promise<KioskState> {
+export async function checkInAction(prev: KioskState, formData: FormData): Promise<KioskState> {
+  return guarded('checkInAction', { error: 'server' } as KioskState, () =>
+    checkInActionRun(prev, formData),
+  );
+}
+
+async function checkInActionRun(_prev: KioskState, formData: FormData): Promise<KioskState> {
   if (await getAuthUser()) return { error: 'staff_signed_in' };
   const device = await currentKiosk();
   if (!device) return { error: 'not_paired' };
@@ -80,7 +93,13 @@ export async function checkInAction(_prev: KioskState, formData: FormData): Prom
 }
 
 /** Five taps on the logo, then the PIN: the iPad goes to the staff sign-in. */
-export async function unlockAction(_prev: KioskState, formData: FormData): Promise<KioskState> {
+export async function unlockAction(prev: KioskState, formData: FormData): Promise<KioskState> {
+  return guarded('unlockAction', { error: 'server' } as KioskState, () =>
+    unlockActionRun(prev, formData),
+  );
+}
+
+async function unlockActionRun(_prev: KioskState, formData: FormData): Promise<KioskState> {
   const device = await currentKiosk();
   if (!device) return { error: 'not_paired' };
   if (await limited(`kiosk:pin:${device.deviceId}`, PIN_TRIES)) return { error: 'too_many' };

@@ -9,6 +9,7 @@ import { uuidOf } from '@/lib/ids';
 import { can } from '@/lib/permissions';
 import { toSkippedLines, type SkippedLine } from './chips';
 import { walkInFromForm } from './form';
+import { guarded } from '@/lib/action';
 
 export type DeskState = {
   error?: string;
@@ -25,7 +26,13 @@ async function deskMembership(): Promise<Membership | null> {
 /** The receptionist enters a walk-in: services, and what the rules need to
  *  know about the client. The salon and location come from the membership,
  *  never from the form. */
-export async function enterWalkIn(_prev: DeskState, formData: FormData): Promise<DeskState> {
+export async function enterWalkIn(prev: DeskState, formData: FormData): Promise<DeskState> {
+  return guarded('enterWalkIn', { error: 'server' } as DeskState, () =>
+    enterWalkInRun(prev, formData),
+  );
+}
+
+async function enterWalkInRun(_prev: DeskState, formData: FormData): Promise<DeskState> {
   const actor = await requireActor();
   const m = await deskMembership();
   if (!m) return { error: 'not_allowed' };
@@ -47,7 +54,13 @@ export async function enterWalkIn(_prev: DeskState, formData: FormData): Promise
 
 /** Call the next technician for a waiting visit. Also used to re-send after a
  *  deny. The desk sees who was passed over and why (design doc, Eligibility). */
-export async function callNextFor(_prev: DeskState, formData: FormData): Promise<DeskState> {
+export async function callNextFor(prev: DeskState, formData: FormData): Promise<DeskState> {
+  return guarded('callNextFor', { error: 'server' } as DeskState, () =>
+    callNextForRun(prev, formData),
+  );
+}
+
+async function callNextForRun(_prev: DeskState, formData: FormData): Promise<DeskState> {
   const actor = await requireActor();
   const m = await deskMembership();
   if (!m || !can(m.role, 'call_technician')) return { error: 'not_allowed' };
@@ -66,7 +79,13 @@ export async function callNextFor(_prev: DeskState, formData: FormData): Promise
 
 /** The desk clears a call nobody answered (after the rules' minutes): no
  *  penalty, the visit waits again. */
-export async function clearCallFor(_prev: DeskState, formData: FormData): Promise<DeskState> {
+export async function clearCallFor(prev: DeskState, formData: FormData): Promise<DeskState> {
+  return guarded('clearCallFor', { error: 'server' } as DeskState, () =>
+    clearCallForRun(prev, formData),
+  );
+}
+
+async function clearCallForRun(_prev: DeskState, formData: FormData): Promise<DeskState> {
   const actor = await requireActor();
   const m = await deskMembership();
   if (!m || !can(m.role, 'call_technician')) return { error: 'not_allowed' };
@@ -82,7 +101,11 @@ export async function clearCallFor(_prev: DeskState, formData: FormData): Promis
 }
 
 /** Receptionist or manager switches the customer long-wait notice (Duong, 2026-11-04). */
-export async function setNotice(_prev: DeskState, formData: FormData): Promise<DeskState> {
+export async function setNotice(prev: DeskState, formData: FormData): Promise<DeskState> {
+  return guarded('setNotice', { error: 'server' } as DeskState, () => setNoticeRun(prev, formData));
+}
+
+async function setNoticeRun(_prev: DeskState, formData: FormData): Promise<DeskState> {
   const actor = await requireActor();
   const m = await deskMembership();
   if (!m) return { error: 'not_allowed' };
@@ -98,7 +121,13 @@ export async function setNotice(_prev: DeskState, formData: FormData): Promise<D
 
 /** The desk confirms a kiosk check-in (then it can be called) or declines it
  *  (nobody there): Part 9, threat model Q6. */
-export async function reviewKioskFor(_prev: DeskState, formData: FormData): Promise<DeskState> {
+export async function reviewKioskFor(prev: DeskState, formData: FormData): Promise<DeskState> {
+  return guarded('reviewKioskFor', { error: 'server' } as DeskState, () =>
+    reviewKioskForRun(prev, formData),
+  );
+}
+
+async function reviewKioskForRun(_prev: DeskState, formData: FormData): Promise<DeskState> {
   const actor = await requireActor();
   const m = await deskMembership();
   if (!m || !can(m.role, 'call_technician')) return { error: 'not_allowed' };

@@ -43,6 +43,16 @@ export default async function LandingPage() {
         <Board rows={DEMO} t={t} compact />
         <figcaption className="text-small text-slate/70">{t.landing.demoCaption}</figcaption>
       </figure>
+
+      {/* Part 10: draft terms and privacy, for attorney review. */}
+      <footer className="flex gap-6 text-small text-slate/80">
+        <Link href="/terms" className="underline">
+          Terms (draft)
+        </Link>
+        <Link href="/privacy" className="underline">
+          Privacy (draft)
+        </Link>
+      </footer>
     </main>
   );
 }

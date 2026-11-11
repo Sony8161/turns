@@ -8,6 +8,7 @@ import { revalidatePath } from 'next/cache';
 import { db } from '@/lib/db';
 import { requireActor } from '@/lib/auth';
 import { technicianForUser } from '@/lib/technician';
+import { guarded } from '@/lib/action';
 
 export type MeState = {
   error?:
@@ -19,7 +20,8 @@ export type MeState = {
     | 'not_your_call'
     | 'already_answered'
     | 'no_visit_in_service'
-    | 'open_call';
+    | 'open_call'
+    | 'server';
   distanceM?: number;
   radiusM?: number;
   accuracyM?: number;
@@ -31,7 +33,11 @@ const TECH_MOVES = new Set(['check_in', 'available', 'break', 'out', 'off', 'fin
 
 /** A technician moves their own status. The technician row comes from the
  *  session and must be active with an active membership (threat model T10). */
-export async function moveStatus(_prev: MeState, formData: FormData): Promise<MeState> {
+export async function moveStatus(prev: MeState, formData: FormData): Promise<MeState> {
+  return guarded('moveStatus', { error: 'server' } as MeState, () => moveStatusRun(prev, formData));
+}
+
+async function moveStatusRun(_prev: MeState, formData: FormData): Promise<MeState> {
   const actor = await requireActor();
   const tech = await technicianForUser(actor.userId);
   if (!tech) return { error: 'not_technician' };
@@ -87,7 +93,11 @@ export async function moveStatus(_prev: MeState, formData: FormData): Promise<Me
 }
 
 /** Accept or deny the call on this technician's phone. The call must be theirs. */
-export async function answerCall(_prev: MeState, formData: FormData): Promise<MeState> {
+export async function answerCall(prev: MeState, formData: FormData): Promise<MeState> {
+  return guarded('answerCall', { error: 'server' } as MeState, () => answerCallRun(prev, formData));
+}
+
+async function answerCallRun(_prev: MeState, formData: FormData): Promise<MeState> {
   const actor = await requireActor();
   const tech = await technicianForUser(actor.userId);
   if (!tech) return { error: 'not_technician' };

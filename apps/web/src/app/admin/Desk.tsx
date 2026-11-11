@@ -104,7 +104,9 @@ export function Desk({
           </form>
         ))}
         {clearState.error ? (
-          <p className="text-polish">{t.errors[clearState.error] ?? clearState.error}</p>
+          <p role="alert" className="text-polish">
+            {t.errors[clearState.error] ?? clearState.error}
+          </p>
         ) : null}
         <p className={attention.longWait ? 'font-semibold text-polish' : 'text-slate/80'}>
           {waitLine}
@@ -139,7 +141,9 @@ export function Desk({
             {attention.noticeEnabled ? t.turnNoticeOff : t.turnNoticeOn}
           </Button>
           {noticeState.error ? (
-            <span className="text-polish">{t.errors[noticeState.error] ?? noticeState.error}</span>
+            <span role="alert" className="text-polish">
+              {t.errors[noticeState.error] ?? noticeState.error}
+            </span>
           ) : null}
         </form>
       </section>
@@ -153,7 +157,7 @@ export function Desk({
               <label key={s.id} className="flex min-h-11 items-center gap-3 text-lead">
                 <input type="checkbox" name="service" value={s.id} className="h-6 w-6" />
                 <span>{s.name}</span>
-                <span className="text-small text-slate/60">{s.category}</span>
+                <span className="text-small text-slate/80">{s.category}</span>
               </label>
             ))}
           </div>
@@ -165,8 +169,14 @@ export function Desk({
           <fieldset className="flex flex-col gap-3 border-t border-pumice pt-4">
             <legend className="font-medium">{t.client}</legend>
             <p className="text-small text-slate/70">{t.clientHint}</p>
-            <div className="flex flex-wrap items-center gap-4">
-              <span className="font-medium">{t.gender}</span>
+            <div
+              role="radiogroup"
+              aria-labelledby="desk-gender"
+              className="flex flex-wrap items-center gap-4"
+            >
+              <span id="desk-gender" className="font-medium">
+                {t.gender}
+              </span>
               {(['unspecified', 'female', 'male'] as const).map((g) => (
                 <label key={g} className="flex min-h-11 items-center gap-2">
                   <input
@@ -229,7 +239,9 @@ export function Desk({
             />
           </label>
           {entry.error ? (
-            <p className="text-polish">{t.errors[entry.error] ?? entry.error}</p>
+            <p role="alert" className="text-polish">
+              {t.errors[entry.error] ?? entry.error}
+            </p>
           ) : null}
           <Button type="submit" disabled={entering}>
             {t.addWalkIn}
@@ -240,10 +252,12 @@ export function Desk({
           <h2 className="text-heading font-semibold">{t.waiting}</h2>
           {waiting.length === 0 ? <p className="text-slate/70">{t.nobodyWaiting}</p> : null}
           {reviewState.error ? (
-            <p className="text-polish">{t.errors[reviewState.error] ?? reviewState.error}</p>
+            <p role="alert" className="text-polish">
+              {t.errors[reviewState.error] ?? reviewState.error}
+            </p>
           ) : null}
           {callState.error ? (
-            <p className="text-polish">
+            <p role="alert" className="text-polish">
               {t.errors[callState.error] ?? callState.error}
               {callState.error === 'nobody_eligible' && callState.skipped?.length
                 ? ` ${fill(t.nobodyLine, {
@@ -319,7 +333,11 @@ export function Desk({
                       <form action={review}>
                         <input type="hidden" name="visitId" value={v.id} />
                         <input type="hidden" name="decision" value="confirm" />
-                        <Button type="submit" disabled={reviewing}>
+                        <Button
+                          type="submit"
+                          disabled={reviewing}
+                          aria-label={`${t.kioskConfirm}: ${rowLabel(v)}`}
+                        >
                           {t.kioskConfirm}
                         </Button>
                       </form>
@@ -329,7 +347,12 @@ export function Desk({
                         <form action={review}>
                           <input type="hidden" name="visitId" value={v.id} />
                           <input type="hidden" name="decision" value="confirm_no_request" />
-                          <Button type="submit" tone="quiet" disabled={reviewing}>
+                          <Button
+                            type="submit"
+                            tone="quiet"
+                            disabled={reviewing}
+                            aria-label={`${t.kioskConfirmNoRequest}: ${rowLabel(v)}`}
+                          >
                             {t.kioskConfirmNoRequest}
                           </Button>
                         </form>
@@ -337,7 +360,12 @@ export function Desk({
                       <form action={review}>
                         <input type="hidden" name="visitId" value={v.id} />
                         <input type="hidden" name="decision" value="decline" />
-                        <Button type="submit" tone="quiet" disabled={reviewing}>
+                        <Button
+                          type="submit"
+                          tone="quiet"
+                          disabled={reviewing}
+                          aria-label={`${t.kioskDecline}: ${rowLabel(v)}`}
+                        >
                           {t.kioskDecline}
                         </Button>
                       </form>
@@ -345,7 +373,11 @@ export function Desk({
                   ) : v.status === 'waiting' ? (
                     <form action={call}>
                       <input type="hidden" name="visitId" value={v.id} />
-                      <Button type="submit" disabled={calling}>
+                      <Button
+                        type="submit"
+                        disabled={calling}
+                        aria-label={`${t.callNext}: ${rowLabel(v)}`}
+                      >
                         {t.callNext}
                       </Button>
                     </form>
@@ -358,4 +390,10 @@ export function Desk({
       </div>
     </div>
   );
+}
+
+/** Which waiting row a button acts on, for screen readers: every row has the
+ *  same button words (Part 10 accessibility pass). */
+function rowLabel(v: { kioskName: string | null; clientName: string | null; services: string[] }) {
+  return v.clientName ?? v.kioskName ?? v.services.join(', ');
 }

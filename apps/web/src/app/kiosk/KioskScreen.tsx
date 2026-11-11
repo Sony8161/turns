@@ -79,6 +79,17 @@ function KioskRound({
     };
   }, [onReset]);
 
+  // A new question: move focus to it, so a screen reader reads it and the
+  // keyboard starts there (Part 10 accessibility pass). Not on first render.
+  const firstStep = useRef(true);
+  useEffect(() => {
+    if (firstStep.current) {
+      firstStep.current = false;
+      return;
+    }
+    form.current?.querySelector<HTMLElement>(`fieldset[data-step="${step}"]`)?.focus();
+  }, [step]);
+
   // After a check-in, the thank-you stays a few seconds, then the next customer.
   useEffect(() => {
     if (!state.done) return;
@@ -175,9 +186,11 @@ function KioskRound({
           }}
           className="flex flex-1 flex-col gap-6"
         >
-          <p className="text-lead text-slate/70">{fill(t.stepOf, { step, total: STEPS })}</p>
+          <p aria-live="polite" className="text-lead text-slate/70">
+            {fill(t.stepOf, { step, total: STEPS })}
+          </p>
 
-          <fieldset hidden={step !== 1} className="flex flex-col gap-6">
+          <fieldset data-step={1} tabIndex={-1} hidden={step !== 1} className="flex flex-col gap-6">
             <legend className="mb-6 text-name font-semibold">{t.nameQuestion}</legend>
             <label className="flex flex-col gap-2">
               <span className="text-lead font-medium">{t.nameLabel}</span>
@@ -202,7 +215,7 @@ function KioskRound({
             </label>
           </fieldset>
 
-          <fieldset hidden={step !== 2} className="flex flex-col gap-4">
+          <fieldset data-step={2} tabIndex={-1} hidden={step !== 2} className="flex flex-col gap-4">
             <legend className="mb-6 text-name font-semibold">{t.servicesQuestion}</legend>
             <div className="grid gap-3 sm:grid-cols-2">
               {services.map((s) => (
@@ -232,7 +245,7 @@ function KioskRound({
             ) : null}
           </fieldset>
 
-          <fieldset hidden={step !== 3} className="flex flex-col gap-4">
+          <fieldset data-step={3} tabIndex={-1} hidden={step !== 3} className="flex flex-col gap-4">
             <legend className="mb-6 text-name font-semibold">{t.whoQuestion}</legend>
             <div className="grid grid-cols-2 gap-3">
               {(['adult', 'kid'] as const).map((w) => (
@@ -258,7 +271,7 @@ function KioskRound({
             <GenderChoice t={t} choice={choice} />
           </fieldset>
 
-          <fieldset hidden={step !== 4} className="flex flex-col gap-4">
+          <fieldset data-step={4} tabIndex={-1} hidden={step !== 4} className="flex flex-col gap-4">
             <legend className="mb-6 text-name font-semibold">{t.techQuestion}</legend>
             <TechChoice t={t} technicians={technicians} choice={choice} />
           </fieldset>

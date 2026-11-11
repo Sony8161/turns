@@ -62,6 +62,18 @@ body {
   outline-offset: 2px;
 }
 
+/* A big choice button is a label around a visually hidden radio or checkbox
+   (the kiosk): the label shows the keyboard focus the input cannot. */
+label:has(> input.sr-only:focus-visible) {
+  outline: 3px solid var(--color-navy);
+  outline-offset: 2px;
+}
+
+/* A step the kiosk moves focus to on purpose needs no ring. */
+fieldset[data-step]:focus {
+  outline: none;
+}
+
 /* The one motion: rows sliding to a new queue position. */
 .board-row {
   transition: transform 300ms ease;
@@ -70,4 +82,10 @@ body {
   .board-row {
     transition: none;
   }
+}
+
+/* Offline (OfflineBanner): buttons look paused; the banner holds the submit. */
+html[data-offline] form button[type='submit'] {
+  opacity: 0.5;
+  pointer-events: none;
 }

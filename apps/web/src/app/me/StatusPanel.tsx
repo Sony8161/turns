@@ -80,7 +80,11 @@ export function StatusPanel({
       <input type="hidden" name="lat" value={pos?.lat ?? ''} />
       <input type="hidden" name="lng" value={pos?.lng ?? ''} />
       <input type="hidden" name="accuracy" value={pos?.accuracy ?? ''} />
-      {error ? <p className="text-polish">{error}</p> : null}
+      {error ? (
+        <p role="alert" className="text-polish">
+          {error}
+        </p>
+      ) : null}
       <div className="flex flex-col gap-3">
         {MOVES[status].map((m) => (
           <Button

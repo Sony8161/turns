@@ -40,7 +40,11 @@ export function CallPanel({
       <h2 className="text-heading font-semibold">{t.call.title}</h2>
       <p className="text-name leading-tight font-semibold">{services.join(', ')}</p>
       <p className="text-slate/70">{fill(t.call.waitedLine, { seconds: waitedSeconds })}</p>
-      {state.error ? <p className="text-polish">{t.errors[state.error]}</p> : null}
+      {state.error ? (
+        <p role="alert" className="text-polish">
+          {t.errors[state.error]}
+        </p>
+      ) : null}
       {!denying ? (
         <div className="flex flex-col gap-3">
           <Button

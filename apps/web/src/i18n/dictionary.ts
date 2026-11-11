@@ -7,6 +7,8 @@ export type Lang = (typeof LANGS)[number];
 
 const en = {
   app: {
+    offline: 'No internet connection. Buttons are paused until it is back; nothing was saved.',
+    offlineRetry: 'Try again',
     name: 'Turn board',
   },
   lang: {
@@ -143,6 +145,7 @@ const en = {
       'Out for {minutes} min, over the {limit} min limit: {points} was added. A manager can excuse it.',
     breakTimer: 'On break for {minutes} min.',
     errors: {
+      server: 'Something went wrong on our side. Try again in a moment.',
       illegal_transition: "That move isn't possible from where you are. Refresh and try again.",
       outside_geofence:
         "You're {distance} m from the salon; check-in works within {radius} m. Try again inside.",
@@ -229,6 +232,7 @@ const en = {
     outFor: '{name} out {minutes} min',
     outOver: '{name} out {minutes} min, over {limit}: penalty posted',
     errors: {
+      server: 'Something went wrong on our side. Try again in a moment.',
       no_services: 'Pick at least one service.',
       unknown_service: 'One of those services is not on the menu any more. Refresh.',
       unknown_technician: 'That technician is not here any more. Refresh.',
@@ -717,6 +721,7 @@ const en = {
     staffLead: 'The check-in screen never runs with a staff account. Sign out to start it.',
     staffSignOut: 'Sign out and start check-in',
     errors: {
+      server: 'Something went wrong. Please check in at the front desk.',
       bad_name: 'Please type your first name.',
       bad_phone: 'Please type a US phone number, or leave it blank.',
       bad_age: 'Please type the age in years, or leave it blank.',
@@ -778,6 +783,8 @@ const en = {
 
 const vi: Dictionary = {
   app: {
+    offline: 'Mất kết nối mạng. Các nút tạm khóa cho đến khi có mạng lại; không có gì bị lưu.',
+    offlineRetry: 'Thử lại',
     name: 'Bảng lượt',
   },
   lang: {
@@ -913,6 +920,7 @@ const vi: Dictionary = {
       'Ra ngoài {minutes} phút, quá giới hạn {limit} phút: đã cộng {points} điểm. Quản lý có thể miễn.',
     breakTimer: 'Đang nghỉ {minutes} phút.',
     errors: {
+      server: 'Có lỗi từ phía chúng tôi. Thử lại sau giây lát.',
       illegal_transition: 'Không thể chuyển từ trạng thái hiện tại. Tải lại trang rồi thử lại.',
       outside_geofence:
         'Bạn cách tiệm {distance} m; điểm danh chỉ được trong vòng {radius} m. Vào trong rồi thử lại.',
@@ -997,6 +1005,7 @@ const vi: Dictionary = {
     outFor: '{name} ra ngoài {minutes} phút',
     outOver: '{name} ra ngoài {minutes} phút, quá {limit}: đã cộng điểm phạt',
     errors: {
+      server: 'Có lỗi từ phía chúng tôi. Thử lại sau giây lát.',
       no_services: 'Chọn ít nhất một dịch vụ.',
       unknown_service: 'Một dịch vụ không còn trong thực đơn. Tải lại trang.',
       unknown_technician: 'Thợ này không còn ở đây. Tải lại trang.',
@@ -1485,6 +1494,7 @@ const vi: Dictionary = {
       'Màn hình check-in không bao giờ chạy bằng tài khoản nhân viên. Hãy đăng xuất để bắt đầu.',
     staffSignOut: 'Đăng xuất và bắt đầu check-in',
     errors: {
+      server: 'Có lỗi. Vui lòng check-in ở quầy lễ tân.',
       bad_name: 'Vui lòng nhập tên.',
       bad_phone: 'Vui lòng nhập số điện thoại Mỹ, hoặc để trống.',
       bad_age: 'Vui lòng nhập số tuổi, hoặc để trống.',
