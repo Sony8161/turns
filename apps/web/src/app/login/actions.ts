@@ -7,6 +7,7 @@ import { consumeRateLimit } from '@turn/db/rate-limit';
 import { redirect } from 'next/navigation';
 import { parseContact, type Contact } from '@/lib/contact';
 import { db } from '@/lib/db';
+import { finishKioskUnlock, holdKioskUnlock, kioskSignInGate } from '@/lib/kiosk';
 import { clientIp } from '@/lib/request';
 import { adminAuth } from '@/lib/supabase/admin';
 import { createClient } from '@/lib/supabase/server';
@@ -30,6 +31,8 @@ export async function login(prev: LoginState, formData: FormData): Promise<Login
 }
 
 async function sendCode(formData: FormData): Promise<LoginState> {
+  const gate = await kioskSignInGate();
+  if (gate.blocked) redirect('/kiosk');
   const typed = String(formData.get('contact') ?? '');
   const contact = parseContact(typed);
   if (!contact) return { step: 'contact', typed, error: 'invalidContact' };
@@ -59,6 +62,7 @@ async function sendCode(formData: FormData): Promise<LoginState> {
       ? await supabase.auth.signInWithOtp({ email: contact.value, options })
       : await supabase.auth.signInWithOtp({ phone: contact.value, options });
   if (error?.status === 429) return { step: 'contact', typed, error: 'tooMany' };
+  if (gate.device) await holdKioskUnlock(gate.device);
   // Any other error (including "no such account") still shows the code step,
   // so the form never reveals who is staff.
   return { step: 'code', contact };
@@ -97,6 +101,8 @@ async function verifyCode(
   prev: Extract<LoginState, { step: 'code' }>,
   formData: FormData,
 ): Promise<LoginState> {
+  const gate = await kioskSignInGate();
+  if (gate.blocked) redirect('/kiosk');
   const token = String(formData.get('code') ?? '').trim();
   if (!/^\d{6}$/.test(token)) return { ...prev, error: 'badCode' };
 
@@ -114,6 +120,7 @@ async function verifyCode(
       ? await supabase.auth.verifyOtp({ email: prev.contact.value, token, type: 'email' })
       : await supabase.auth.verifyOtp({ phone: prev.contact.value, token, type: 'sms' });
   if (error || !data.user) return { ...prev, error: 'badCode' };
+  if (gate.device) await finishKioskUnlock(gate.device);
 
   const invite = await readInviteCookie();
   redirect(invite ? '/join/finish' : '/admin');

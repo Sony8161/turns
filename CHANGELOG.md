@@ -2,6 +2,35 @@
 
 One version per delivered part. Tags point at the commits.
 
+## v0.9.1, 2026-11-11: Part 9 review fixes
+
+The independent review of Part 9 found three medium and four low issues. All
+fixed, each with a test that failed first (10 new database tests, 3 web).
+
+- **Kiosk input never edits a client** (finding 1). The typed phone waits on
+  the visit (`visits.kiosk_phone`, migration 0022) and no client row is made or
+  touched until the desk confirms. Confirm links a known phone without filling
+  in its name or gender; a new phone gets a row with the typed name and no
+  gender. Decline leaves nothing. A check constraint keeps the phone to
+  unconfirmed kiosk visits.
+- **The desk decides a kiosk request** (finding 2). A kiosk visit stays
+  `self_checkin` with its requested technician until the desk presses
+  **Confirm** (it becomes a request) or **Confirm, no request** (the request is
+  dropped and the line decides). Audit rows now record the stored source and
+  `requestedTechnicianId`, for desk walk-ins too.
+- **Reassign** refuses an unconfirmed kiosk visit with a clear message instead
+  of an error page (finding 3).
+- **The PIN guards the sign-in** (finding 4). The right PIN opens a 2-minute
+  window (a random token in an httpOnly cookie, only its hash stored); on a
+  paired iPad the sign-in page and its actions need it, and it stretches to 10
+  minutes once the code is sent. A staff session on a kiosk iPad signs out
+  after 5 minutes without a tap.
+- **Wait estimate** leaves out unconfirmed check-ins (finding 5).
+- **No deadlock** when two desks confirm both halves of a pair: the group is
+  locked in one ordered statement (finding 6).
+- **Pairing** (finding 7): an expired code is audited as `kiosk_pair_failed`; a
+  token unused for 90 days stops working (re-pair the iPad).
+
 ## v0.9.0, 2026-11-11: Part 9, customer kiosk check-in
 
 - Kiosk `/kiosk` on a salon iPad, English or Vietnamese: one question per

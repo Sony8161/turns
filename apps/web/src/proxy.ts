@@ -3,6 +3,7 @@
 // every page and action verifies the user and membership again.
 import { createServerClient } from '@supabase/ssr';
 import { NextResponse, type NextRequest } from 'next/server';
+import { KIOSK_COOKIE, KIOSK_SEEN_COOKIE, kioskStaffIdle } from '@/lib/kiosk-idle';
 
 const STAFF_PREFIXES = ['/admin', '/me'];
 
@@ -37,6 +38,23 @@ export async function proxy(request: NextRequest) {
   } = await supabase.auth.getUser();
 
   const path = request.nextUrl.pathname;
+
+  // v0.9.1 (review finding 4): a staff session on a kiosk iPad ends after five
+  // minutes without a tap (the clock is kept by KioskStaffGuard).
+  if (user && request.cookies.has(KIOSK_COOKIE)) {
+    const now = Date.now();
+    if (kioskStaffIdle(request.cookies.get(KIOSK_SEEN_COOKIE)?.value, now)) {
+      await supabase.auth.signOut();
+      const url = request.nextUrl.clone();
+      url.pathname = '/kiosk';
+      url.search = '';
+      const out = NextResponse.redirect(url);
+      for (const c of response.cookies.getAll()) out.cookies.set(c);
+      out.cookies.delete(KIOSK_SEEN_COOKIE);
+      return out;
+    }
+  }
+
   if (!user && STAFF_PREFIXES.some((p) => path.startsWith(p))) {
     const url = request.nextUrl.clone();
     url.pathname = '/login';

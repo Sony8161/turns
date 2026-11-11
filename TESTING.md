@@ -432,18 +432,28 @@ Use two browser windows: a normal one signed in as staff, and a **private**
    type your first name." Phone `12`: sent back to the first question. Check in
    the same phone four times in a row: the fourth says "Please check in at the
    front desk". Type a phone you know is on file with a different name: the
-   kiosk answers exactly the same, and the desk shows the stored name.
+   kiosk answers exactly the same. Nothing the kiosk typed touches a client
+   until the desk confirms; after Confirm the row shows the stored name, which
+   stays as it was. Press **Not here** on a new phone instead: no client is
+   made at all.
+   With a technician picked on the kiosk the row also has **Confirm, no
+   request**: the visit goes to the line instead of waiting for that person.
 5. **Idle.** Type a name and wait a minute without touching anything: the
    screen starts over, blank.
 6. **Leave the kiosk.** Tap the salon name five times fast, type `0000`:
    "Wrong PIN". Type `1234`: staff sign-in. In the Log both tries are there.
+   Typing http://localhost:3000/login on the paired window without the PIN
+   goes back to the kiosk; so does waiting more than 2 minutes after the PIN.
+   Sign in through the PIN, then leave the screen untouched for 5 minutes:
+   the session signs out and the kiosk comes back.
 7. **Admin → Kiosk** (Phu or Vy; Hạnh does not see it). The Sample kiosk shows
    "paired" and "last used". **Revoke** it, then go back to the private window
    and press I'm here: "This iPad is not set up for check-in". **Register an
    iPad** gives a new code; **Make this iPad the kiosk** in a normal window
    signs you out and opens the kiosk there.
-8. **Kiosk mode.** On a browser that is paired, sign in as Hạnh: the admin
-   header has **Kiosk mode**. It signs her out and opens the kiosk.
+8. **Kiosk mode.** On a browser that is paired, sign in as Hạnh (through the
+   PIN): the admin header has **Kiosk mode**. It signs her out and opens the
+   kiosk.
 9. **Long wait.** On the desk switch "Show the long-wait notice to
    customers" on; the kiosk's thank-you screen says "We are busy right now".
 

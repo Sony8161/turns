@@ -186,6 +186,7 @@ const en = {
     kioskPending: 'Kiosk check-in, confirm before calling',
     kioskConfirmed: 'From the kiosk',
     kioskConfirm: 'Confirm',
+    kioskConfirmNoRequest: 'Confirm, no request',
     kioskDecline: 'Not here',
     // Part 6: client attributes, same-time, skipped reasons, timers.
     client: 'About the client',
@@ -282,6 +283,7 @@ const en = {
       wrong_location: 'That is at another location.',
       unknown_visit: 'That visit is gone. Refresh.',
       visit_closed: 'That visit is already finished.',
+      needs_confirm: 'Confirm the kiosk check-in on the desk first.',
       reason_required: 'Write a reason.',
       target_not_eligible: 'That technician cannot take it right now ({detail}).',
       cannot_release: 'The current technician could not be released.',
@@ -628,6 +630,7 @@ const en = {
       kiosk_revoked: 'Kiosk iPad revoked',
       kiosk_unlocked: 'Kiosk unlocked with the PIN',
       kiosk_pin_failed: 'Kiosk PIN wrong',
+      kiosk_pair_failed: 'Kiosk pairing code refused',
     },
   },
   reports: {
@@ -951,6 +954,7 @@ const vi: Dictionary = {
     kioskPending: 'Khách tự check-in, xác nhận trước khi gọi',
     kioskConfirmed: 'Từ máy check-in',
     kioskConfirm: 'Xác nhận',
+    kioskConfirmNoRequest: 'Xác nhận, bỏ yêu cầu thợ',
     kioskDecline: 'Không có ở đây',
     turnNoticeOff: 'Ẩn thông báo cho khách',
     client: 'Về khách',
@@ -1047,6 +1051,7 @@ const vi: Dictionary = {
       wrong_location: 'Việc này ở chi nhánh khác.',
       unknown_visit: 'Lượt khách này không còn. Tải lại trang.',
       visit_closed: 'Lượt khách này đã xong.',
+      needs_confirm: 'Hãy xác nhận khách tự check-in ở quầy trước.',
       reason_required: 'Ghi lý do.',
       target_not_eligible: 'Thợ này hiện không nhận được ({detail}).',
       cannot_release: 'Không thể giải phóng thợ hiện tại.',
@@ -1392,6 +1397,7 @@ const vi: Dictionary = {
       kiosk_revoked: 'Thu hồi iPad check-in',
       kiosk_unlocked: 'Mở khóa máy check-in bằng mã PIN',
       kiosk_pin_failed: 'Sai mã PIN máy check-in',
+      kiosk_pair_failed: 'Mã ghép máy check-in bị từ chối',
     },
   },
   reports: {

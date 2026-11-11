@@ -315,7 +315,7 @@ export function Desk({
                     </span>
                   </span>
                   {v.status === 'waiting' && v.needsConfirm ? (
-                    <span className="flex gap-2">
+                    <span className="flex flex-wrap gap-2">
                       <form action={review}>
                         <input type="hidden" name="visitId" value={v.id} />
                         <input type="hidden" name="decision" value="confirm" />
@@ -323,6 +323,17 @@ export function Desk({
                           {t.kioskConfirm}
                         </Button>
                       </form>
+                      {v.requestedTechnician ? (
+                        // v0.9.1: the desk decides whether a request typed on
+                        // the kiosk stands (review finding 2).
+                        <form action={review}>
+                          <input type="hidden" name="visitId" value={v.id} />
+                          <input type="hidden" name="decision" value="confirm_no_request" />
+                          <Button type="submit" tone="quiet" disabled={reviewing}>
+                            {t.kioskConfirmNoRequest}
+                          </Button>
+                        </form>
+                      ) : null}
                       <form action={review}>
                         <input type="hidden" name="visitId" value={v.id} />
                         <input type="hidden" name="decision" value="decline" />

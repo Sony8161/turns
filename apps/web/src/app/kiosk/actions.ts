@@ -9,7 +9,7 @@ import { normalizePhone } from '@turn/db/clients';
 import { revalidatePath } from 'next/cache';
 import { redirect } from 'next/navigation';
 import { db } from '@/lib/db';
-import { currentKiosk, setKioskCookie } from '@/lib/kiosk';
+import { currentKiosk, setKioskCookie, unlockThisKiosk } from '@/lib/kiosk';
 import { clientIp } from '@/lib/request';
 import { createClient, getAuthUser } from '@/lib/supabase/server';
 import { kioskFromForm } from './form';
@@ -86,6 +86,9 @@ export async function unlockAction(_prev: KioskState, formData: FormData): Promi
   if (await limited(`kiosk:pin:${device.deviceId}`, PIN_TRIES)) return { error: 'too_many' };
   const ok = await checkKioskPin(db(), device, String(formData.get('pin') ?? ''));
   if (!ok) return { error: 'bad_pin' };
+  // The sign-in page checks this short window; typing /login alone gets the
+  // kiosk back (v0.9.1, review finding 4).
+  await unlockThisKiosk(device);
   redirect('/login');
 }
 

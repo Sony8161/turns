@@ -104,7 +104,9 @@ export async function reviewKioskFor(_prev: DeskState, formData: FormData): Prom
   if (!m || !can(m.role, 'call_technician')) return { error: 'not_allowed' };
   const visitId = uuidOf(formData.get('visitId'));
   if (!visitId) return { error: 'unknown_visit' };
-  const decision = formData.get('decision') === 'decline' ? 'decline' : 'confirm';
+  const raw = formData.get('decision');
+  const decision =
+    raw === 'decline' ? 'decline' : raw === 'confirm_no_request' ? 'confirm_no_request' : 'confirm';
   const result = await reviewKioskVisit(db(), {
     actor: { userId: actor.userId, organizationId: m.organizationId, locationId: m.locationId },
     visitId,

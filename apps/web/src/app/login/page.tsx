@@ -3,6 +3,7 @@ import { redirect } from 'next/navigation';
 import { LanguageToggle } from '@/i18n/LanguageToggle';
 import { getDictionary } from '@/i18n/lang';
 import { getActor } from '@/lib/auth';
+import { kioskSignInGate } from '@/lib/kiosk';
 import { readInviteCookie } from '../join/invite-cookie';
 import { LoginForm } from './LoginForm';
 
@@ -15,6 +16,8 @@ export default async function LoginPage() {
   // Already signed in: a pending invite is redeemed for this session, never
   // left waiting for whoever signs in next.
   if (actor) redirect(invite ? '/join/finish' : '/admin');
+  // A kiosk iPad reaches the sign-in only through its PIN (v0.9.1).
+  if ((await kioskSignInGate()).blocked) redirect('/kiosk');
 
   return (
     <main className="mx-auto flex w-full max-w-md flex-1 flex-col gap-8 px-4 py-6">
