@@ -184,6 +184,9 @@ describe('pairing', () => {
     const row = list.find((r) => r.id === k.device.deviceId)!;
     expect(row.revokedAt).not.toBeNull();
     expect(JSON.stringify(list)).not.toMatch(/hash/i);
+    // Working iPads first, revoked ones below.
+    const firstRevoked = list.findIndex((r) => r.revokedAt !== null);
+    expect(list.slice(firstRevoked).every((r) => r.revokedAt !== null)).toBe(true);
     expect((await listKiosks(db, LOC2)).some((r) => r.id === k.device.deviceId)).toBe(false);
   });
 

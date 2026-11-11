@@ -9,7 +9,7 @@
 // phone typed is already on file (no enumeration).
 import { createHash, randomBytes, scrypt as scryptCb, timingSafeEqual } from 'node:crypto';
 import { promisify } from 'node:util';
-import { and, asc, desc, eq, gt, inArray, isNull, lt, or } from 'drizzle-orm';
+import { and, desc, eq, gt, inArray, isNull, lt, or, sql } from 'drizzle-orm';
 import { createWalkIn, floorAttention, type ClientAttributes, type ManagerActor } from './engine';
 import { generateCode, hashCode } from './invites';
 import { kioskDevices, serviceCategories, services, technicians, visits } from './schema';
@@ -227,7 +227,8 @@ export async function listKiosks(
     })
     .from(kioskDevices)
     .where(eq(kioskDevices.locationId, locationId))
-    .orderBy(asc(kioskDevices.revokedAt), desc(kioskDevices.createdAt));
+    // Working iPads first, newest first; revoked ones below.
+    .orderBy(sql`${kioskDevices.revokedAt} is not null`, desc(kioskDevices.createdAt));
   return rows.map((r) => ({
     id: r.id,
     name: r.name,

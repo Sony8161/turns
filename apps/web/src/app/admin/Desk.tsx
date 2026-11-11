@@ -290,7 +290,7 @@ export function Desk({
                     </span>
                     {chips.length > 0 || v.clientName ? (
                       <span className="flex flex-wrap gap-2 text-small">
-                        {v.clientName ? (
+                        {v.clientName && v.clientName !== v.kioskName ? (
                           <span className="text-slate/80">
                             {fill(t.withName, { name: v.clientName })}
                           </span>
