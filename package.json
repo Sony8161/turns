@@ -14,7 +14,8 @@
     "format:check": "prettier --check .",
     "secrets:scan": "node scripts/scan-public-env.mjs",
     "up": "powershell -NoProfile -ExecutionPolicy Bypass -File scripts/dev.ps1",
-    "down": "powershell -NoProfile -ExecutionPolicy Bypass -File scripts/down.ps1"
+    "down": "powershell -NoProfile -ExecutionPolicy Bypass -File scripts/down.ps1",
+    "bundle:scan": "node scripts/scan-bundle.mjs"
   },
   "devDependencies": {
     "prettier": "3.9.10",

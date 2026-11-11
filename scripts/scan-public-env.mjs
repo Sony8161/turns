@@ -7,34 +7,13 @@ import { execFileSync } from 'node:child_process';
 import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { join, dirname, basename } from 'node:path';
+import { SECRET_SHAPES } from './secret-shapes.mjs';
 
 const ROOT = dirname(dirname(fileURLToPath(import.meta.url)));
 const SCAN_EXT = /\.(ts|tsx|js|mjs|cjs|json|toml|md|ya?ml|sh|ps1|html)$/;
 const ENV_FILE = /^\.env(\..*)?$/;
 const PUBLIC_PREFIX = /\b(NEXT_PUBLIC_|EXPO_PUBLIC_)([A-Z0-9_]+)/g;
 const ALLOWED_PUBLIC = new Set(['SUPABASE_URL', 'SUPABASE_ANON_KEY']);
-
-// Values that are secrets no matter what name they sit under.
-const SECRET_SHAPES = [
-  { name: 'Supabase secret key', re: /\bsb_secret_[A-Za-z0-9_-]{10,}/ },
-  {
-    name: 'service_role JWT',
-    re: /eyJ[A-Za-z0-9_-]+\.eyJ[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+/,
-    check: isServiceRoleJwt,
-  },
-  { name: 'private key block', re: /-----BEGIN [A-Z ]*PRIVATE KEY-----/ },
-  { name: 'Twilio account SID', re: /\bAC[0-9a-f]{32}\b/ },
-  { name: 'Stripe live key', re: /\bsk_live_[A-Za-z0-9]{10,}/ },
-];
-
-function isServiceRoleJwt(token) {
-  try {
-    const payload = JSON.parse(Buffer.from(token.split('.')[1], 'base64url').toString('utf8'));
-    return payload.role === 'service_role';
-  } catch {
-    return false;
-  }
-}
 
 function trackedFiles() {
   const out = execFileSync(

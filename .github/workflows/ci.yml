@@ -1,0 +1,85 @@
+# Continuous integration (Part 10, SEC-001 task 8). Every push and pull request
+# runs the same gates as a local release: format, typecheck, lint, the tracked
+# file secret scan, a full-history gitleaks scan, every test against a real
+# Supabase Postgres, the production build, and the browser bundle scan.
+# Written in Part 10; not pushed yet (Duong decides when GitHub gets it).
+name: ci
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  gates:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    services:
+      # The same image the local stack runs (npx supabase start): it brings the
+      # auth schema and the anon, authenticated and service_role roles the
+      # migrations and the row-level security tests need. Checked in Part 10:
+      # the db suite passes against this image alone.
+      postgres:
+        image: public.ecr.aws/supabase/postgres:17.11.0.018
+        env:
+          POSTGRES_PASSWORD: postgres
+        ports:
+          - 54322:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 20
+    env:
+      # Local-only values: the test helpers refuse any host but 127.0.0.1.
+      DATABASE_URL: postgresql://postgres:postgres@127.0.0.1:54322/postgres
+      # The build needs no real keys (every page is dynamic); placeholders only.
+      NEXT_PUBLIC_SUPABASE_URL: http://127.0.0.1:54321
+      NEXT_PUBLIC_SUPABASE_ANON_KEY: ci-placeholder
+      NEXT_TELEMETRY_DISABLED: '1'
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0 # gitleaks reads the whole history
+          persist-credentials: false
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+
+      - name: Install
+        run: npm ci
+
+      - name: Format
+        run: npm run format:check
+
+      - name: Typecheck
+        run: npm run typecheck
+
+      - name: Lint
+        run: npm run lint -w web -- --max-warnings=0
+
+      - name: Secret scan (tracked files)
+        run: npm run secrets:scan
+
+      - name: Secret scan (full git history)
+        run: >-
+          docker run --rm -v "$PWD:/repo" ghcr.io/gitleaks/gitleaks:v8.30.1
+          git /repo --log-opts="--all" --redact --exit-code 1
+
+      - name: Tests (database, then web)
+        run: npm test
+
+      - name: Build
+        run: npm run build -w web
+
+      - name: Bundle scan (nothing secret reaches a browser)
+        run: npm run bundle:scan
