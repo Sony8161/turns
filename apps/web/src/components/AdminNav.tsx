@@ -15,9 +15,10 @@ export function AdminNav({
   canManage = false,
   canAppointments = true,
   canLog = false,
+  canKiosk,
 }: {
   t: Dictionary['nav'];
-  current: 'board' | 'staff' | 'rules' | 'manage' | 'appointments' | 'log' | 'reports';
+  current: 'board' | 'staff' | 'rules' | 'manage' | 'appointments' | 'log' | 'reports' | 'kiosk';
   canStaff: boolean;
   canRules: boolean;
   canManage?: boolean;
@@ -25,12 +26,15 @@ export function AdminNav({
   canAppointments?: boolean;
   /** Owners and managers: the audit log and reports (Part 8). */
   canLog?: boolean;
+  /** Owners and managers: the check-in iPads (Part 9). Same roles as staff by default. */
+  canKiosk?: boolean;
 }) {
   const items: Item[] = [{ href: '/admin', label: t.board }];
   if (canAppointments) items.push({ href: '/admin/appointments', label: t.appointments });
   if (canManage) items.push({ href: '/admin/manage', label: t.manage });
   if (canStaff) items.push({ href: '/admin/staff', label: t.staff });
   if (canRules) items.push({ href: '/admin/rules', label: t.rules });
+  if (canKiosk ?? canStaff) items.push({ href: '/admin/kiosk', label: t.kiosk });
   if (canLog) {
     items.push({ href: '/admin/log', label: t.log });
     items.push({ href: '/admin/reports', label: t.reports });
@@ -43,6 +47,7 @@ export function AdminNav({
     appointments: '/admin/appointments',
     log: '/admin/log',
     reports: '/admin/reports',
+    kiosk: '/admin/kiosk',
   }[current];
   return (
     <nav aria-label="Admin" className="flex flex-wrap items-center gap-2">

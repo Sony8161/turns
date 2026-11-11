@@ -27,6 +27,7 @@ const TABLE: Record<Capability, Record<Role, boolean>> = {
   message_technicians: OM,
   view_audit: OM,
   export_data: O,
+  manage_kiosks: OM,
   technician_actions: T,
   view_own_schedule: T,
   delete_records: NOBODY,

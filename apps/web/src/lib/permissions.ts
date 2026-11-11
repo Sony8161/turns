@@ -26,6 +26,7 @@ export type Capability =
   | 'message_technicians'
   | 'view_audit' // managers: own location only, enforced by scoping
   | 'export_data'
+  | 'manage_kiosks' // pair, re-pair and revoke the customer check-in iPads (Part 9)
   | 'technician_actions' // own status, accept, deny, finish
   | 'view_own_schedule' // own calls and upcoming appointments
   | 'delete_records'; // nobody, on purpose
@@ -46,6 +47,7 @@ const TABLE: Record<Capability, readonly Role[]> = {
   message_technicians: ['owner', 'manager'],
   view_audit: ['owner', 'manager'],
   export_data: ['owner'],
+  manage_kiosks: ['owner', 'manager'],
   technician_actions: ['technician'],
   view_own_schedule: ['technician'],
   delete_records: [],

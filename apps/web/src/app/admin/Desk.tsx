@@ -4,7 +4,14 @@ import { useActionState } from 'react';
 import { formatClock } from '@/components/Board';
 import { Button } from '@/components/ui';
 import { fill, type Dictionary } from '@/i18n/dictionary';
-import { callNextFor, clearCallFor, enterWalkIn, setNotice, type DeskState } from './actions';
+import {
+  callNextFor,
+  clearCallFor,
+  enterWalkIn,
+  reviewKioskFor,
+  setNotice,
+  type DeskState,
+} from './actions';
 import { skipText, visitChips } from './chips';
 
 type Service = { id: string; name: string; category: string };
@@ -23,6 +30,10 @@ export type Waiting = {
   clientIsKid: boolean | null;
   clientAge: number | null;
   groupId: string | null;
+  /** Part 9: checked in on the kiosk; waits for the desk until confirmed. */
+  fromKiosk: boolean;
+  kioskName: string | null;
+  needsConfirm: boolean;
 };
 export type Attention = {
   unansweredCalls: { callId: string; technicianName: string; waitedMin: number }[];
@@ -60,6 +71,7 @@ export function Desk({
   const [callState, call, calling] = useActionState<DeskState, FormData>(callNextFor, {});
   const [clearState, clear, clearing] = useActionState<DeskState, FormData>(clearCallFor, {});
   const [noticeState, notice, switching] = useActionState<DeskState, FormData>(setNotice, {});
+  const [reviewState, review, reviewing] = useActionState<DeskState, FormData>(reviewKioskFor, {});
   const field = 'min-h-12 rounded-control border-2 border-slate/30 bg-board px-3 text-lead';
 
   const waitLine =
@@ -227,6 +239,9 @@ export function Desk({
         <section className="flex flex-col gap-3">
           <h2 className="text-heading font-semibold">{t.waiting}</h2>
           {waiting.length === 0 ? <p className="text-slate/70">{t.nobodyWaiting}</p> : null}
+          {reviewState.error ? (
+            <p className="text-polish">{t.errors[reviewState.error] ?? reviewState.error}</p>
+          ) : null}
           {callState.error ? (
             <p className="text-polish">
               {t.errors[callState.error] ?? callState.error}
@@ -256,8 +271,17 @@ export function Desk({
             {waiting.map((v) => {
               const chips = visitChips(v, t.chips);
               return (
-                <li key={v.id} className="flex items-center gap-4 bg-board px-4 py-3">
+                <li
+                  key={v.id}
+                  className={`flex flex-wrap items-center gap-4 bg-board px-4 py-3 ${v.needsConfirm ? 'border-l-[12px] border-amber' : ''}`}
+                >
                   <span className="flex min-w-0 flex-1 flex-col">
+                    {v.fromKiosk ? (
+                      <span className="text-small font-semibold">
+                        {v.needsConfirm ? t.kioskPending : t.kioskConfirmed}
+                        {v.kioskName ? `: ${v.kioskName}` : ''}
+                      </span>
+                    ) : null}
                     <span className="font-semibold">
                       {v.services.join(', ')}
                       {v.requestedTechnician
@@ -290,7 +314,24 @@ export function Desk({
                           : fill(t.waitingLine, { time: formatClock(v.waitSeconds) })}
                     </span>
                   </span>
-                  {v.status === 'waiting' ? (
+                  {v.status === 'waiting' && v.needsConfirm ? (
+                    <span className="flex gap-2">
+                      <form action={review}>
+                        <input type="hidden" name="visitId" value={v.id} />
+                        <input type="hidden" name="decision" value="confirm" />
+                        <Button type="submit" disabled={reviewing}>
+                          {t.kioskConfirm}
+                        </Button>
+                      </form>
+                      <form action={review}>
+                        <input type="hidden" name="visitId" value={v.id} />
+                        <input type="hidden" name="decision" value="decline" />
+                        <Button type="submit" tone="quiet" disabled={reviewing}>
+                          {t.kioskDecline}
+                        </Button>
+                      </form>
+                    </span>
+                  ) : v.status === 'waiting' ? (
                     <form action={call}>
                       <input type="hidden" name="visitId" value={v.id} />
                       <Button type="submit" disabled={calling}>

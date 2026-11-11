@@ -18,7 +18,9 @@ import { getDictionary } from '@/i18n/lang';
 import { membershipWith, requireActor } from '@/lib/auth';
 import { db } from '@/lib/db';
 import { can } from '@/lib/permissions';
+import { currentKiosk } from '@/lib/kiosk';
 import { signOut } from '../login/actions';
+import { enterKioskMode } from './kiosk/actions';
 import { Desk } from './Desk';
 
 // Admin home: the live board in queue order, what needs attention, the front
@@ -67,6 +69,9 @@ export default async function AdminPage() {
   });
   const nextAppointments = upcoming.filter((a) => !a.arrivedAt && !a.cancelledAt).slice(0, 4);
   const owner = !!membership && can(membership.role, 'manage_rules');
+  // Part 9: this browser is also paired as this location's kiosk.
+  const kiosk = membership ? await currentKiosk() : null;
+  const kioskHere = !!kiosk && kiosk.locationId === membership?.locationId;
   // Part 8: the owner's end-of-day summary for yesterday (written once, then read).
   const yesterday =
     owner && membership ? previousDate(localDate(now, loc?.timezone ?? 'America/New_York')) : null;
@@ -87,6 +92,13 @@ export default async function AdminPage() {
         </div>
         <div className="flex items-center gap-3">
           <LanguageToggle lang={lang} t={t} />
+          {kioskHere ? (
+            <form action={enterKioskMode}>
+              <Button type="submit" tone="quiet">
+                {t.nav.kioskMode}
+              </Button>
+            </form>
+          ) : null}
           <form action={signOut}>
             <Button type="submit" tone="quiet">
               {t.nav.signOut}
@@ -104,6 +116,7 @@ export default async function AdminPage() {
             canRules={can(membership.role, 'manage_rules')}
             canManage={can(membership.role, 'override_queue')}
             canLog={can(membership.role, 'view_audit')}
+            canKiosk={can(membership.role, 'manage_kiosks')}
           />
           <section className="flex flex-col gap-4">
             <h1 className="text-heading font-semibold">
@@ -198,6 +211,9 @@ export default async function AdminPage() {
                 clientIsKid: v.clientIsKid,
                 clientAge: v.clientAge,
                 groupId: v.groupId,
+                fromKiosk: v.fromKiosk,
+                kioskName: v.kioskName,
+                needsConfirm: v.needsConfirm,
               }))}
               technicians={rows.map((r) => ({ id: r.id, name: r.name }))}
               attention={{

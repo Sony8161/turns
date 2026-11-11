@@ -1,9 +1,11 @@
 'use server';
 
 import { callNext, createWalkIn, expireCall, setLongWaitNotice } from '@turn/db/engine';
+import { reviewKioskVisit } from '@turn/db/kiosk';
 import { revalidatePath } from 'next/cache';
 import { membershipWith, requireActor, type Membership } from '@/lib/auth';
 import { db } from '@/lib/db';
+import { uuidOf } from '@/lib/ids';
 import { can } from '@/lib/permissions';
 import { toSkippedLines, type SkippedLine } from './chips';
 import { walkInFromForm } from './form';
@@ -92,4 +94,22 @@ export async function setNotice(_prev: DeskState, formData: FormData): Promise<D
   });
   revalidatePath('/admin');
   return {};
+}
+
+/** The desk confirms a kiosk check-in (then it can be called) or declines it
+ *  (nobody there): Part 9, threat model Q6. */
+export async function reviewKioskFor(_prev: DeskState, formData: FormData): Promise<DeskState> {
+  const actor = await requireActor();
+  const m = await deskMembership();
+  if (!m || !can(m.role, 'call_technician')) return { error: 'not_allowed' };
+  const visitId = uuidOf(formData.get('visitId'));
+  if (!visitId) return { error: 'unknown_visit' };
+  const decision = formData.get('decision') === 'decline' ? 'decline' : 'confirm';
+  const result = await reviewKioskVisit(db(), {
+    actor: { userId: actor.userId, organizationId: m.organizationId, locationId: m.locationId },
+    visitId,
+    decision,
+  });
+  revalidatePath('/admin');
+  return result.ok ? {} : { error: result.reason };
 }
