@@ -677,7 +677,8 @@ describe('manager overrides', () => {
     >`select reason, after from audit_log where action = 'points_adjusted' order by at desc limit 1`;
     expect(audit).toEqual({
       reason: 'stayed late yesterday',
-      after: { technicianId: an.id, delta: -0.5 },
+      // Part 8: the design doc's audit table asks for the total before and after.
+      after: { technicianId: an.id, delta: -0.5, points: before - 0.5 },
     });
   });
 });
