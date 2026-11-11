@@ -2,6 +2,51 @@
 
 One version per delivered part. Tags point at the commits.
 
+## v0.9.0, 2026-11-11: Part 9, customer kiosk check-in
+
+- Kiosk `/kiosk` on a salon iPad, English or Vietnamese: one question per
+  screen (first name and an optional phone; the services; who it is for, kid
+  and age, woman or man or skip; a technician or anyone), "2 of 4" in words,
+  Back bottom left, "I'm here" at the end, then "Please take a seat". The
+  screen clears after every check-in and after 60 seconds untouched. The
+  long-wait notice shows on the thank-you screen when the desk switched it on.
+- The visit waits for the desk: the waiting list shows "Kiosk check-in,
+  confirm before calling" with the typed first name, and **Confirm** or **Not
+  here** (cancels it). A same-time pair is confirmed or declined together.
+  The engine refuses a call before the confirm (`needs_confirm`) and so does a
+  database trigger. A check constraint keeps `needs_confirm` to kiosk visits,
+  and a trigger keeps a kiosk visit at its kiosk's own location.
+- Devices (`kiosk_devices`, threat model T20, T25): an owner or manager
+  registers an iPad in **Admin → Kiosk** with a name and a 4-digit PIN and
+  gets a one-time pairing code (15 minutes). The iPad types the code at
+  `/kiosk` and gets a random token in an httpOnly cookie; only SHA-256 hashes
+  of the code and token and an scrypt hash of the PIN are stored, and no app
+  role can read the table. **New pairing code** moves a kiosk to another iPad
+  (the old token stops when the code is used); **Revoke** stops it at once.
+  **Make this iPad the kiosk** pairs the current browser and signs the person
+  out. A receptionist iPad that is also paired gets a **Kiosk mode** button.
+- Leaving the kiosk: five quick taps on the salon name, then the PIN, go to
+  staff sign-in. Every try is audited (`kiosk_unlocked`, `kiosk_pin_failed`).
+  The kiosk refuses to run while a staff session is on the same browser.
+- No enumeration (T12): the answer is the same for a new phone and a known
+  one; a known phone keeps its stored name; nothing about a client comes back.
+  A name without a phone makes no client row. The kiosk shows no board, no
+  points and no other customer.
+- Rate limits: 30 check-ins per kiosk and 60 per address per 10 minutes, 3 per
+  phone per 30 minutes, 5 PIN tries per kiosk and 10 pairing tries per address
+  per 15 minutes. Over a limit the kiosk says "Please check in at the front
+  desk".
+- Audit: `kiosk_check_in` (instead of `visit_created`, with the kiosk id and
+  the attributes, never the name or phone), `kiosk_confirmed`,
+  `kiosk_declined`, `kiosk_created`, `kiosk_pairing_code`, `kiosk_paired`,
+  `kiosk_revoked`, `kiosk_unlocked`, `kiosk_pin_failed`; all in the Log
+  filter. Confirms and declines count as desk entries in Reports.
+- Sample data: a "Sample kiosk" with a 24-hour pairing code and PIN 1234 in
+  `dev-codes.txt`, and one kiosk check-in "Ngoc" waiting for the desk.
+- Migration 0021. Tests: 22 database (pairing, hashes only, revoke, PIN,
+  check-in, no enumeration, confirm and decline, triggers, no app role reads
+  the kiosk table, location scoping) and 5 web (the kiosk form).
+
 ## v0.7.1, 2026-11-11: Part 7 review fixes
 
 Fixes from the independent review of Part 7, each with a test that failed

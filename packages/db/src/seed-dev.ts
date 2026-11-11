@@ -6,7 +6,7 @@
 import { writeFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { and, eq, inArray } from 'drizzle-orm';
+import { and, eq, inArray, sql } from 'drizzle-orm';
 import { addAppointment } from './appointments';
 import { createWalkIn } from './engine';
 import { createInvite, type Role } from './invites';
@@ -23,6 +23,7 @@ import {
 } from './schema';
 import { HEAVENLY, seedHeavenly } from './seed';
 import { createDb, type Db } from './server';
+import { createKioskDevice, kioskCheckIn, pairKiosk } from './kiosk';
 import { createSetupCode } from './setup';
 
 // Phones are 555 numbers (never real). Each is in supabase/config.toml under
@@ -329,6 +330,7 @@ export async function seedDev(
     await seedProfiles(db, ownerId);
     await seedWalkIns(db, ownerId);
     await seedAppointments(db, receptionistId);
+    const kiosk = await seedKiosk(db, ownerId);
 
     const lines = [
       `Local sample data, written ${new Date().toISOString()} by npm run db:seed:dev`,
@@ -359,6 +361,11 @@ export async function seedDev(
       'Sample appointments (Part 7, added once): Thảo in 25 min (she is skipped until the client arrives), Linh in 2 h.',
       'Appointments -> pick services -> Client arrived. A calendar sync from a local file:',
       '  npm run -w @turn/db feed:local -- "Mai" --sample',
+      '',
+      `Customer kiosk (Part 9): open http://localhost:3000/kiosk in a private window (signed out) and type`,
+      `  the pairing code ${kiosk.pairingCode} (works once, for 24 hours). Kiosk PIN: ${KIOSK_PIN}`,
+      '  (tap the salon name 5 times, then the PIN, to get to staff sign-in). Admin -> Kiosk to revoke or pair again.',
+      '  A sample kiosk check-in "Ngoc" waits on the desk for Confirm (added once).',
     ];
     const notes = lines.join('\n');
     const root = join(dirname(fileURLToPath(import.meta.url)), '..', '..', '..');
@@ -372,6 +379,52 @@ export async function seedDev(
   } finally {
     await db.$client.end();
   }
+}
+
+export const KIOSK_PIN = '1234';
+
+/** A kiosk iPad for each run (pairing code printed), and one sample kiosk
+ *  check-in waiting for the desk's confirm (added once). */
+async function seedKiosk(db: Db, ownerId: string): Promise<{ pairingCode: string }> {
+  const actor = {
+    userId: ownerId,
+    organizationId: HEAVENLY.organizationId,
+    locationId: HEAVENLY.locationId,
+  };
+  const made = await createKioskDevice(db, {
+    actor,
+    name: 'Sample kiosk',
+    pin: KIOSK_PIN,
+    ttlMinutes: 24 * 60,
+  });
+  if (!made.ok) throw new Error(`kiosk: ${made.reason}`);
+  const pending = await db.execute(
+    sql`select 1 from visits where location_id = ${HEAVENLY.locationId} and kiosk_device_id is not null limit 1`,
+  );
+  if (pending.length === 0) {
+    // A separate seed device, so the printed code stays unused for the tester.
+    const seedDevice = await createKioskDevice(db, { actor, name: 'Seed kiosk', pin: KIOSK_PIN });
+    if (seedDevice.ok) {
+      const p = await pairKiosk(db, { code: seedDevice.pairingCode });
+      if (p.ok) {
+        const [svc] = await db
+          .select({ id: services.id })
+          .from(services)
+          .where(
+            and(eq(services.locationId, HEAVENLY.locationId), eq(services.name, 'Basic manicure')),
+          );
+        if (svc) {
+          await kioskCheckIn(db, {
+            device: p.device,
+            name: 'Ngoc',
+            serviceIds: [svc.id],
+            attributes: { gender: 'female', isKid: false, age: null },
+          });
+        }
+      }
+    }
+  }
+  return { pairingCode: made.pairingCode };
 }
 
 if (import.meta.main) {

@@ -221,11 +221,34 @@ This is the part that settles "who got called before whom".
   owner's phone comes with the phone app.
 - Nothing here shows a client's name or phone.
 
-### Part 9. The customer kiosk
+### Part 9. The customer kiosk (done)
 
-A second iPad at the desk. Phone and name, the services, who it is for, a few
-preferences, one question per screen, English or Vietnamese. It creates a
-waiting visit that the receptionist confirms with one tap.
+A second iPad at the front, so a walk-in can check in when the desk is busy.
+
+- **What the customer sees** (`/kiosk`). Four questions, one per screen, in
+  English or Vietnamese: first name and an optional phone; the services; who
+  it is for (adult or kid and age, woman or man or skip); a technician or
+  anyone. Then "Please take a seat. The front desk will call your name." The
+  screen wipes itself after each customer and after a minute untouched, so
+  the next person sees nothing. It never shows the board, points or anyone
+  else.
+- **What the desk sees.** The check-in lands in the waiting list marked "Kiosk
+  check-in, confirm before calling" with the typed first name. **Confirm**
+  lets the engine call as usual; **Not here** cancels it. Nobody can be
+  called before the confirm: the engine and the database both refuse.
+- **How the iPad is trusted.** An owner or manager registers it in **Admin →
+  Kiosk** and gets a pairing code that works once, for 15 minutes. The iPad
+  keeps a random key in a cookie; the database keeps only a fingerprint of it.
+  That key can do one thing: add a waiting customer at that one location. A
+  lost iPad is switched off with **Revoke**. The kiosk never runs with a staff
+  sign-in on the same browser.
+- **Getting out of it.** Tap the salon name five times, then the 4-digit PIN
+  the owner set: staff sign-in. A paired receptionist iPad has a **Kiosk
+  mode** button to go the other way.
+- **Abuse limits.** A phone can check in 3 times in 30 minutes, a kiosk 30
+  times in 10 minutes; PIN and code guesses are capped. The answer is the same
+  whether or not the phone is already known, so the kiosk cannot be used to
+  look people up.
 
 ### Part 10. Hardening, the App Store, handoff
 

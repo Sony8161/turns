@@ -411,6 +411,42 @@ Do 8c or 8e first so the day has calls, a deny and an override.
    stored summary; the owner's board shows "Yesterday (…)". Studio: an
    `update` on `daily_summaries` is refused ("append-only").
 
+## 8h. The customer kiosk (Part 9)
+
+Use two browser windows: a normal one signed in as staff, and a **private**
+(incognito) window for the kiosk, so the kiosk never shares a sign-in.
+
+1. **Pair.** In the private window open http://localhost:3000/kiosk: "Set up
+   this iPad for customer check-in". Type the pairing code from
+   `dev-codes.txt` (Sample kiosk). The check-in screen opens. Type the same
+   code again in another private window: "That code did not work".
+2. **Check in.** First name "Lan", phone `813 555 0142`, Next; pick a manicure,
+   Next; "An adult", "A woman", Next; "Anyone is fine", **I'm here**. "Thank
+   you, Lan! Please take a seat." After about 12 seconds the screen is blank
+   again. Try it in Vietnamese with the language button.
+3. **Desk.** As Hạnh on `/admin`: the row says "Kiosk check-in, confirm before
+   calling: Lan" with **Confirm** and **Not here**, and no Call next. Confirm,
+   then Call next works as usual. The sample "Ngoc" row is there too: press
+   **Not here** and it leaves the list.
+4. **Things that should fail.** Leave the name empty and press Next: "Please
+   type your first name." Phone `12`: sent back to the first question. Check in
+   the same phone four times in a row: the fourth says "Please check in at the
+   front desk". Type a phone you know is on file with a different name: the
+   kiosk answers exactly the same, and the desk shows the stored name.
+5. **Idle.** Type a name and wait a minute without touching anything: the
+   screen starts over, blank.
+6. **Leave the kiosk.** Tap the salon name five times fast, type `0000`:
+   "Wrong PIN". Type `1234`: staff sign-in. In the Log both tries are there.
+7. **Admin → Kiosk** (Phu or Vy; Hạnh does not see it). The Sample kiosk shows
+   "paired" and "last used". **Revoke** it, then go back to the private window
+   and press I'm here: "This iPad is not set up for check-in". **Register an
+   iPad** gives a new code; **Make this iPad the kiosk** in a normal window
+   signs you out and opens the kiosk there.
+8. **Kiosk mode.** On a browser that is paired, sign in as Hạnh: the admin
+   header has **Kiosk mode**. It signs her out and opens the kiosk.
+9. **Long wait.** On the desk switch "Show the long-wait notice to
+   customers" on; the kiosk's thank-you screen says "We are busy right now".
+
 ## 9. If something is off
 
 - **"Something went wrong on our side"** on sign-in: the local stack is probably
@@ -426,5 +462,4 @@ Do 8c or 8e first so the day has calls, a deny and an override.
 
 ## What is not here yet
 
-The customer kiosk (Part 9), push to the phone (the end-of-day summary
-included) and the Expo app. Heavenly's real Fresha feed has not been opened yet.
+Push to the phone (the end-of-day summary included) and the Expo app. Heavenly's real Fresha feed has not been opened yet.

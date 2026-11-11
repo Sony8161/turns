@@ -75,7 +75,14 @@ export function cleanKioskName(raw: unknown): string | null {
  *  code is shown once; only its hash is kept. */
 export async function createKioskDevice(
   db: Db,
-  input: { actor: ManagerActor; name: string; pin: string; now?: Date },
+  input: {
+    actor: ManagerActor;
+    name: string;
+    pin: string;
+    now?: Date;
+    /** The development seed only: a code that lasts the day. */
+    ttlMinutes?: number;
+  },
 ): Promise<
   | { ok: true; deviceId: string; pairingCode: string; expiresAt: Date }
   | { ok: false; reason: 'bad_name' | 'bad_pin' }
@@ -85,7 +92,7 @@ export async function createKioskDevice(
   if (!validPin(input.pin)) return { ok: false, reason: 'bad_pin' };
   const now = input.now ?? new Date();
   const code = generateCode();
-  const expiresAt = new Date(now.getTime() + PAIRING_TTL_MIN * 60_000);
+  const expiresAt = new Date(now.getTime() + (input.ttlMinutes ?? PAIRING_TTL_MIN) * 60_000);
   const pinHash = await hashPin(input.pin);
   return db.transaction(async (tx) => {
     const [row] = await tx
