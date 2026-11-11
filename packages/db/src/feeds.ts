@@ -8,7 +8,8 @@
 import { lookup as dnsLookup } from 'node:dns/promises';
 import { request } from 'node:https';
 import { isIP, type LookupFunction } from 'node:net';
-import { and, eq, isNull, lt, or } from 'drizzle-orm';
+import { and, asc, eq, isNull, lt, or, sql } from 'drizzle-orm';
+import { sameSlot } from './appointments';
 import { appointments, calendarFeeds, locations, technicians } from './schema';
 import type { Db } from './server';
 import type { StaffActor } from './staff';
@@ -20,10 +21,19 @@ type Tx = Parameters<Parameters<Db['transaction']>[0]>[0];
 // faster poll gains nothing.
 export const FEED_POLL_MIN = 15;
 export const FEED_STALE_MIN = 45;
-export const FEED_MAX_BYTES = 2 * 1024 * 1024;
+// The byte ceiling is for the whole file, history included (a year of a busy
+// technician's book is about 1.5 MB); the event cap counts the window only.
+export const FEED_MAX_BYTES = 8 * 1024 * 1024;
+/** One request, DNS lookup included. */
 export const FEED_TIMEOUT_MS = 10_000;
+/** Every hop of one feed together, redirects included. */
+export const FEED_TOTAL_MS = 20_000;
 export const FEED_MAX_REDIRECTS = 3;
 export const FEED_MAX_EVENTS = 2000;
+/** Events read from one file at all, inside the window or not (CPU guard). */
+export const FEED_MAX_SCANNED = 50_000;
+/** Feeds polled at once by the scheduled poll. */
+export const FEED_POLL_CONCURRENCY = 4;
 /** The window a poll keeps in step with the feed: recent past to a month ahead. */
 export const FEED_PAST_HOURS = 12;
 export const FEED_AHEAD_DAYS = 31;
@@ -138,8 +148,12 @@ function v6Public(ip: string): boolean {
   if (g0 === 0 && g1 === 0 && g2 === 0 && g3 === 0 && g4 === 0 && (g5 === 0xffff || g5 === 0)) {
     return v4Public(`${g6 >> 8}.${g6 & 255}.${g7 >> 8}.${g7 & 255}`);
   }
+  // IPv4-translated (::ffff:0:a.b.c.d): never a public calendar host.
+  if (g0 === 0 && g1 === 0 && g2 === 0 && g3 === 0 && g4 === 0xffff && g5 === 0) return false;
+  if (g0 === 0x100 && g1 === 0 && g2 === 0 && g3 === 0) return false; // discard-only
   if ((g0 & 0xfe00) === 0xfc00) return false; // unique local
   if ((g0 & 0xffc0) === 0xfe80) return false; // link-local
+  if ((g0 & 0xffc0) === 0xfec0) return false; // site-local (deprecated, still routed inside)
   if ((g0 & 0xff00) === 0xff00) return false; // multicast
   if (g0 === 0x64 && g1 === 0xff9b) return false; // NAT64 (embeds an IPv4)
   if (g0 === 0x2002) return false; // 6to4 (embeds an IPv4)
@@ -197,10 +211,14 @@ export type FetchText = (url: string) => Promise<FetchResult>;
 
 /** One GET, pinned to the address that was checked, so a second DNS answer
  *  cannot swap in a private address after the check (DNS rebinding). */
-function getOnce(
+export type GetResult = { status: number; location?: string; body?: string; error?: string };
+export type GetOnce = (
   url: URL,
   pinned: { address: string; family: number },
-): Promise<{ status: number; location?: string; body?: string; error?: string }> {
+  timeoutMs: number,
+) => Promise<GetResult>;
+
+const getOnce: GetOnce = (url, pinned, timeoutMs) => {
   return new Promise((done) => {
     const lookup: LookupFunction = (_host, options, cb) => {
       if (options && typeof options === 'object' && options.all) {
@@ -210,7 +228,7 @@ function getOnce(
       }
     };
     let settled = false;
-    const finish = (r: { status: number; location?: string; body?: string; error?: string }) => {
+    const finish = (r: GetResult) => {
       if (settled) return;
       settled = true;
       clearTimeout(timer);
@@ -259,25 +277,58 @@ function getOnce(
     const timer = setTimeout(() => {
       req.destroy();
       finish({ status: 0, error: 'timeout' });
-    }, FEED_TIMEOUT_MS);
+    }, timeoutMs);
     req.on('error', () => finish({ status: 0, error: 'connect_failed' }));
     req.end();
   });
+};
+
+const TIMED_OUT = Symbol('timeout');
+
+/** The promise, or TIMED_OUT after `ms`. */
+async function within<T>(p: Promise<T>, ms: number): Promise<T | typeof TIMED_OUT> {
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  const clock = new Promise<typeof TIMED_OUT>((done) => {
+    timer = setTimeout(() => done(TIMED_OUT), Math.max(0, ms));
+  });
+  try {
+    return await Promise.race([p, clock]);
+  } finally {
+    clearTimeout(timer);
+  }
 }
 
-/** The real fetch: every hop (redirects included) is re-checked. */
-export function safeFetchText(resolve: Resolve = systemResolve): FetchText {
+/** The real fetch: every hop (redirects included) is re-checked. Each hop has
+ *  FEED_TIMEOUT_MS for its DNS lookup and request together, and all hops share
+ *  FEED_TOTAL_MS. Never throws. The options are for tests. */
+export function safeFetchText(
+  resolve: Resolve = systemResolve,
+  options: { timeoutMs?: number; totalMs?: number; get?: GetOnce } = {},
+): FetchText {
+  const hopMs = options.timeoutMs ?? FEED_TIMEOUT_MS;
+  const totalMs = options.totalMs ?? FEED_TOTAL_MS;
+  const get = options.get ?? getOnce;
   return async (raw) => {
+    const deadline = Date.now() + totalMs;
     let current = raw;
     for (let hop = 0; hop <= FEED_MAX_REDIRECTS; hop++) {
+      const hopEnd = Math.min(deadline, Date.now() + hopMs);
+      if (hopEnd <= Date.now()) return { ok: false, error: 'timeout' };
       const checked = checkFeedUrl(current);
       if (!checked.ok) return { ok: false, error: checked.problem };
-      const pinned = await resolvePublic(checked.url, resolve);
+      const pinned = await within(resolvePublic(checked.url, resolve), hopEnd - Date.now());
+      if (pinned === TIMED_OUT) return { ok: false, error: 'timeout' };
       if (!pinned.ok) return { ok: false, error: pinned.problem };
-      const r = await getOnce(checked.url, pinned);
+      const left = hopEnd - Date.now();
+      if (left <= 0) return { ok: false, error: 'timeout' };
+      const r = await get(checked.url, pinned, left);
       if (r.location !== undefined) {
         if (!r.location) return { ok: false, error: 'bad_redirect' };
-        current = new URL(r.location, checked.url).toString();
+        try {
+          current = new URL(r.location, checked.url).toString();
+        } catch {
+          return { ok: false, error: 'bad_redirect' };
+        }
         continue;
       }
       if (r.error) return { ok: false, error: r.error };
@@ -402,18 +453,34 @@ function parseLine(line: string): Prop | null {
   return { name: name!.toUpperCase(), params, value: line.slice(colon + 1) };
 }
 
+export type ParsedIcs =
+  | {
+      ok: true;
+      events: FeedEvent[];
+      /** UIDs of events that could not be read (or are all-day): a sync leaves
+       *  their appointments as they are rather than cancel them. */
+      droppedUids: string[];
+    }
+  | { ok: false; error: string };
+
 /** Parses VEVENTs. Recurring rules are not expanded (an appointment feed has
- *  single events); all-day events are dropped. Never throws. */
+ *  single events); all-day events are dropped. With `window`, only events
+ *  starting in it are kept and counted against FEED_MAX_EVENTS. A file without
+ *  END:VCALENDAR was cut off and is refused whole. Never throws. */
 export function parseIcs(
   text: string,
   fallbackZone: string,
-): { ok: true; events: FeedEvent[] } | { ok: false; error: string } {
+  window?: { from: Date; to: Date },
+): ParsedIcs {
   if (!/BEGIN:VCALENDAR/i.test(text)) return { ok: false, error: 'not_a_calendar' };
+  if (!/^[ \t]*END:VCALENDAR[ \t]*\r?$/im.test(text)) return { ok: false, error: 'truncated' };
   const lines = text
     .replace(/\r\n?/g, '\n')
     .replace(/\n[ \t]/g, '')
     .split('\n');
   const events: FeedEvent[] = [];
+  const droppedUids: string[] = [];
+  let scanned = 0;
   let current: Prop[] | null = null;
   for (const line of lines) {
     const upper = line.trim().toUpperCase();
@@ -423,9 +490,15 @@ export function parseIcs(
     }
     if (upper === 'END:VEVENT') {
       if (current) {
+        if (++scanned > FEED_MAX_SCANNED) return { ok: false, error: 'too_many_events' };
         const e = toEvent(current, fallbackZone);
-        if (e) events.push(e);
-        if (events.length > FEED_MAX_EVENTS) return { ok: false, error: 'too_many_events' };
+        if (!e) {
+          const uid = current.find((p) => p.name === 'UID')?.value.trim();
+          if (uid && uid.length <= 255) droppedUids.push(uid);
+        } else if (!window || (e.startAt >= window.from && e.startAt <= window.to)) {
+          events.push(e);
+          if (events.length > FEED_MAX_EVENTS) return { ok: false, error: 'too_many_events' };
+        }
       }
       current = null;
       continue;
@@ -435,7 +508,7 @@ export function parseIcs(
       if (p) current.push(p);
     }
   }
-  return { ok: true, events };
+  return { ok: true, events, droppedUids };
 }
 
 function toEvent(props: Prop[], zone: string): FeedEvent | null {
@@ -611,14 +684,15 @@ export async function syncFeed(
 
   const fetched = await (input.fetchText ?? safeFetchText())(feed.url);
   if (!fetched.ok) return recordFailure(db, feed, fetched.error, actorUserId, now);
-  const parsed = parseIcs(fetched.text, zone);
-  if (!parsed.ok) return recordFailure(db, feed, parsed.error, actorUserId, now);
-
   const from = new Date(now.getTime() - FEED_PAST_HOURS * 3_600_000);
   const to = new Date(now.getTime() + FEED_AHEAD_DAYS * 86_400_000);
-  const inWindow = parsed.events.filter((e) => e.startAt >= from && e.startAt <= to);
+  const parsed = parseIcs(fetched.text, zone, { from, to });
+  if (!parsed.ok) return recordFailure(db, feed, parsed.error, actorUserId, now);
+
   // One row per UID; the last one in the file wins.
-  const byKey = new Map(inWindow.map((e) => [`${feed.id}:${e.uid}`, e]));
+  const byKey = new Map(parsed.events.map((e) => [`${feed.id}:${e.uid}`, e]));
+  // Events the parser could not read: their rows are left as they are.
+  const unreadable = new Set(parsed.droppedUids.map((uid) => `${feed.id}:${uid}`));
 
   return db.transaction(async (tx) => {
     const [held] = await tx
@@ -653,6 +727,26 @@ export async function syncFeed(
       const row = byExternal.get(key);
       if (!row) {
         if (e.cancelled) continue;
+        // The desk may have entered this one by hand already (v0.7.1): an open
+        // hand entry gives way to the calendar's row; one that already arrived
+        // stays the visit, and the calendar's row arrives with it.
+        const handEntered = (await sameSlot(tx, feed.technicianId, e.startAt)).filter(
+          (a) => a.source === 'manual',
+        );
+        const arrivedCopy = handEntered.find((a) => a.arrivedAt);
+        for (const m of handEntered) {
+          if (m.arrivedAt) continue;
+          await tx
+            .update(appointments)
+            .set({ cancelledAt: now, updatedAt: now })
+            .where(eq(appointments.id, m.id));
+          await audit(
+            m.id,
+            'appointment_replaced',
+            { technicianId: m.technicianId, startAt: m.startAt, endAt: m.endAt },
+            { byCalendar: true },
+          );
+        }
         const [ins] = await tx
           .insert(appointments)
           .values({
@@ -666,6 +760,7 @@ export async function syncFeed(
             source: 'ics',
             feedId: feed.id,
             syncedAt: now,
+            arrivedAt: arrivedCopy?.arrivedAt ?? null,
           })
           .returning({ id: appointments.id });
         if (!ins) throw new Error('appointment insert returned nothing');
@@ -713,6 +808,7 @@ export async function syncFeed(
     for (const row of existing) {
       if (row.cancelledAt || row.arrivedAt) continue;
       if (byKey.has(row.externalId ?? '')) continue;
+      if (unreadable.has(row.externalId ?? '')) continue;
       if (row.startAt < from || row.startAt > to) continue;
       await tx
         .update(appointments)
@@ -746,7 +842,8 @@ async function locationZone(db: Db | Tx, locationId: string): Promise<string> {
     .select({ timezone: locations.timezone })
     .from(locations)
     .where(eq(locations.id, locationId));
-  return l?.timezone ?? 'America/New_York';
+  const zone = l?.timezone;
+  return zone && validZone(zone) ? zone : 'America/New_York';
 }
 
 /**
@@ -763,6 +860,7 @@ export async function pollFeeds(
     fetchText?: FetchText;
     actorUserId?: string | null;
     now?: Date;
+    concurrency?: number;
   } = {},
 ): Promise<{ polled: number; failed: number }> {
   const now = input.now ?? new Date();
@@ -776,18 +874,41 @@ export async function pollFeeds(
         input.locationId ? eq(calendarFeeds.locationId, input.locationId) : undefined,
         or(isNull(calendarFeeds.lastAttemptAt), lt(calendarFeeds.lastAttemptAt, since)),
       ),
-    );
+    )
+    // The feed tried longest ago first, so a slow run cannot starve the same feeds.
+    .orderBy(sql`${calendarFeeds.lastAttemptAt} asc nulls first`, asc(calendarFeeds.id));
   let failed = 0;
-  for (const f of due) {
-    const r = await syncFeed(db, {
-      feedId: f.id,
-      fetchText: input.fetchText,
-      actorUserId: input.actorUserId ?? null,
-      now,
-    });
-    if (!r.ok) failed++;
-  }
+  let next = 0;
+  const actorUserId = input.actorUserId ?? null;
+  const worker = async () => {
+    while (next < due.length) {
+      const f = due[next++]!;
+      // One feed's surprise (a DB error, a bug) never stops the others, and
+      // the feed shows as failed rather than quietly going stale.
+      try {
+        const r = await syncFeed(db, {
+          feedId: f.id,
+          fetchText: input.fetchText,
+          actorUserId,
+          now,
+        });
+        if (!r.ok) failed++;
+      } catch {
+        failed++;
+        await markFailed(db, f.id, actorUserId, now).catch(() => undefined);
+      }
+    }
+  };
+  const lanes = Math.max(1, Math.min(input.concurrency ?? FEED_POLL_CONCURRENCY, due.length));
+  await Promise.all(Array.from({ length: lanes }, worker));
   return { polled: due.length, failed };
+}
+
+/** After an unexpected error: the feed is marked failed. The error's own text
+ *  is never kept or logged, as it can carry the URL (T14). */
+async function markFailed(db: Db, feedId: string, actorUserId: string | null, now: Date) {
+  const [feed] = await db.select().from(calendarFeeds).where(eq(calendarFeeds.id, feedId));
+  if (feed) await recordFailure(db, feed, 'sync_failed', actorUserId, now);
 }
 
 // What the screens may see ----------------------------------------------------

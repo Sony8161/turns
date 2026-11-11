@@ -249,6 +249,9 @@ export type VisitContext = {
   isKid: boolean | null;
   age: number | null;
   sameTime: boolean;
+  /** For an arrived appointment: its technician, whom the appointment buffer
+   *  never holds out of their own appointment (v0.7.1). */
+  bookedTechnicianId?: string | null;
 };
 
 const NO_CONTEXT: VisitContext = {
@@ -287,9 +290,11 @@ export async function queueFor(
   now = new Date(),
 ): Promise<Candidate[]> {
   const rules = await activeRules(tx, locationId);
-  const bufferEnd = new Date(
-    now.getTime() + rules.eligibility.upcoming_appointment_buffer_min * 60_000,
-  );
+  const bufferMs = rules.eligibility.upcoming_appointment_buffer_min * 60_000;
+  const bufferEnd = new Date(now.getTime() + bufferMs);
+  // A client this much past their start time is a no-show: the technician is
+  // free again even when the row cannot be cancelled (a calendar row).
+  const noShowBefore = new Date(now.getTime() - bufferMs);
   const [rows, profiles, categories, upcoming] = await Promise.all([
     tx
       .select({
@@ -324,6 +329,7 @@ export async function queueFor(
           // An appointment whose client is here is a visit now (Part 7).
           isNull(appointments.arrivedAt),
           gt(appointments.endAt, now),
+          gt(appointments.startAt, noShowBefore),
           lt(appointments.startAt, bufferEnd),
         ),
       )
@@ -372,7 +378,9 @@ export async function queueFor(
         if (blocked) return skip(blocked);
       }
       const appointment = nextAppointment.get(r.technicianId);
-      if (appointment) {
+      // The booked technician is being called for an appointment: the next
+      // one on their book follows it, it does not block it.
+      if (appointment && ctx.bookedTechnicianId !== r.technicianId) {
         const minutes = Math.max(0, Math.ceil((appointment.getTime() - now.getTime()) / 60_000));
         return skip('appointment_soon', String(minutes));
       }
@@ -419,6 +427,7 @@ async function contextOf(tx: Tx, visit: typeof visits.$inferSelect): Promise<Vis
     isKid: visit.clientIsKid,
     age: visit.clientAge,
     sameTime: visit.groupId !== null,
+    bookedTechnicianId: visit.source === 'appointment' ? visit.requestedTechnicianId : null,
   };
 }
 

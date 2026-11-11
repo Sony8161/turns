@@ -24,6 +24,7 @@ import {
   type FetchText,
   type Resolve,
 } from '../src/feeds';
+import { addAppointment } from '../src/appointments';
 import { sampleIcs } from '../src/feed-local';
 import { HEAVENLY, seedHeavenly } from '../src/seed';
 import { createDb, type Db } from '../src/server';
@@ -192,8 +193,11 @@ describe('ICS parsing', () => {
 
   it('refuses what is not a calendar and never throws on junk', () => {
     expect(parseIcs('<html>login</html>', ZONE)).toEqual({ ok: false, error: 'not_a_calendar' });
-    const junk = parseIcs('BEGIN:VCALENDAR\nBEGIN:VEVENT\nDTSTART:garbage\nEND:VEVENT\n', ZONE);
-    expect(junk).toEqual({ ok: true, events: [] });
+    const junk = parseIcs(
+      'BEGIN:VCALENDAR\nBEGIN:VEVENT\nDTSTART:garbage\nEND:VEVENT\nEND:VCALENDAR\n',
+      ZONE,
+    );
+    expect(junk).toMatchObject({ ok: true, events: [] });
   });
 
   it('caps the number of events', () => {
@@ -460,5 +464,205 @@ describe('sync', () => {
       failed: 0,
     });
     expect(await feedStates(db, LOC)).toEqual([]);
+  });
+});
+
+// v0.7.1 review fixes --------------------------------------------------------
+
+const ev = (uid: string, start: string, end: string) =>
+  `BEGIN:VEVENT\nUID:${uid}\nDTSTART:${start}\nDTEND:${end}\nEND:VEVENT`;
+const cal = (...events: string[]) => `BEGIN:VCALENDAR\n${events.join('\n')}\nEND:VCALENDAR\n`;
+
+describe('address checks, tightened (v0.7.1)', () => {
+  it('refuses site-local, discard-only and IPv4-translated IPv6', () => {
+    for (const ip of ['fec0::1', 'feff::1', '100::1', '::ffff:0:a00:1', '::ffff:0:808:808']) {
+      expect(isPublicAddress(ip), ip).toBe(false);
+    }
+    expect(isPublicAddress('2606:4700::1111')).toBe(true);
+  });
+
+  it('a DNS answer that never comes times out inside the request limit', async () => {
+    const hang: Resolve = () => new Promise(() => {});
+    const started = Date.now();
+    const r = await safeFetchText(hang, { timeoutMs: 80 })('https://slow.example/a.ics');
+    expect(r).toEqual({ ok: false, error: 'timeout' });
+    expect(Date.now() - started).toBeLessThan(2000);
+  });
+
+  it('redirects share one time budget, and a malformed redirect is a failure, not a crash', async () => {
+    let hops = 0;
+    const slowRedirect = safeFetchText(PUBLIC, {
+      totalMs: 120,
+      get: async () => {
+        hops++;
+        await new Promise((r) => setTimeout(r, 50));
+        return { status: 302, location: `/next-${hops}` };
+      },
+    });
+    expect(await slowRedirect('https://a.example/a.ics')).toEqual({ ok: false, error: 'timeout' });
+    expect(hops).toBeLessThan(4);
+    const broken = safeFetchText(PUBLIC, {
+      get: async () => ({ status: 302, location: 'https://[broken' }),
+    });
+    expect(await broken('https://a.example/a.ics')).toEqual({ ok: false, error: 'bad_redirect' });
+  });
+});
+
+describe('ICS parsing, tightened (v0.7.1)', () => {
+  it('a file cut off before END:VCALENDAR is a failure', () => {
+    const cut = cal(ev('a', '20261112T150000Z', '20261112T160000Z')).replace('END:VCALENDAR\n', '');
+    expect(parseIcs(cut, ZONE)).toEqual({ ok: false, error: 'truncated' });
+  });
+
+  it('the event cap counts the window, not years of history', () => {
+    const past = Array.from({ length: 2500 }, (_, i) =>
+      ev(`old-${i}`, '20250301T150000Z', '20250301T160000Z'),
+    );
+    const now = [ev('n-1', '20261112T150000Z', '20261112T160000Z')];
+    const window = {
+      from: new Date('2026-11-12T00:00:00Z'),
+      to: new Date('2026-12-12T00:00:00Z'),
+    };
+    const r = parseIcs(cal(...past, ...now), ZONE, window);
+    expect(r.ok && r.events.map((e) => e.uid)).toEqual(['n-1']);
+    const crowded = Array.from({ length: 2001 }, (_, i) =>
+      ev(`c-${i}`, '20261112T150000Z', '20261112T160000Z'),
+    );
+    expect(parseIcs(cal(...crowded), ZONE, window)).toEqual({
+      ok: false,
+      error: 'too_many_events',
+    });
+  });
+
+  it('names the UIDs it could not read', () => {
+    const r = parseIcs(
+      cal(
+        ev('good', '20261112T150000Z', '20261112T160000Z'),
+        'BEGIN:VEVENT\nUID:bad-time\nDTSTART:2026-11-12 10:00\nEND:VEVENT',
+      ),
+      ZONE,
+    );
+    expect(r.ok && r.droppedUids).toEqual(['bad-time']);
+  });
+});
+
+describe('sync and poll, tightened (v0.7.1)', () => {
+  let mai: { id: string; feedId: string };
+  let ngoc: { id: string; feedId: string };
+  const T = new Date('2026-11-12T12:00:00Z');
+
+  async function techWithFeed(name: string, url: string) {
+    const userId = randomUUID();
+    await sql`insert into auth.users (id, aud, role, email) values (${userId}, 'authenticated', 'authenticated', ${`${name}-${userId.slice(0, 6)}@example.test`})`;
+    await sql`insert into profiles (id, display_name) values (${userId}, ${name})`;
+    await sql`insert into memberships (user_id, organization_id, location_id, role) values (${userId}, ${ORG}, ${LOC}, 'technician')`;
+    const [t] = await sql<
+      { id: string }[]
+    >`insert into technicians (user_id, organization_id, location_id, display_name) values (${userId}, ${ORG}, ${LOC}, ${name}) returning id`;
+    const r = await setFeed(db, { actor: owner, technicianId: t!.id, url, resolve: PUBLIC });
+    if (!r.ok) throw new Error(r.reason);
+    return { id: t!.id, feedId: r.feedId };
+  }
+
+  beforeAll(async () => {
+    mai = await techWithFeed('Mai', 'https://calendar.example.com/feeds/MAI-TOKEN-1111.ics');
+    ngoc = await techWithFeed('Ngoc', 'https://calendar.example.com/feeds/NGOC-TOKEN-2222.ics');
+  });
+
+  it('one feed that throws does not stop the others, and is marked failed', async () => {
+    const seen: string[] = [];
+    const fetchText: FetchText = async (url) => {
+      seen.push(url.includes('MAI') ? 'mai' : 'ngoc');
+      if (url.includes('MAI')) throw new Error(`boom at ${url}`);
+      return { ok: true, text: cal(ev('n-1', '20261112T150000Z', '20261112T160000Z')) };
+    };
+    expect(await pollFeeds(db, { fetchText, now: T })).toEqual({ polled: 2, failed: 1 });
+    expect(seen.sort()).toEqual(['mai', 'ngoc']);
+    const [f] = await sql<
+      { last_attempt_at: Date | null; last_error: string | null }[]
+    >`select last_attempt_at, last_error from calendar_feeds where id = ${mai.feedId}`;
+    expect(f!.last_error).toBe('sync_failed');
+    expect(f!.last_attempt_at?.toISOString()).toBe(T.toISOString());
+    // The error never carries the URL.
+    const audit = await sql`select after from audit_log where entity_id = ${mai.feedId}`;
+    expect(JSON.stringify(audit)).not.toContain('MAI-TOKEN');
+  });
+
+  it('the feed tried longest ago goes first', async () => {
+    await sql`update calendar_feeds set last_attempt_at = ${new Date(T.getTime() - 3_600_000)} where id = ${ngoc.feedId}`;
+    await sql`update calendar_feeds set last_attempt_at = ${new Date(T.getTime() - 7_200_000)} where id = ${mai.feedId}`;
+    const order: string[] = [];
+    const fetchText: FetchText = async (url) => {
+      order.push(url.includes('MAI') ? 'mai' : 'ngoc');
+      return { ok: true, text: cal() };
+    };
+    await pollFeeds(db, { fetchText, now: T, concurrency: 1 });
+    expect(order).toEqual(['mai', 'ngoc']);
+  });
+
+  it('an event the poll could not read keeps its appointment', async () => {
+    const good = cal(
+      ev('keep-1', '20261112T150000Z', '20261112T160000Z'),
+      ev('keep-2', '20261112T170000Z', '20261112T180000Z'),
+    );
+    const t1 = new Date(T.getTime() + 20 * 60_000);
+    expect(
+      await syncFeed(db, { feedId: ngoc.feedId, fetchText: fromText(good), now: t1 }),
+    ).toMatchObject({ ok: true, added: 2 });
+    // keep-2's time is now in a shape the parser cannot read.
+    const garbled = cal(
+      ev('keep-1', '20261112T150000Z', '20261112T160000Z'),
+      'BEGIN:VEVENT\nUID:keep-2\nDTSTART:2026-11-12 12:00\nEND:VEVENT',
+    );
+    expect(
+      await syncFeed(db, { feedId: ngoc.feedId, fetchText: fromText(garbled), now: t1 }),
+    ).toMatchObject({ ok: true, cancelled: 0 });
+    const [row] = await sql<
+      { cancelled_at: Date | null }[]
+    >`select cancelled_at from appointments where external_id = ${`${ngoc.feedId}:keep-2`}`;
+    expect(row!.cancelled_at).toBeNull();
+  });
+
+  it('a calendar copy of a hand-entered appointment replaces it, or follows its arrival', async () => {
+    const desk = { userId: owner.userId, organizationId: ORG, locationId: LOC };
+    const open = await addAppointment(db, {
+      actor: desk,
+      technicianId: mai.id,
+      startAt: new Date('2026-11-12T19:00:00Z'),
+      endAt: new Date('2026-11-12T20:00:00Z'),
+      now: T,
+    });
+    const done = await addAppointment(db, {
+      actor: desk,
+      technicianId: mai.id,
+      startAt: new Date('2026-11-12T21:00:00Z'),
+      endAt: new Date('2026-11-12T22:00:00Z'),
+      now: T,
+    });
+    if (!open.ok || !done.ok) throw new Error('setup');
+    await sql`update appointments set arrived_at = ${T} where id = ${done.appointmentId}`;
+    const r = await syncFeed(db, {
+      feedId: mai.feedId,
+      fetchText: fromText(
+        cal(
+          ev('copy-1', '20261112T190500Z', '20261112T200000Z'),
+          ev('copy-2', '20261112T210000Z', '20261112T220000Z'),
+        ),
+      ),
+      now: new Date(T.getTime() + 30 * 60_000),
+    });
+    expect(r).toMatchObject({ ok: true, added: 2 });
+    const rows = await sql<
+      { id: string; source: string; cancelled_at: Date | null; arrived_at: Date | null }[]
+    >`select id, source, cancelled_at, arrived_at from appointments where technician_id = ${mai.id} order by start_at, source`;
+    const byId = new Map(rows.map((x) => [x.id, x]));
+    // The open hand entry gives way to the calendar's row.
+    expect(byId.get(open.appointmentId)!.cancelled_at).not.toBeNull();
+    // The arrived one stays the visit; the calendar's copy is marked arrived with it.
+    expect(byId.get(done.appointmentId)!.cancelled_at).toBeNull();
+    const copies = rows.filter((x) => x.source === 'ics');
+    expect(copies).toHaveLength(2);
+    expect(copies.filter((x) => x.arrived_at !== null)).toHaveLength(1);
+    expect(copies.every((x) => x.cancelled_at === null)).toBe(true);
   });
 });

@@ -4,7 +4,7 @@
 // appointment is a pay error, so the desk can always enter one by hand.
 //
 // The audit log gets times and technicians, never the client's name (T11).
-import { and, asc, eq, gt, gte, isNull, lt } from 'drizzle-orm';
+import { and, asc, eq, gt, gte, isNull, lt, lte, ne } from 'drizzle-orm';
 import { createWalkIn, type ClientAttributes, type EngineError } from './engine';
 import { appointments, technicians } from './schema';
 import type { Db } from './server';
@@ -18,6 +18,35 @@ const MAX_REASON = 300;
 const MAX_HOURS = 12;
 const PAST_DAYS = 1;
 const AHEAD_DAYS = 90;
+/** Two open appointments for one technician starting this close together are
+ *  one appointment entered twice (by hand and from the calendar). v0.7.1. */
+export const DUPLICATE_WINDOW_MIN = 10;
+
+type Tx = Parameters<Parameters<Db['transaction']>[0]>[0];
+
+/** Open (not cancelled) appointments of `technicianId` starting within the
+ *  duplicate window of `startAt`, other than `exceptId`. */
+export async function sameSlot(
+  tx: Tx,
+  technicianId: string,
+  startAt: Date,
+  exceptId?: string,
+): Promise<(typeof appointments.$inferSelect)[]> {
+  const w = DUPLICATE_WINDOW_MIN * 60_000;
+  return tx
+    .select()
+    .from(appointments)
+    .where(
+      and(
+        eq(appointments.technicianId, technicianId),
+        isNull(appointments.cancelledAt),
+        gte(appointments.startAt, new Date(startAt.getTime() - w)),
+        lte(appointments.startAt, new Date(startAt.getTime() + w)),
+        exceptId ? ne(appointments.id, exceptId) : undefined,
+      ),
+    )
+    .for('update');
+}
 
 export type AppointmentInput = {
   technicianId: string;
@@ -72,6 +101,10 @@ export async function addAppointment(
   return db.transaction(async (tx) => {
     if (!(await techAt(tx, input.technicianId, input.actor))) {
       return { ok: false, reason: 'unknown_technician' };
+    }
+    // Already on the book (most often: the calendar brought it in).
+    if ((await sameSlot(tx, input.technicianId, input.startAt)).length > 0) {
+      return { ok: false, reason: 'duplicate' };
     }
     const [row] = await tx
       .insert(appointments)
@@ -140,6 +173,9 @@ export async function editAppointment(
       return { ok: false, reason: 'unknown_technician' };
     }
     const { row } = got;
+    if ((await sameSlot(tx, input.technicianId, input.startAt, row.id)).length > 0) {
+      return { ok: false, reason: 'duplicate' };
+    }
     await tx
       .update(appointments)
       .set({
@@ -228,6 +264,10 @@ export async function appointmentArrived(
     }
     if (row.arrivedAt) return { ok: false, reason: 'already_arrived' };
     if (row.cancelledAt) return { ok: false, reason: 'already_cancelled' };
+    // A copy of this appointment (hand-entered and from the calendar) that has
+    // already arrived: it is the same client, one visit only (v0.7.1).
+    const copies = await sameSlot(tx, row.technicianId, row.startAt, row.id);
+    if (copies.some((c) => c.arrivedAt)) return { ok: false, reason: 'already_arrived' };
     const visit = await createWalkIn(tx as unknown as Db, {
       organizationId: row.organizationId,
       locationId: row.locationId,
@@ -254,6 +294,23 @@ export async function appointmentArrived(
       action: 'appointment_arrived',
       after: { visitId: visit.visitId, technicianId: row.technicianId, startAt: row.startAt },
     });
+    // The copies arrive with it: they stop holding the technician out of the
+    // queue and cannot become a second visit (or a second discount).
+    for (const c of copies) {
+      await tx
+        .update(appointments)
+        .set({ arrivedAt: now, updatedAt: now })
+        .where(eq(appointments.id, c.id));
+      await writeAudit(tx, {
+        organizationId: row.organizationId,
+        locationId: row.locationId,
+        actorUserId: input.actor.userId,
+        entityType: 'appointments',
+        entityId: c.id,
+        action: 'appointment_merged',
+        after: { into: row.id, visitId: visit.visitId, technicianId: c.technicianId },
+      });
+    }
     return { ok: true, visitId: visit.visitId };
   });
 }

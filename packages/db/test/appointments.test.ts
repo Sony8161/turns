@@ -425,3 +425,127 @@ describe('the second location', () => {
     expect(list.map((a) => a.technicianName)).toEqual(['Chau']);
   });
 });
+
+// v0.7.1 review fixes: the booked technician is never held out of their own
+// appointment, a no-show calendar row stops blocking, and a hand-entered
+// appointment and its calendar copy count once.
+describe('appointment buffer and duplicates (v0.7.1)', () => {
+  let dao: Tech;
+  let em: Tech;
+  let gia: Tech;
+
+  beforeAll(async () => {
+    dao = await tech('Dao');
+    em = await tech('Em');
+    gia = await tech('Gia');
+    await onFloor(dao);
+    await onFloor(em);
+    await onFloor(gia);
+  });
+
+  const why = async (t: Tech) =>
+    (await db.transaction((tx) => queueFor(tx, LOC))).find((c) => c.technicianId === t.id);
+
+  it('back-to-back bookings: the booked technician is called for the first one', async () => {
+    const first = await addAppointment(db, {
+      actor: desk,
+      technicianId: dao.id,
+      startAt: inMin(2),
+      endAt: inMin(25),
+    });
+    const second = await addAppointment(db, {
+      actor: desk,
+      technicianId: dao.id,
+      startAt: inMin(25),
+      endAt: inMin(60),
+    });
+    if (!first.ok || !second.ok) throw new Error('setup');
+    const arrived = await appointmentArrived(db, {
+      actor: desk,
+      appointmentId: first.appointmentId,
+      serviceIds: [manicure],
+    });
+    if (!arrived.ok) throw new Error(arrived.reason);
+    // A walk-in still sees Dao held for the next appointment...
+    expect((await why(dao))?.why).toBe('appointment_soon');
+    // ...but Dao's own appointment calls Dao.
+    const call = await callNext(db, { visitId: arrived.visitId, actor: desk, locationId: LOC });
+    expect(call.ok && call.technicianId).toBe(dao.id);
+    if (!call.ok) return;
+    await respondToCall(db, {
+      callId: call.callId,
+      technicianId: dao.id,
+      response: 'accepted',
+      actor: desk,
+    });
+    await finishVisit(db, { technicianId: dao.id, actor: desk });
+    await cancelAppointment(db, { actor: desk, appointmentId: second.appointmentId });
+  });
+
+  it('a calendar no-show stops blocking once the buffer has passed its start', async () => {
+    // From the calendar: the desk cannot cancel it.
+    const [late] = await sql<
+      { id: string }[]
+    >`insert into appointments (organization_id, location_id, technician_id, start_at, end_at, source, external_id) values (${ORG}, ${LOC}, ${em.id}, ${inMin(-10)}, ${inMin(50)}, 'ics', 'x:late-1') returning id`;
+    // Ten minutes late: still held for the client.
+    expect((await why(em))?.why).toBe('appointment_soon');
+    await sql`update appointments set start_at = ${inMin(-40)}, end_at = ${inMin(20)} where id = ${late!.id}`;
+    // Forty minutes late, past the 30-minute buffer: a no-show, Em is free.
+    expect((await why(em))?.eligible).toBe(true);
+    await sql`update appointments set cancelled_at = now() where id = ${late!.id}`;
+  });
+
+  it('the desk cannot enter a second copy of an appointment the technician already has', async () => {
+    const [cal] = await sql<
+      { id: string }[]
+    >`insert into appointments (organization_id, location_id, technician_id, start_at, end_at, source, external_id) values (${ORG}, ${LOC}, ${gia.id}, ${inMin(180)}, ${inMin(240)}, 'ics', 'x:dup-1') returning id`;
+    expect(
+      await addAppointment(db, {
+        actor: desk,
+        technicianId: gia.id,
+        startAt: inMin(185),
+        endAt: inMin(245),
+      }),
+    ).toEqual({ ok: false, reason: 'duplicate' });
+    // A different time is a different appointment.
+    const other = await addAppointment(db, {
+      actor: desk,
+      technicianId: gia.id,
+      startAt: inMin(300),
+      endAt: inMin(330),
+    });
+    expect(other.ok).toBe(true);
+    if (other.ok) await cancelAppointment(db, { actor: desk, appointmentId: other.appointmentId });
+    await sql`update appointments set cancelled_at = now() where id = ${cal!.id}`;
+  });
+
+  it('two copies already there: the first to arrive takes both, the second cannot arrive', async () => {
+    const manual = await addAppointment(db, {
+      actor: desk,
+      technicianId: gia.id,
+      startAt: inMin(3),
+      endAt: inMin(60),
+    });
+    if (!manual.ok) throw new Error(manual.reason);
+    // The calendar copy came in afterwards (an older poll, or a hand insert).
+    const [cal] = await sql<
+      { id: string }[]
+    >`insert into appointments (organization_id, location_id, technician_id, start_at, end_at, source, external_id) values (${ORG}, ${LOC}, ${gia.id}, ${inMin(5)}, ${inMin(60)}, 'ics', 'x:dup-2') returning id`;
+    const arrived = await appointmentArrived(db, {
+      actor: desk,
+      appointmentId: manual.appointmentId,
+      serviceIds: [fullSet],
+    });
+    if (!arrived.ok) throw new Error(arrived.reason);
+    // The copy no longer holds Gia out, and cannot become a second visit.
+    expect((await why(gia))?.eligible).toBe(true);
+    expect(
+      await appointmentArrived(db, { actor: desk, appointmentId: cal!.id, serviceIds: [fullSet] }),
+    ).toEqual({ ok: false, reason: 'already_arrived' });
+    const visits = await sql<
+      { n: number }[]
+    >`select count(*)::int as n from visits where source = 'appointment' and requested_technician_id = ${gia.id}`;
+    expect(visits[0]!.n).toBe(1);
+    await sql`update visits set status = 'cancelled', cancelled_at = now() where id = ${arrived.visitId}`;
+  });
+});
