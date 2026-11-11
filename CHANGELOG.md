@@ -2,6 +2,37 @@
 
 One version per delivered part. Tags point at the commits.
 
+## v0.7.1, 2026-11-11: Part 7 review fixes
+
+Fixes from the independent review of Part 7, each with a test that failed
+before the fix. Built on top of v0.8.0.
+
+- Appointment buffer: the booked technician is never held out of their own
+  appointment, so back-to-back bookings call the right person. A client more
+  than the buffer (30 minutes) past their start time is a no-show and stops
+  blocking the technician, even when the row came from the calendar and the
+  desk cannot cancel it.
+- Duplicates: the desk cannot add or move an appointment onto one the
+  technician already has within 10 minutes (`duplicate`). When the calendar
+  brings in a copy of a hand entry, an open hand entry gives way to it
+  (`appointment_replaced`); an arrived one stays the visit and the copy is
+  marked arrived with it. When two copies are already there, the first to
+  arrive takes both (`appointment_merged`), so the −0.5 discount posts once.
+- Poll: each feed runs in its own try/catch; an unexpected error marks that
+  feed failed (`sync_failed`, last attempt written) instead of stopping the
+  run, and the error text (which can hold the URL) is never kept. Feeds go
+  oldest attempt first, four at a time. A bad location timezone falls back to
+  America/New_York.
+- Size limits: the 2,000-event cap counts only the sync window, so past
+  history no longer breaks a feed; the byte ceiling is 8 MB for the whole
+  file, and at most 50,000 events are read.
+- A file without `END:VCALENDAR` was cut off and is refused (`truncated`). An
+  event the parser cannot read keeps its appointment instead of cancelling it.
+- Fetch: the DNS lookup counts inside the 10-second request limit, all hops of
+  one feed share 20 seconds, and a malformed redirect is `bad_redirect`.
+  Site-local (fec0::/10), discard-only (100::/64) and IPv4-translated
+  (::ffff:0:0/96) addresses are refused.
+
 ## v0.8.0, 2026-11-11: Part 8, audit log viewer and reports
 
 - Audit log `/admin/log` (owner, manager at their own location; receptionists
