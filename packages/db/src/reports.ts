@@ -134,6 +134,15 @@ export const AUDIT_ACTIONS = [
   'feed_removed',
   'feed_sync_failed',
   'long_wait_notice',
+  'kiosk_check_in',
+  'kiosk_confirmed',
+  'kiosk_declined',
+  'kiosk_created',
+  'kiosk_pairing_code',
+  'kiosk_paired',
+  'kiosk_revoked',
+  'kiosk_unlocked',
+  'kiosk_pin_failed',
   'rule_config_changed',
   'technician_profile_changed',
   'role_changed',
@@ -167,6 +176,8 @@ export const DESK_ACTIONS = [
   'appointment_cancelled',
   'appointment_arrived',
   'long_wait_notice',
+  'kiosk_confirmed',
+  'kiosk_declined',
 ] as const;
 
 export type QueueEntry = {

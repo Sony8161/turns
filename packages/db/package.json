@@ -20,7 +20,8 @@
     "./appointments": "./src/appointments.ts",
     "./feeds": "./src/feeds.ts",
     "./locations": "./src/locations.ts",
-    "./reports": "./src/reports.ts"
+    "./reports": "./src/reports.ts",
+    "./kiosk": "./src/kiosk.ts"
   },
   "scripts": {
     "typecheck": "tsc --noEmit",

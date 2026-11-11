@@ -148,6 +148,13 @@
       "when": 1794391463242,
       "tag": "0020_part8_reports",
       "breakpoints": true
+    },
+    {
+      "idx": 21,
+      "version": "7",
+      "when": 1794422177014,
+      "tag": "0021_part9_kiosk",
+      "breakpoints": true
     }
   ]
 }

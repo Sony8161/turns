@@ -86,6 +86,8 @@ export async function createWalkIn(
     client?: ClientInput | null;
     attributes?: ClientAttributes | null;
     sameTime?: boolean;
+    /** Part 9: a kiosk check-in waits for the desk to confirm (kiosk.ts). */
+    kiosk?: { deviceId: string; name: string } | null;
   },
 ): Promise<{ ok: true; visitId: string; visitIds: string[] } | EngineError> {
   if (input.serviceIds.length === 0) return { ok: false, reason: 'no_services' };
@@ -163,6 +165,9 @@ export async function createWalkIn(
           clientIsKid: input.attributes?.isKid ?? null,
           clientAge: age,
           groupId,
+          kioskDeviceId: input.kiosk?.deviceId ?? null,
+          kioskName: input.kiosk?.name ?? null,
+          needsConfirm: !!input.kiosk,
         })
         .returning({ id: visits.id });
       if (!visit) throw new Error('visit insert returned nothing');
@@ -181,9 +186,10 @@ export async function createWalkIn(
         actorUserId: input.actor.userId,
         entityType: 'visits',
         entityId: visit.id,
-        action: 'visit_created',
+        action: input.kiosk ? 'kiosk_check_in' : 'visit_created',
         after: {
           source,
+          ...(input.kiosk ? { kioskDeviceId: input.kiosk.deviceId } : {}),
           serviceIds: group.map((s) => s.id),
           gender,
           isKid: input.attributes?.isKid ?? null,
@@ -473,6 +479,8 @@ export async function callNext(
       return { ok: false, reason: 'wrong_location' };
     }
     if (visit.status !== 'waiting') return { ok: false, reason: 'visit_not_waiting' };
+    // Part 9: a kiosk check-in is confirmed by the desk first (a trigger also refuses).
+    if (visit.needsConfirm) return { ok: false, reason: 'needs_confirm' };
 
     const rules = await activeRules(tx, visit.locationId);
     const queue = await queueFor(tx, visit.locationId, await contextOf(tx, visit));
@@ -895,6 +903,9 @@ export async function waitingVisits(db: Db, locationId: string) {
       clientAge: visits.clientAge,
       groupId: visits.groupId,
       clientName: clients.name,
+      fromKiosk: sql<boolean>`${visits.kioskDeviceId} is not null`,
+      kioskName: visits.kioskName,
+      needsConfirm: visits.needsConfirm,
     })
     .from(visits)
     .leftJoin(turnCalls, and(eq(turnCalls.visitId, visits.id), isNull(turnCalls.respondedAt)))

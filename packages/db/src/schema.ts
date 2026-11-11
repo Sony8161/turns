@@ -549,6 +549,17 @@ export const visits = pgTable(
     // Posted at completion; kept here for the report, the ledger is the record.
     pointsPosted: numeric('points_posted', { precision: 4, scale: 1 }),
     note: text('note'),
+    // Part 9: a customer checked in on the kiosk. The desk confirms before the
+    // engine may call anyone (threat model Q6); a trigger refuses a call while
+    // needs_confirm is set. kiosk_name is the first name the customer typed,
+    // shown to the desk only, never written to the audit log (T11, T12).
+    kioskDeviceId: uuid('kiosk_device_id').references(() => kioskDevices.id, {
+      onDelete: 'restrict',
+    }),
+    kioskName: text('kiosk_name'),
+    needsConfirm: boolean('needs_confirm').notNull().default(false),
+    confirmedBy: uuid('confirmed_by').references(() => profiles.id, { onDelete: 'restrict' }),
+    confirmedAt: timestamp('confirmed_at', { withTimezone: true }),
     createdAt: createdAt(),
     updatedAt: updatedAt(),
   },
@@ -721,6 +732,39 @@ export const rateLimits = pgTable('rate_limits', {
   resetAt: timestamp('reset_at', { withTimezone: true }).notNull(),
 }).enableRLS();
 
+// Kiosk devices (Part 9) ----------------------------------------------------
+
+// A salon-owned iPad at the front, registered by an owner or manager to one
+// location (threat model T20, T25). The device holds a random token in an
+// httpOnly cookie; only its SHA-256 is stored. The token can do one thing:
+// create a waiting visit at its own location. Pairing is a one-time code that
+// expires; revoking sets revoked_at and the token stops working at once. The
+// 4-digit PIN (scrypt) unlocks the iPad into the staff sign-in. No app role
+// reads this table; the server uses the service connection.
+export const kioskDevices = pgTable(
+  'kiosk_devices',
+  {
+    id: id(),
+    organizationId: uuid('organization_id').notNull(),
+    locationId: uuid('location_id').notNull(),
+    name: text('name').notNull(),
+    tokenHash: text('token_hash').unique(),
+    pairingCodeHash: text('pairing_code_hash').unique(),
+    pairingExpiresAt: timestamp('pairing_expires_at', { withTimezone: true }),
+    pinHash: text('pin_hash').notNull(),
+    createdBy: uuid('created_by').references(() => profiles.id, { onDelete: 'restrict' }),
+    createdAt: createdAt(),
+    pairedAt: timestamp('paired_at', { withTimezone: true }),
+    lastSeenAt: timestamp('last_seen_at', { withTimezone: true }),
+    revokedAt: timestamp('revoked_at', { withTimezone: true }),
+    revokedBy: uuid('revoked_by').references(() => profiles.id, { onDelete: 'restrict' }),
+  },
+  (t) => [
+    locationFk(t, 'kiosk_devices_location_fk'),
+    index('kiosk_devices_location').on(t.locationId),
+  ],
+).enableRLS();
+
 // Daily summaries (Part 8) ---------------------------------------------------
 
 // The end-of-day summary for the owner, one row per location and local date.
@@ -744,6 +788,7 @@ export const dailySummaries = pgTable(
 ).enableRLS();
 
 export const TENANT_TABLES = [
+  'kiosk_devices',
   'daily_summaries',
   'technician_skills',
   'technician_tags',
