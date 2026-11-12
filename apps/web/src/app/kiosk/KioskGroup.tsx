@@ -92,7 +92,14 @@ export function KioskGroup({
   const serverError = state.error ? (t.errors[state.error] ?? t.errors.too_many) : null;
 
   return (
-    <form action={action} className="flex flex-1 flex-col gap-6">
+    <form
+      action={action}
+      onKeyDown={(e) => {
+        // Return on the keyboard never sends the group early.
+        if (e.key === 'Enter' && (e.target as HTMLElement).tagName === 'INPUT') e.preventDefault();
+      }}
+      className="flex flex-1 flex-col gap-6"
+    >
       <input
         type="hidden"
         name="people"

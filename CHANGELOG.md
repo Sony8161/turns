@@ -2,6 +2,80 @@
 
 One version per delivered part. Tags point at the commits.
 
+## v0.16.0, 2026-11-12: Fixes, groups, client left, need help
+
+From Duong's list of 2026-11-12 (A to I). Every rule is a setting in the rule
+builder; the values below are Heavenly's defaults. EN/VI on every new screen,
+sized for the iPad.
+
+- **A. A request counts as a full normal turn** (Rules → "A requested visit
+  earns": full points, the new default; half and none are still there). A
+  manager can still adjust points by hand.
+- **B. Points per service.** Rules → "Points per service": a service's own
+  points come before its category's (blank = the category's). The starting
+  menu gains **Polish change** (0 points) and **Gel polish change** (1), at
+  the manicure levels.
+- **C. Nail fix / repair.** A new service: free (0 points), desk only (never on
+  the kiosk), entered on its own. Ticking it in New walk-in opens "Find the
+  visit being fixed": phone or name → the client's finished visits inside the
+  fix window (Rules → "Nail fix / repair": 14 days, 7 is the other preset):
+  date, services, technician. Picking one links the fix to that visit and
+  client. A receptionist's fix waits for a manager or owner (**Approve fix** /
+  **Decline fix** on the row; the same pending pattern as an unconfirmed kiosk
+  visit, and the database refuses a call for it); a manager's or owner's is
+  approved at once. Nothing found in the window is a warning, not a stop. The
+  desk picks the technician: the one who did the original work is first,
+  marked "did the original work". Saying no is never a penalty. A fix never
+  moves anyone in line (a 00 stays 00). Reports → "Fixes, by the technician
+  who did the original work". Log: Fix entered, Fix approved, Fix declined.
+- **D. Groups.** The kiosk starts with **Just me** or **We're a group**. A
+  group adds people one at a time (first name, optional last name, their own
+  services, technician and request note), up to 8 (Rules → "Groups"), then one
+  submit; one optional phone for the group. Every person is their own visit,
+  linked by a new `party_id` (not the same-time `group_id`), and their own
+  client (made when the desk confirms). The desk row says "Group of 3";
+  **Confirm all 3** or one by one. Each visit is called by turn on its own.
+  The desk's New walk-in has the same **One client / A group** choice. A group
+  counts once against the per-phone kiosk limit; the answer is the same
+  whether or not the phone is known; nothing touches a client until the desk
+  confirms.
+- **E. Client left.** On a visit that was called but has not started, the desk
+  (**Client left** on the row) or the called technician (under her call card)
+  marks it: no points, she keeps her place, the call closes as `client_left`
+  and the visit as `left`. In the log. Visits in service are unchanged.
+- **F. Need help.** A button on the technician's phone with an optional short
+  reason. The desk board (owner, manager, receptionist) shows "Mai needs help"
+  and the time waiting, in Needs attention, until someone presses **On my
+  way**. One open request per technician, six taps an hour, in the log
+  (whether there was a reason, never its text). The board's own 5-second
+  refresh; no phone push.
+- **G. Owners and managers do not do nails.** They never get a technician row,
+  so they are not in the rotation; a test now holds this (no code removed).
+- **Demo day** adds: Sara Kim called to Linh who left (press Client left), a
+  fix for Trang Ho entered by Hạnh waiting for approval, a kiosk group of three
+  waiting for Confirm all 3, and Mai's help request. `docs/DEMO-EXPECTED.md`
+  regenerated; its drift test passes.
+- Database: migration 0027 (`help_requests`; visits `party_id`, `is_fix`,
+  `fix_of_visit_id`, `needs_approval`, `approved_by`, `approved_at`,
+  `left_at`; `services.is_fix`; the `left` and `client_left` values; the call
+  trigger also refuses a fix waiting for approval). New modules `fixes.ts`,
+  `party.ts`, `help.ts`. 24 new database tests (`v016.test.ts`, the demo
+  test), 9 new web tests.
+
+Readings taken where the answers left room (say if any is wrong):
+
+- The fix window, "a receptionist's fix needs approval" and the group size are
+  all settings; Heavenly: 14 days, on, 8.
+- A fix goes on a visit of its own; a fix with other services is refused.
+- A fix belongs to the client of the visit it fixes, when the desk picked one.
+- A free fix never changes a technician's place, including 0 versus 00.
+- On the kiosk a group gives one phone, kept with the first person; at the
+  desk each person may have a phone. At confirm, each person in a group gets
+  their own client row (the first by phone, the others by name); a single
+  kiosk check-in without a phone still makes none, as before.
+- "Client left" is neither a deny nor an override.
+- One open help request per technician; a second tap is the same request.
+
 ## v0.15.0, 2026-11-12: Rule answers
 
 From Duong's answers (2026-11-12, 02:00 and 02:05). Every one is a setting in

@@ -646,6 +646,55 @@ Load the demo (`npm run up -- -Demo`) and keep `docs/DEMO-EXPECTED.md` open.
    "Request dropped, sent by turn", and "Call denied" rows whose detail says
    `excused: by_rule`.
 
+## 8o. Fixes, groups, client left, need help (v0.16.0)
+
+Load the demo (`npm run up -- -Demo`) and keep `docs/DEMO-EXPECTED.md` open.
+Sign in as Hạnh (0102, receptionist) unless a step says otherwise.
+
+1. **Need help.** "Needs attention" at the top of the desk says "Mai needs
+   help", how long she has waited, and her reason. Press **On my way**: it is
+   gone. As a technician (Linh, 0104): open **Need help**, type a reason, **Ask
+   the desk** → "Help asked just now. The desk sees it." The desk shows "Linh
+   needs help" within 5 seconds. Tapping it again while it waits is the same
+   request; seven taps in an hour are refused.
+2. **Client left.** The bottom row, Sara K., says "Linh called". Press **Client
+   left**: the row is gone, Linh's points do not move and she is still turn 2.
+   Try it from the phone too: Call next on any row, sign in as the called
+   technician, **Client left** under the call card. A row already "in service"
+   has no Client left button.
+3. **A fix entered by the receptionist.** The row "Fix / repair, Nail fix /
+   repair, for Trang H." says "Fixes: (date) · Gel manicure · Linh" and
+   "Waiting for a manager or owner to approve", with no buttons for Hạnh. Enter
+   one yourself: tick **Nail fix / repair** in New walk-in → "Find the visit
+   being fixed" → type `813 555 0206` → **Look up visits** → Trang H.'s gel
+   manicure with Linh is chosen → **Add to the queue**. Typing a phone with no
+   visit in 14 days shows the warning; it can still be added.
+4. **Approve and pick.** Sign in as Vy (0101, manager) or Phu (0100): the fix
+   rows have **Approve fix** and **Decline fix**. Approve one: "Pick a tech"
+   lists Linh first, "did the original work". Pick her; as Linh, **No,
+   thanks** costs nothing; **Accept**, then **Finished**: +0, and Linh stays
+   00 if she was 00. Decline the other: it is gone.
+5. **A kiosk group.** The three rows Quynh, Hien, Ly say "Group of 3". Press
+   **Confirm all 3** on any of them: all three can now be called, each by turn
+   on its own. To check in a group yourself: pair the kiosk (code in
+   `dev-codes.txt`), **We're a group**, add two or three people (first name,
+   services, technician, note), the group's phone (optional), **Check in our
+   group**. Nail fix / repair is not on the kiosk menu. On the desk: "Group of
+   N", **Confirm all N** or **Confirm** one by one.
+6. **A group at the desk.** New walk-in → **A group**: two people to start,
+   **Add a person** up to 8, **Remove**, one **Add the group** button. Each
+   person is their own row, "Group of N".
+7. **Rules.** As Phu: Rules → "Points per service" (Polish change 0, Gel polish
+   change 1, Nail fix / repair 0; blank = the category's), "A requested visit
+   earns: full points", "Nail fix / repair": window 7 or 14 days and "A fix
+   entered by a receptionist waits for…", "Groups": most people 8.
+8. **Reports and log.** Reports → "Fixes, by the technician who did the
+   original work". Log: "Client left", "Fix entered", "Fix approved", "Fix
+   declined", "Asked for help", "Help acknowledged"; none of them shows a
+   client's name or phone.
+9. **Vietnamese.** Switch to Tiếng Việt on the desk, the phone and the kiosk:
+   every new button and line has a Vietnamese string.
+
 ## 9. If something is off
 
 - **"Something went wrong on our side"** on sign-in: the local stack is probably

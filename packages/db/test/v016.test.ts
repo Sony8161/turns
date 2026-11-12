@@ -49,7 +49,7 @@ import {
 import { HEAVENLY, HEAVENLY_RULE_CONFIG_V1, HEAVENLY_SERVICES, seedHeavenly } from '../src/seed';
 import { createDb, type Db } from '../src/server';
 import type { StaffActor } from '../src/staff';
-import { checkIn, shiftTotal, transition } from '../src/status';
+import { checkIn, locationStatus, shiftTotal, transition } from '../src/status';
 import { TEST_URL, resetAndMigrate, superuser } from './helpers';
 
 const sql = superuser();
@@ -503,13 +503,40 @@ describe('C. nail fix / repair', () => {
     expect(a!['n']).toBe(1);
   });
 
+  it('a fix never moves her in the line: a 00 stays 00 after a free fix', async () => {
+    const t = await newTech('C-Zero', 'gel');
+    await onFloor(t, 10);
+    const appt = await walkIn(['Gel fill'], { source: 'appointment', requestedTechnicianId: t.id });
+    expect((await accept(await mustCall(appt, t), t)).ok).toBe(true);
+    expect(await finish(t)).toEqual({ ok: true, points: 0 });
+    const zeroZero = async () =>
+      (await locationStatus(db, LOC)).find((r) => r.technicianId === t.id)?.hadAppointmentLast;
+    expect(await zeroZero()).toBe(true);
+    const f = await fixIn('owner', null, { userId: owner.userId });
+    if (!f.ok) throw new Error(f.reason);
+    const picked = await deskCall(db, {
+      kind: 'desk_pick',
+      visitId: f.visitId,
+      technicianId: t.id,
+      actor: desk,
+      locationId: LOC,
+    });
+    if (!picked.ok) throw new Error(picked.reason);
+    expect((await accept(picked.callId, t)).ok).toBe(true);
+    expect(await finish(t)).toEqual({ ok: true, points: 0 });
+    expect(await zeroZero()).toBe(true);
+    await clearFloor();
+  });
+
   it('reports: fixes per original technician, declined ones not counted', async () => {
     const today = localDate(new Date(), HEAVENLY.timezone);
     const rows = await fixesByOriginalTech(db, LOC, today);
     const mai = rows.find((r) => r.technician === 'C-Mai');
     expect(mai).toMatchObject({ fixes: 1, doneBySameTech: 1 });
     const none = rows.find((r) => r.technicianId === null);
-    expect(none?.fixes).toBe(2); // the two fixes with no visit found, approved
+    // With no visit found: the owner's fix that C-Zero did. The two approved
+    // ones were still waiting when the floor was cleared (cancelled: not counted).
+    expect(none?.fixes).toBe(1);
   });
 });
 
@@ -613,6 +640,10 @@ describe('D. groups', () => {
       select id, needs_confirm, kiosk_phone, client_id from visits where party_id = ${r.partyId} order by kiosk_name`;
     expect(rows.every((x) => x.needs_confirm && x.client_id === null)).toBe(true);
     expect(rows.filter((x) => x.kiosk_phone).length).toBe(1); // one phone, on the first person
+    // The desk lists them in the order they were added.
+    expect(
+      (await waitingVisits(db, LOC)).filter((v) => v.partyId === r.partyId).map((v) => v.kioskName),
+    ).toEqual(['Quinn', 'Rae', 'Sky']);
     expect((await sql`select count(*)::int as n from clients`)[0]!['n']).toBe(clientsBefore);
     // A fix cannot come in through a group either, and a person needs a name.
     expect(

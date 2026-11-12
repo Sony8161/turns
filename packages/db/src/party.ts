@@ -74,6 +74,7 @@ export async function createParty(
           client,
           attributes: p.attributes ?? null,
           partyId,
+          partyIndex: i,
         });
         if (!r.ok) throw new PartyRollback(r, i);
         ids.push(...r.visitIds);

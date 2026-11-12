@@ -727,6 +727,7 @@ export async function kioskGroupCheckIn(
           note: cleanKioskNote(x.p.note),
           client: null,
           partyId,
+          partyIndex: i,
           kiosk: {
             deviceId: input.device.deviceId,
             name: x.name,

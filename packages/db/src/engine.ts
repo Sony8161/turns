@@ -99,6 +99,9 @@ export async function createWalkIn(
     } | null;
     /** v0.16.0: people who came in together share this id (party.ts). */
     partyId?: string | null;
+    /** v0.16.0: the person's place in the group; their arrival is that many
+     *  milliseconds later, so the desk lists the group in the order added. */
+    partyIndex?: number;
     /** v0.16.0: a nail fix or repair entered at the desk (fixes.ts). The role
      *  decides whether it waits for a manager's approval; ofVisitId is the
      *  earlier visit it fixes, when the desk found one in the window. */
@@ -241,6 +244,14 @@ export async function createWalkIn(
         })
         .returning({ id: visits.id });
       if (!visit) throw new Error('visit insert returned nothing');
+      if (input.partyIndex) {
+        await tx
+          .update(visits)
+          .set({
+            arrivedAt: sql`${visits.arrivedAt} + (${input.partyIndex} * interval '1 millisecond')`,
+          })
+          .where(eq(visits.id, visit.id));
+      }
       await tx.insert(visitServices).values(
         group.map((s) => ({
           organizationId: input.organizationId,

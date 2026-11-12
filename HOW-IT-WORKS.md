@@ -373,6 +373,19 @@ The kiosk's technician list (`kioskMenu`, `techniciansFor` in kiosk.ts) is the
 technicians on shift with the services each one does; the screen narrows it to
 the chosen services and `kioskCheckIn` refuses anyone outside it.
 
+### Fixes, groups, client left, need help (v0.16.0)
+
+From Duong's list of 2026-11-12. Every rule is a setting; Heavenly's values in brackets.
+
+- **Requests** count as a full normal turn (multiplier 1). A manager can still adjust points by hand.
+- **Points per service** (Rules → "Points per service"): a service's own points come before its category's. The starting menu has Polish change (0) and Gel polish change (1).
+- **Nail fix / repair** (`packages/db/src/fixes.ts`): free (0 points), desk only, never on the kiosk, on a visit of its own. When it is ticked, the desk looks the client up by phone or name and sees their finished visits inside the fix window [14 days; 7 is the other preset]: date, services, technician. Picking one links the fix to it (and to that client). A receptionist's fix waits for a manager or owner [setting on]: `visits.needs_approval`, the same pending pattern as an unconfirmed kiosk visit, and a database trigger refuses a call for it. A manager's or owner's fix is approved as it is entered. No visit in the window is a warning, not a stop. The desk picks the technician (a fix is a desk-pick service); the one who did the original work is listed first, marked. Saying no is never a penalty. A fix never moves anyone in line (it does not turn a 00 into a 0). Reports → "Fixes, by the technician who did the original work". Log: `fix_entered`, `fix_approved`, `fix_declined`.
+- **Groups** (`packages/db/src/party.ts`, `kioskGroupCheckIn`): the kiosk starts with "Just me" or "We're a group"; the desk's New walk-in has "One client" or "A group". People are added one at a time (first name, optional last name, own services, technician and note) up to the rules' group size [8], then one submit. Each person is their own visit, linked by `visits.party_id` (not `group_id`, which links one client's same-time visits), and their own client: at the desk at once, from the kiosk only when the desk confirms. The desk row says "Group of N"; a kiosk group is confirmed all at once (**Confirm all N**) or one by one. Each visit is called by turn on its own. On the kiosk the group has one optional phone (kept with the first person) and counts once against the per-phone limit; the answer never says whether the phone is known.
+- **Client left** (`clientLeft` in the engine): on a visit that was called but has not started, the desk or the called technician marks it. The call closes as `client_left`, the visit as `left`, no points post, and the technician is still available in the same place. Log: `client_left`. Visits in service are not affected.
+- **Need help** (`packages/db/src/help.ts`, table `help_requests`): a button on the technician's phone with an optional short reason (80 characters). The desk board's "Needs attention" shows "Mai needs help" and the time waiting until someone presses **On my way**. One open request per technician, six taps an hour. Log: `help_requested`, `help_acknowledged` (whether there was a reason, never its text). The board's 5-second refresh shows it; no phone push.
+- **Owners and managers** do not do nails: only a technician membership makes a technician row, so they are never in the rotation (a test holds this).
+- Migration 0027 (`help_requests`, the new visit columns, `services.is_fix`, the `left` and `client_left` values, the approval trigger).
+
 ## How the pieces talk to each other
 
 ```

@@ -41,7 +41,10 @@ export function FixLookup({
   return (
     <fieldset className="flex flex-col gap-3 border-l-[12px] border-navy bg-pumice/40 p-4">
       <legend className="sr-only">{t.fixLookupTitle}</legend>
-      <span className="font-semibold">{t.fixLookupTitle}</span>
+      {/* The legend is for screen readers; this is the same title on screen. */}
+      <span aria-hidden className="font-semibold">
+        {t.fixLookupTitle}
+      </span>
       <span className="text-small text-slate/80">
         {fill(t.fixLookupLead, { days: found?.windowDays ?? windowDays })}
       </span>

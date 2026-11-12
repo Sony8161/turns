@@ -621,11 +621,13 @@ export async function sweepFloor(
  * The last visit posted on the technician's current shift came from an
  * appointment. With `had_appointment_last` in the queue sort, such a
  * technician sorts after one at the same points who did not: 0 before 00.
+ * v0.16.0: a nail fix does not count: it is a free redo of earlier work, so
+ * it never moves her in the line (a 00 stays 00).
  */
 export const HAD_APPOINTMENT_LAST = sql<boolean | null>`(
   select v.source = 'appointment' from ${turnLedger} l
   join ${visits} v on v.id = l.visit_id
-  where l.shift_id = ${technicianStatus.shiftId} and l.reason_type = 'visit'
+  where l.shift_id = ${technicianStatus.shiftId} and l.reason_type = 'visit' and not v.is_fix
   order by l.created_at desc limit 1
 )`;
 
