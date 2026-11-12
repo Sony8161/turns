@@ -522,6 +522,30 @@ calendar sync / export link; it starts with
 10. **Log.** Log → "Calendar link tested", "Calendar link set", "Calendar link
     removed": who and when, never the link.
 
+## 8k. Demo day: watch the calling (v0.12.0)
+
+1. **Load it.** `npm run up -- -Demo`. It wipes the local database and loads the
+   demo morning (it refuses between midnight and 1:06 AM: the out-over needs an
+   hour of today). The new phones (Hoa +18135550110, Tâm 0111, Vân 0112) need
+   the stack restarted once after pulling this version: `npx supabase stop`,
+   then `npm run up -- -Demo`.
+2. **Open the cheat sheet** `docs/DEMO-EXPECTED.md` next to the board. Sign in
+   as Phu or Hạnh and open `/admin`.
+3. **The board.** The list at the top and the Technicians cards below the desk
+   are in the sheet's order. Open "Why this order?" on each card: the lines and
+   totals match the sheet's "How the points add up".
+4. **Call.** On the desk, press Call next on the waiting rows top to bottom. The
+   tech each one goes to, and who is skipped and why, match "The next calls".
+   Accept each call on that tech's phone (`/me`, phones in `dev-codes.txt`) or
+   from Manage. The requested visit (Thu Pham) waits for Hoa; the kiosk row
+   (Bích) needs Confirm first.
+5. **Appointments.** Appointments shows Linh, Thảo and Tâm as "Connected" to a
+   demo calendar, and the five appointments in the sheet. Sync now never
+   reaches out to the internet for a demo calendar.
+6. **The sheet is a snapshot.** It is right for about ten minutes after
+   loading; after that Thảo's client is close to due. Load again for a fresh
+   copy.
+
 ## 9. If something is off
 
 - **"Something went wrong on our side"** on sign-in: the local stack is probably

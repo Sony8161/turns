@@ -307,6 +307,16 @@ the first sync at once. The link stays on the server; screens show only
 "connected, last synced" or a red "sync failing". The links are read-only:
 nothing is written back to Fresha.
 
+### Demo day and the tech board (v0.12.0)
+
+`npm run up -- -Demo` loads a salon morning built by the engine itself, so the
+board shows the numbers the engine really computes, and writes a cheat sheet
+(`docs/DEMO-EXPECTED.md`) of what the next calls should do and why; a test keeps
+the sheet honest. The admin board now has a card per technician: turn number,
+points, what they do and do not take, the next appointment, who is in the
+chair, and "Why this order?" with every ledger line behind the total and the
+tie-break against the next tech.
+
 ## How the pieces talk to each other
 
 ```

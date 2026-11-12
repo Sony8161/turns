@@ -2,6 +2,45 @@
 
 One version per delivered part. Tags point at the commits.
 
+## v0.12.0, 2026-11-12: Demo day, the tech board, "Why this order?"
+
+So the calling can be watched and the numbers checked by hand.
+
+- **Demo day: `npm run up -- -Demo`.** Resets the local database, then loads a
+  salon morning at Heavenly main built by the engine itself (every point from a
+  real check-in, call, deny, excuse, finish or out-over; nothing written to the
+  ledger by hand). Six technicians (Hoa, Tâm and Vân are new, phones
+  +18135550110 to 0112): varied skills, tags and restrictions (no kids, no male
+  clients, age 12+, no both-at-once), a deny, an excused deny, a late start, an
+  out over 60 minutes, a break, one tech with a client. Appointments: a Fresha
+  calendar client who arrived (−½ posted), one starting in 20 minutes (holds
+  her out of the line), a calendar no-show, two desk-entered ones later today.
+  Six clients waiting: a kid, a walk-in, a man, one who asked for a tech, a
+  two-service visit, and a kiosk check-in with a design note waiting for
+  Confirm. Châu stays at the second location. Also `npm run -w @turn/db
+db:seed:demo` on an empty day. Needs an hour of today behind it (the out-over
+  needs 60 minutes): it refuses in the first 66 minutes after midnight.
+- **Demo calendars never fetched.** The demo's calendar rows (one per tech with
+  calendar appointments, "connected, synced 5 minutes ago") carry a link under
+  the reserved `.invalid` name. The feed code never makes a request for such a
+  link, in any environment; locally it reads as synced, in production as a
+  broken link. The Fresha host allowlist and the fetch checks are unchanged.
+- **Cheat sheet: `docs/DEMO-EXPECTED.md`.** Written by the demo seed from the
+  engine's own answers: the rules in force, the board in queue order with every
+  ledger line, why each tech is ahead of the next, which tech each waiting row
+  should call and who is skipped and why, and the appointments. The calls are
+  simulated in a transaction that is rolled back. `packages/db/test/demo.test.ts`
+  rebuilds the demo and fails if the sheet drifts by a byte, and checks the order
+  and points against numbers worked out by hand from the rules.
+- **The tech board (`/admin`, owner, manager, receptionist).** Under the desk,
+  one card per technician on shift in the order the next call goes: turn number
+  and "next up", points, status or the client in the chair, what they do and
+  their tags, who they do not take, the next appointment. "Why this order?"
+  opens every ledger line with its time, the total, the check-in time and rank,
+  the 00 note, and why they are ahead of the next card. Owners and managers get
+  a link to change the technician. Two cards a row on an iPad in landscape.
+- Tests: `packages/db/test/demo.test.ts` (7).
+
 ## v0.11.0, 2026-11-12: Connect Fresha onboarding
 
 Fresha's calendar export link is the way in (no open API), so adding the links
