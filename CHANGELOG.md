@@ -66,6 +66,13 @@ the rule builder; the values below are Heavenly's defaults.
   `visits.request_ack_at`). New module `packages/db/src/requests.ts`. 24 new
   database tests (`v015.test.ts`), 5 new web tests.
 
+Checked in the browser by Claude on the demo day: the desk hold block (Keep
+waiting, Book for later, Send by turn), Ngoc Vo's split (Linh's phone "You
+do: Basic pedicure. Not yours: Dip powder", the held dip row "Waits until Linh
+finishes her part", then Mai's call card with the slip), the three new
+rule-builder controls with Preview, and the kiosk technician list for the
+three service sets in `docs/DEMO-EXPECTED.md`. Nothing needed fixing.
+
 Readings taken where the answers left room (say if any is wrong):
 
 - A technician who said no for an excused reason is not called again for
