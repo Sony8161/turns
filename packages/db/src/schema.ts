@@ -141,6 +141,9 @@ export const memberships = pgTable(
   ],
 );
 
+// Skill levels (v0.14.0): a ladder, lowest first. The order here is the order.
+export const skillLevelEnum = pgEnum('skill_level', ['regular', 'gel', 'dip', 'acrylic']);
+
 export const technicians = pgTable(
   'technicians',
   {
@@ -154,6 +157,11 @@ export const technicians = pgTable(
     locationId: uuid('location_id').notNull(),
     displayName: text('display_name').notNull(),
     active: boolean('active').notNull().default(true),
+    // v0.14.0 (Duong, 2026-11-12): the ladder regular < gel < dip < acrylic.
+    // null = no level set: the by-turn level rule does not apply and the
+    // Part 6 category skills decide what the technician does. Once a level is
+    // set, technician_services is the truth for what they do.
+    skillLevel: skillLevelEnum('skill_level'),
     createdAt: createdAt(),
     updatedAt: updatedAt(),
   },
@@ -195,6 +203,15 @@ export const services = pgTable(
     categoryId: uuid('category_id').notNull(),
     name: text('name').notNull(),
     defaultDurationMin: integer('default_duration_min'),
+    // v0.14.0: the lowest level that does this service. Setting a technician's
+    // level ticks every service at or below it (the owner then unticks).
+    minLevel: skillLevelEnum('min_level').notNull().default('regular'),
+    // The levels that get this service by turn; null = every level. A regular
+    // manicure goes to regular and gel technicians: a higher level can do it
+    // but is only asked by the desk ("Ask a higher-level tech").
+    turnLevels: skillLevelEnum('turn_levels').array(),
+    // The desk picks the technician (nail art, design): never called by turn.
+    deskPicks: boolean('desk_picks').notNull().default(false),
     archivedAt: timestamp('archived_at', { withTimezone: true }),
     createdAt: createdAt(),
     updatedAt: updatedAt(),
@@ -237,6 +254,30 @@ export const technicianSkills = pgTable(
     }).onDelete('restrict'),
     unique('technician_skills_technician_category').on(t.technicianId, t.categoryId),
     index('technician_skills_location').on(t.locationId),
+  ],
+).enableRLS();
+
+// v0.14.0: what a technician with a level does, per service (some do a gel
+// pedicure but not a gel manicure). The level pre-fills these rows; owners and
+// managers tick and untick. The engine reads them when skill_level is set.
+export const technicianServices = pgTable(
+  'technician_services',
+  {
+    id: id(),
+    organizationId: uuid('organization_id').notNull(),
+    locationId: uuid('location_id').notNull(),
+    technicianId: uuid('technician_id')
+      .notNull()
+      .references(() => technicians.id, { onDelete: 'restrict' }),
+    serviceId: uuid('service_id')
+      .notNull()
+      .references(() => services.id, { onDelete: 'restrict' }),
+    createdAt: createdAt(),
+  },
+  (t) => [
+    locationFk(t, 'technician_services_location_fk'),
+    unique('technician_services_technician_service').on(t.technicianId, t.serviceId),
+    index('technician_services_location').on(t.locationId),
   ],
 ).enableRLS();
 
@@ -575,6 +616,9 @@ export const visits = pgTable(
     // either way. Kiosk input never edits a stored client (review finding 1).
     kioskPhone: text('kiosk_phone'),
     needsConfirm: boolean('needs_confirm').notNull().default(false),
+    // v0.14.0: the called technician kept some services and sent the rest
+    // back to the line: this visit is that rest, linked to the first one.
+    splitFromVisitId: uuid('split_from_visit_id'),
     confirmedBy: uuid('confirmed_by').references(() => profiles.id, { onDelete: 'restrict' }),
     confirmedAt: timestamp('confirmed_at', { withTimezone: true }),
     createdAt: createdAt(),
@@ -626,6 +670,10 @@ export const turnCalls = pgTable(
     excusedBy: uuid('excused_by').references(() => profiles.id, { onDelete: 'restrict' }),
     excusedAt: timestamp('excused_at', { withTimezone: true }),
     calledBy: uuid('called_by').references(() => profiles.id, { onDelete: 'restrict' }),
+    // v0.14.0: 'turn' = called by the line. 'offer' = the desk asked a
+    // higher-level technician; 'desk_pick' = the desk picked for a service
+    // that is never called by turn. Saying no to those two is never a penalty.
+    kind: text('kind').notNull().default('turn'),
     // Who was ahead and why, at that second: the row that settles arguments.
     queueSnapshot: jsonb('queue_snapshot').notNull(),
     createdAt: createdAt(),
@@ -815,6 +863,7 @@ export const TENANT_TABLES = [
   'kiosk_devices',
   'daily_summaries',
   'technician_skills',
+  'technician_services',
   'technician_tags',
   'technician_restrictions',
   'clients',

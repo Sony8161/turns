@@ -176,6 +176,13 @@
       "when": 1794463133174,
       "tag": "0024_v013_names_search_permissions",
       "breakpoints": true
+    },
+    {
+      "idx": 25,
+      "version": "7",
+      "when": 1794465373692,
+      "tag": "0025_v014_skill_levels",
+      "breakpoints": true
     }
   ]
 }

@@ -25,7 +25,8 @@
     "./fresha": "./src/fresha.ts",
     "./demo": "./src/demo.ts",
     "./board": "./src/board.ts",
-    "./tech-settings": "./src/tech-settings.ts"
+    "./tech-settings": "./src/tech-settings.ts",
+    "./levels": "./src/levels.ts"
   },
   "scripts": {
     "typecheck": "tsc --noEmit",

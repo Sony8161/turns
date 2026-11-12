@@ -4,6 +4,7 @@
 // points ("Why this order?"). Read-only; the engine's own order (compareQueue).
 import { and, asc, eq, gt, inArray, isNull } from 'drizzle-orm';
 import { compareQueue } from './engine';
+import { loadLevels, menuLevels, type SkillLevel } from './levels';
 import { doesEverything, loadProfiles, type Restriction } from './profile';
 import { activeRules } from './rules';
 import {
@@ -43,8 +44,11 @@ export type TechCard = {
   checkedInAt: Date | null;
   /** 1 = first to check in today. */
   checkInRank: number;
-  /** null = does every service; else the category names. */
+  /** null = does every service; else the category names (no level set). */
   skills: string[] | null;
+  /** v0.14.0: the technician's level, and with it the services ticked for her. */
+  level: SkillLevel | null;
+  services: string[] | null;
   tags: string[];
   restrictions: Restriction[];
   nextAppointmentAt: Date | null;
@@ -56,7 +60,7 @@ export type TechCard = {
 };
 
 export async function techBoard(db: Db, locationId: string, now = new Date()): Promise<TechCard[]> {
-  const [rows, rules, profiles, cats] = await Promise.all([
+  const [rows, rules, profiles, cats, levels, menu] = await Promise.all([
     locationStatus(db, locationId),
     activeRules(db, locationId),
     loadProfiles(db, locationId),
@@ -64,6 +68,8 @@ export async function techBoard(db: Db, locationId: string, now = new Date()): P
       .select({ id: serviceCategories.id, name: serviceCategories.name })
       .from(serviceCategories)
       .where(eq(serviceCategories.locationId, locationId)),
+    loadLevels(db, locationId),
+    menuLevels(db, locationId),
   ]);
   const onShift = rows.filter((r) => r.status !== 'off').sort((a, b) => compareQueue(rules, a, b));
   if (onShift.length === 0) return [];
@@ -146,7 +152,10 @@ export async function techBoard(db: Db, locationId: string, now = new Date()): P
 
   return onShift.map((r, i) => {
     const profile = profiles.get(r.technicianId);
+    const lv = levels.get(r.technicianId);
     return {
+      level: lv?.level ?? null,
+      services: lv ? menu.filter((m) => lv.serviceIds.has(m.id)).map((m) => m.name) : null,
       technicianId: r.technicianId,
       displayName: r.displayName,
       turn: i + 1,

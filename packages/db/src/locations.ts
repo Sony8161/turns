@@ -5,7 +5,7 @@
 // Usage: DATABASE_URL=... npm run -w @turn/db db:add-location -- <organization id> "<name>"
 import { and, eq } from 'drizzle-orm';
 import { locations, memberships, ruleConfigs, serviceCategories, services } from './schema';
-import { HEAVENLY_CATEGORIES, HEAVENLY_RULE_CONFIG_V1, HEAVENLY_SERVICES } from './seed';
+import { HEAVENLY_CATEGORIES, HEAVENLY_RULE_CONFIG_V1, HEAVENLY_SERVICES, menuRow } from './seed';
 import { createDb, type Db } from './server';
 import { writeAudit } from './status';
 
@@ -56,8 +56,7 @@ export async function addLocation(
         organizationId: input.organizationId,
         locationId: loc.id,
         categoryId: byName.get(s.category)!,
-        name: s.name,
-        defaultDurationMin: s.minutes,
+        ...menuRow(s),
       })),
     );
     await tx.insert(ruleConfigs).values({

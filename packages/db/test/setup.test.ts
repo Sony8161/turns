@@ -52,7 +52,7 @@ describe('setup codes', () => {
     // A new salon can take a walk-in on day one: the starting menu comes with it.
     const menu =
       await sql`select count(*)::int as n from services where organization_id = ${result.organizationId}`;
-    expect(menu[0]?.n).toBe(8);
+    expect(menu[0]?.n).toBe(11);
     const [rc] =
       await sql`select version, config from rule_configs where organization_id = ${result.organizationId}`;
     expect(rc).toEqual({ version: 1, config: HEAVENLY_RULE_CONFIG_V1 });

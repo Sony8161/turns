@@ -16,17 +16,44 @@ start, and timers move on. Load again for a fresh copy.
 - Late start: 15+ min +½, 30+ min +1, 60+ min not decided yet.
 - Ties go to the earlier check-in. An appointment within 30 min holds its technician out of the line.
 - A requested technician skips the line: the visit waits for her.
+- Levels are a ladder: regular polish, gel, dip, acrylic. A service goes by turn only to the levels listed for it below. A higher-level tech who is next keeps her place and is skipped with no penalty; the desk may ask her (**Ask a higher-level tech**), and saying no costs nothing.
+- A visit with two or more services: the called tech chooses **Do all** or **Split**. On a split she keeps what she picks; the rest goes back to the line for the next tech, with the client's original wait.
+
+## Levels
+
+| Tech | Level | Does not do (unticked by the owner) |
+| --- | --- | --- |
+| Thảo | dip | Nail art / design |
+| Tâm | gel | Gel manicure, Nail art / design |
+| Linh | gel | nothing unticked |
+| Vân | regular polish | nothing unticked |
+| Mai | acrylic | Nail art / design |
+| Hoa | acrylic | nothing unticked |
+
+| Service | Goes by turn to |
+| --- | --- |
+| Acrylic fill | acrylic |
+| Acrylic full set | acrylic |
+| Basic manicure | regular polish, gel |
+| Basic pedicure | every level |
+| Dip powder | dip, acrylic |
+| Gel fill | gel, dip, acrylic |
+| Gel manicure | gel, dip, acrylic |
+| Gel pedicure | gel, dip, acrylic |
+| Gel-X full set | gel, dip, acrylic |
+| Nail art / design | nobody: the desk picks the tech |
+| Spa pedicure | every level |
 
 ## The board, in queue order
 
-| Turn | Tech | Status | Points | Checked in | How the points add up |
-| --- | --- | --- | --- | --- | --- |
-| 1 | Thảo | available | ½ | 5th | +1 denied a call (break needed); −1 deny excused by the owner; +½ Gel fill |
-| 2 | Tâm | on break | ½ | 6th | +½ late start (17 min late) |
-| 3 | Linh | available | ½ | 4th | +½ Gel manicure (appointment) |
-| 4 | Vân | available | 1 | 1st | +1 out over 60 min |
-| 5 | Mai | available | 1 | 2nd | +1 denied a call (other) |
-| 6 | Hoa | with a client | 1½ | 3rd | +½ Acrylic fill; +1 Gel manicure |
+| Turn | Tech | Level | Status | Points | Checked in | How the points add up |
+| --- | --- | --- | --- | --- | --- | --- |
+| 1 | Thảo | dip | available | ½ | 5th | +1 denied a call (break needed); −1 deny excused by the owner; +½ Gel fill |
+| 2 | Tâm | gel | on break | ½ | 6th | +½ late start (17 min late) |
+| 3 | Linh | gel | available | ½ | 4th | +½ Gel manicure (appointment) |
+| 4 | Vân | regular polish | available | 1 | 1st | +1 out over 60 min |
+| 5 | Mai | acrylic | available | 1 | 2nd | +1 denied a call (other) |
+| 6 | Hoa | acrylic | with a client | 1½ | 3rd | +½ Acrylic fill; +1 Gel manicure |
 
 Why this order:
 
@@ -41,12 +68,13 @@ Why this order:
 Press **Call next** on each waiting row, top to bottom; each called tech accepts on her phone
 (or the owner accepts for her from Manage).
 
-1. **An Do**, Basic pedicure → **Vân**. Skipped: Thảo (appointment in 20 min), Tâm (on break), Linh (takes no kids).
-2. **Lan Nguyen**, Gel manicure → **Linh**. Skipped: Thảo (appointment in 20 min), Tâm (on break).
-3. **Minh Tran**, Basic manicure → **Mai**. Skipped: Thảo (takes no male clients), Tâm (on break), Linh (with a client), Vân (with a client).
-4. **Thu Pham**, Gel manicure → nobody yet: the client asked for Hoa, so the visit waits for her. Skipped: Thảo (appointment in 20 min), Tâm (on break), Linh (with a client), Vân (with a client), Mai (with a client), Hoa (with a client).
-5. **Ngoc Vo**, Gel manicure + Spa pedicure → nobody yet: every tech is busy or held out. Skipped: Thảo (appointment in 20 min), Tâm (on break), Linh (with a client), Vân (with a client), Mai (with a client), Hoa (with a client).
-6. **Bích**, Basic manicure: a kiosk check-in. It cannot be called until the desk presses Confirm.
+1. **Hanh Bui**, Nail art / design → never called by turn. Press **Pick a tech**: Linh (free), Vân (free), Hoa (with a client). The picked tech may say no with no penalty.
+2. **An Do**, Basic pedicure → **Vân**. Skipped: Thảo (appointment in 20 min), Tâm (on break), Linh (takes no kids).
+3. **Lan Nguyen**, Gel manicure → **Linh**. Skipped: Thảo (appointment in 20 min), Tâm (on break).
+4. **Minh Tran**, Basic manicure → nobody by turn yet. Skipped: Thảo (takes no male clients), Tâm (on break), Linh (with a client), Vân (with a client), Mai (Basic manicure is not her level's by turn), Hoa (with a client). The desk may press **Ask a higher-level tech**: Mai.
+5. **Thu Pham**, Gel manicure → nobody yet: the client asked for Hoa, so the visit waits for her. Skipped: Thảo (appointment in 20 min), Tâm (on break), Linh (with a client), Vân (with a client), Hoa (with a client).
+6. **Ngoc Vo**, Gel manicure + Spa pedicure → **Mai**. Skipped: Thảo (appointment in 20 min), Tâm (on break), Linh (with a client), Vân (with a client). On her phone she chooses **Do all** or **Split** (the sheet assumes Do all).
+7. **Bích**, Basic manicure: a kiosk check-in. It cannot be called until the desk presses Confirm.
 
 ## Appointments today
 

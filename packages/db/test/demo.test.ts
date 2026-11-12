@@ -108,22 +108,55 @@ describe('demo day', () => {
 
   it('calls the waiting rows as the cheat sheet says', () => {
     expect(report.calls.map((c) => [c.client, c.picked])).toEqual([
+      ['Hanh Bui', null], // nail art: the desk picks the tech
       ['An Do', 'Vân'], // kid: Linh takes no kids; Vân ties Mai at 1 and checked in first
       ['Lan Nguyen', 'Linh'],
-      ['Minh Tran', 'Mai'], // a man: Thảo takes no male clients
+      ['Minh Tran', null], // regular manicure: Mai is next but acrylic level
       ['Thu Pham', null], // asked for Hoa, who is with a client
-      ['Ngoc Vo', null], // everyone busy or held out
+      ['Ngoc Vo', 'Mai'], // gel manicure + spa pedicure: hers by turn; all or split
       ['Bích', null], // kiosk: waits for the desk's confirm
     ]);
-    const kid = report.calls[0]!.skipped.map((s) => [s.name, s.why]);
+    expect(report.calls[0]!.deskPick).toEqual([
+      { name: 'Linh', status: 'available', canCall: true },
+      { name: 'Vân', status: 'available', canCall: true },
+      { name: 'Hoa', status: 'in_service', canCall: false },
+    ]);
+    const kid = report.calls[1]!.skipped.map((s) => [s.name, s.why]);
     expect(kid).toEqual([
       ['Thảo', 'appointment_soon'],
       ['Tâm', 'break'],
       ['Linh', 'no_kids'],
     ]);
-    expect(report.calls[2]!.skipped[0]).toMatchObject({ name: 'Thảo', why: 'no_male_clients' });
-    expect(report.calls[3]!.waitingFor).toBe('Hoa');
-    expect(report.calls[5]!.needsConfirm).toBe(true);
+    // v0.14.0: the regular manicure. Mai is the next free tech, but acrylic
+    // level: skipped with no penalty, and the desk may ask her.
+    expect(report.calls[3]!.skipped.map((s) => [s.name, s.why])).toEqual([
+      ['Thảo', 'no_male_clients'],
+      ['Tâm', 'break'],
+      ['Linh', 'in_service'],
+      ['Vân', 'in_service'],
+      ['Mai', 'not_by_turn'],
+      ['Hoa', 'in_service'],
+    ]);
+    expect(report.calls[3]!.mayAsk).toEqual(['Mai']);
+    expect(report.calls[4]!.waitingFor).toBe('Hoa');
+    expect(report.calls[5]!.mixed).toBe(true);
+    expect(report.calls[6]!.needsConfirm).toBe(true);
+  });
+
+  it('gives the six techs different levels, one with a gel pedicure but no gel manicure', () => {
+    const level = (n: string) => report.levels.find((l) => l.name === n)!;
+    expect(report.levels.map((l) => [l.name, l.level]).sort()).toEqual(
+      [
+        ['Vân', 'regular'],
+        ['Mai', 'acrylic'],
+        ['Hoa', 'acrylic'],
+        ['Linh', 'gel'],
+        ['Thảo', 'dip'],
+        ['Tâm', 'gel'],
+      ].sort(),
+    );
+    expect(level('Tâm').not).toEqual(['Gel manicure', 'Nail art / design']);
+    expect(level('Hoa').not).toEqual([]);
   });
 
   it('has the appointment mix: arrived, soon, later, no-show, from the calendar and the desk', () => {
@@ -163,7 +196,15 @@ describe('demo day', () => {
     expect(card('Thảo').heldForAppointment).toBe(true);
     expect(card('Linh').heldForAppointment).toBe(false); // 3 hours away
     expect(card('Tâm').nextAppointmentAt).toBeNull(); // her calendar client is a no-show
-    expect(card('Vân').skills).toEqual(['manicure', 'pedicure']);
+    expect(card('Vân').level).toBe('regular');
+    expect(card('Vân').services).toEqual([
+      'Basic manicure',
+      'Basic pedicure',
+      'Nail art / design',
+      'Spa pedicure',
+    ]);
+    expect(card('Tâm').services).toContain('Gel pedicure');
+    expect(card('Tâm').services).not.toContain('Gel manicure');
     expect(card('Linh').skills).toBeNull();
     expect(card('Linh').restrictions.map((r) => r.type)).toEqual(['no_kids']);
     expect(card('Thảo').lines.map((l) => [l.kind, l.delta])).toEqual([

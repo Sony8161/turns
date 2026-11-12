@@ -16,6 +16,7 @@ import { addAppointment, appointmentArrived } from './appointments';
 import {
   callNext,
   createWalkIn,
+  deskOptions,
   excusePenalty,
   finishVisit,
   queueFor,
@@ -25,13 +26,13 @@ import {
   type Skipped,
 } from './engine';
 import { createKioskDevice, kioskCheckIn, pairKiosk } from './kiosk';
+import { loadLevels, menuLevels, reaches, setTechnicianLevel, type SkillLevel } from './levels';
 import { saveProfile, type ProfileInput } from './profile';
 import { activeRules, type RuleConfig } from './rules';
 import {
   appointments,
   calendarFeeds,
   locations,
-  serviceCategories,
   services,
   shifts,
   technicians,
@@ -45,37 +46,47 @@ import { checkIn, transition, writeAudit } from './status';
 export const DEMO_TECH_NAMES = ['Vân', 'Mai', 'Hoa', 'Linh', 'Thảo', 'Tâm'] as const;
 export type DemoTechName = (typeof DEMO_TECH_NAMES)[number];
 
-/** Who each demo technician is: tags and restrictions are shown as chips;
- *  `skills` names the categories they do (null = everything). */
+/** Who each demo technician is. `level` ticks every service at or below it
+ *  (v0.14.0); `not` unticks single services. Tags and restrictions show as chips. */
 export const DEMO_PROFILES: Record<
   DemoTechName,
-  { skills: string[] | null; tags: string[]; restrictions: ProfileInput['restrictions'] }
+  { level: SkillLevel; not: string[]; tags: string[]; restrictions: ProfileInput['restrictions'] }
 > = {
-  Vân: { skills: ['manicure', 'pedicure'], tags: ['pedicure', 'design'], restrictions: [] },
+  Vân: { level: 'regular', not: [], tags: ['pedicure', 'design'], restrictions: [] },
   Mai: {
-    skills: ['manicure', 'pedicure', 'fill'],
-    tags: ['pedicure'],
+    level: 'acrylic',
+    not: ['Nail art / design'],
+    tags: ['acrylic', 'pedicure'],
     restrictions: [
       { type: 'no_same_time', value: null, note: null },
       { type: 'custom', value: null, note: 'prefers mornings' },
     ],
   },
   Hoa: {
-    skills: null,
+    level: 'acrylic',
+    not: [],
     tags: ['gel', 'acrylic', 'design'],
     restrictions: [{ type: 'min_client_age', value: 12, note: null }],
   },
   Linh: {
-    skills: null,
+    level: 'gel',
+    not: [],
     tags: ['design', 'gel'],
     restrictions: [{ type: 'no_kids', value: null, note: null }],
   },
   Thảo: {
-    skills: null,
+    level: 'dip',
+    not: ['Nail art / design'],
     tags: ['fast', 'dip'],
     restrictions: [{ type: 'no_male_clients', value: null, note: null }],
   },
-  Tâm: { skills: null, tags: ['acrylic', 'dip'], restrictions: [] },
+  // Does a gel pedicure but not a gel manicure.
+  Tâm: {
+    level: 'gel',
+    not: ['Gel manicure', 'Nail art / design'],
+    tags: ['pedicure'],
+    restrictions: [],
+  },
 };
 
 /** Minutes of today that must be behind us: the out-over needs 60. */
@@ -180,11 +191,6 @@ export async function buildDemoDay(db: Db, ctx: DemoContext): Promise<void> {
     if (!row) throw new Error(`demo: technician ${n} is missing`);
     tech[n] = { id: row.id, userId: row.userId };
   }
-  const cats = await db
-    .select({ id: serviceCategories.id, name: serviceCategories.name })
-    .from(serviceCategories)
-    .where(eq(serviceCategories.locationId, ctx.locationId));
-  const catId = new Map(cats.map((c) => [c.name, c.id]));
   const menu = await db
     .select({ id: services.id, name: services.name })
     .from(services)
@@ -213,14 +219,27 @@ export async function buildDemoDay(db: Db, ctx: DemoContext): Promise<void> {
       await saveProfile(db, {
         actor: owner,
         technicianId: tech[n].id,
-        profile: {
-          skillCategoryIds: p.skills ? p.skills.map((c) => catId.get(c)!) : null,
-          tags: p.tags,
-          restrictions: p.restrictions,
-        },
+        profile: { skillCategoryIds: null, tags: p.tags, restrictions: p.restrictions },
       }),
       `profile ${n}`,
     );
+    // The level ticks the services; `not` unticks single ones.
+    const filled = must(
+      await setTechnicianLevel(db, { actor: owner, technicianId: tech[n].id, level: p.level }),
+      `level ${n}`,
+    );
+    if (p.not.length) {
+      const off = new Set(p.not.map(svc));
+      must(
+        await setTechnicianLevel(db, {
+          actor: owner,
+          technicianId: tech[n].id,
+          level: p.level,
+          serviceIds: filled.serviceIds.filter((id) => !off.has(id)),
+        }),
+        `services ${n}`,
+      );
+    }
   }
 
   // Check-ins, oldest first, laid out backwards from now inside today.
@@ -420,6 +439,12 @@ export async function buildDemoDay(db: Db, ctx: DemoContext): Promise<void> {
   }
 
   // Waiting, oldest first: the cheat sheet calls them top to bottom.
+  // Nail art: the desk picks the technician.
+  await walkIn(['Nail art / design'], {
+    client: { name: 'Hanh Bui', phone: '813-555-0205' },
+    attributes: { gender: 'female', isKid: false, age: null },
+    note: 'Chrome flowers, two accent nails',
+  });
   await walkIn(['Basic pedicure'], {
     client: { name: 'An Do' },
     attributes: { gender: 'female', isKid: true, age: 8 },
@@ -428,6 +453,8 @@ export async function buildDemoDay(db: Db, ctx: DemoContext): Promise<void> {
     client: { name: 'Lan Nguyen', phone: '813-555-0201' },
     attributes: { gender: 'female', isKid: false, age: null },
   });
+  // A regular manicure: the next free technician, Mai, is acrylic level, so
+  // she is skipped (it goes to regular and gel by turn) and the desk may ask her.
   await walkIn(['Basic manicure'], {
     client: { name: 'Minh Tran', phone: '813-555-0202', gender: 'male' },
     attributes: { gender: 'male', isKid: false, age: null },
@@ -437,6 +464,7 @@ export async function buildDemoDay(db: Db, ctx: DemoContext): Promise<void> {
     client: { name: 'Thu Pham', phone: '813-555-0203' },
     attributes: { gender: 'female', isKid: false, age: null },
   });
+  // Two services, one after the other: the called technician does all or splits.
   await walkIn(['Gel manicure', 'Spa pedicure'], {
     client: { name: 'Ngoc Vo', phone: '813-555-0204' },
     attributes: { gender: 'female', isKid: false, age: null },
@@ -530,6 +558,7 @@ export type DemoLedgerLine = { delta: number; what: string };
 export type DemoTechLine = {
   turn: number;
   name: string;
+  level: SkillLevel | null;
   status: string;
   points: number;
   hadAppointmentLast: boolean;
@@ -543,7 +572,15 @@ export type DemoCall = {
   skipped: { name: string; why: string; detail?: string }[];
   waitingFor?: string | null;
   needsConfirm?: boolean;
+  /** v0.14.0: the desk picks the technician: who does it, and who is free now. */
+  deskPick?: { name: string; status: string; canCall: boolean }[];
+  /** Higher-level technicians the desk may ask (held out by the level rule alone). */
+  mayAsk?: string[];
+  /** Two or more services: the called technician chooses all or split. */
+  mixed?: boolean;
 };
+export type DemoLevel = { name: string; level: SkillLevel | null; not: string[] };
+export type DemoService = { name: string; turnLevels: SkillLevel[] | null; deskPicks: boolean };
 export type DemoAppointment = {
   name: string;
   source: 'calendar' | 'desk';
@@ -555,6 +592,8 @@ export type DemoReport = {
   board: DemoTechLine[];
   calls: DemoCall[];
   appointments: DemoAppointment[];
+  levels: DemoLevel[];
+  menu: DemoService[];
 };
 
 class Rollback extends Error {}
@@ -631,6 +670,7 @@ export async function demoReport(db: Db, locationId: string): Promise<DemoReport
     return {
       turn: i + 1,
       name: c.displayName,
+      level: c.level ?? null,
       status: statusOf(c),
       points: c.points,
       hadAppointmentLast: c.hadAppointmentLast,
@@ -672,12 +712,28 @@ export async function demoReport(db: Db, locationId: string): Promise<DemoReport
             why: s.why,
             ...(s.detail ? { detail: s.detail } : {}),
           }));
+        if (!r.ok && r.reason === 'desk_picks') {
+          const o = (await deskOptions(txDb, locationId)).get(v.id);
+          calls.push({
+            client,
+            services: v.services,
+            picked: null,
+            skipped: [],
+            deskPick: (o?.technicians ?? []).map((t) => ({
+              name: t.displayName,
+              status: t.status,
+              canCall: t.canCall,
+            })),
+          });
+          continue;
+        }
         if (r.ok) {
           calls.push({
             client,
             services: v.services,
             picked: nameOfTech.get(r.technicianId) ?? '?',
             skipped: skipped(r.skipped),
+            ...(v.services.length > 1 ? { mixed: true } : {}),
           });
           must(
             await respondToCall(txDb, {
@@ -695,6 +751,9 @@ export async function demoReport(db: Db, locationId: string): Promise<DemoReport
             picked: null,
             skipped: skipped(r.skipped ?? []),
             waitingFor: v.requestedTechnician ?? null,
+            mayAsk: ((await deskOptions(txDb, locationId)).get(v.id)?.technicians ?? [])
+              .filter((t) => t.canCall)
+              .map((t) => t.displayName),
           });
         }
       }
@@ -715,10 +774,26 @@ export async function demoReport(db: Db, locationId: string): Promise<DemoReport
     .where(and(eq(appointments.locationId, locationId), isNull(appointments.cancelledAt)))
     .orderBy(asc(appointments.startAt));
   const bufferMs = rules.eligibility.upcoming_appointment_buffer_min * 60_000;
+  const menu = await menuLevels(db, locationId);
+  const ticks = await loadLevels(db, locationId);
   return {
     rules,
     board,
     calls,
+    menu: menu.map((m) => ({ name: m.name, turnLevels: m.turnLevels, deskPicks: m.deskPicks })),
+    levels: queue.map((c) => {
+      const t = ticks.get(c.technicianId);
+      return {
+        name: c.displayName,
+        level: t?.level ?? null,
+        // What her level would tick but the owner unticked.
+        not: t
+          ? menu
+              .filter((m) => reaches(t.level, m.minLevel) && !t.serviceIds.has(m.id))
+              .map((m) => m.name)
+          : [],
+      };
+    }),
     appointments: appts.map((a) => ({
       name: nameOfTech.get(a.technicianId) ?? '?',
       source: a.source === 'ics' ? 'calendar' : 'desk',
@@ -767,6 +842,14 @@ const WHY: Record<string, (detail?: string) => string> = {
   min_client_age: () => 'client under her minimum age',
   no_same_time: () => 'no both-at-once visits',
   appointment_soon: (d) => `appointment in ${d ?? '?'} min`,
+  not_by_turn: (d) => `${d ?? 'this service'} is not her level's by turn`,
+};
+
+const LEVEL: Record<SkillLevel, string> = {
+  regular: 'regular polish',
+  gel: 'gel',
+  dip: 'dip',
+  acrylic: 'acrylic',
 };
 
 export function renderDemoExpected(r: DemoReport): string {
@@ -799,18 +882,36 @@ export function renderDemoExpected(r: DemoReport): string {
       .join(', ')}.`,
     `- Ties go to the earlier check-in. An appointment within ${r.rules.eligibility.upcoming_appointment_buffer_min} min holds its technician out of the line.`,
     `- A requested technician ${r.rules.requests.requested_tech_bypasses_queue ? 'skips the line: the visit waits for her' : 'is a note only'}.`,
+    '- Levels are a ladder: regular polish, gel, dip, acrylic. A service goes by turn only to the levels listed for it below. A higher-level tech who is next keeps her place and is skipped with no penalty; the desk may ask her (**Ask a higher-level tech**), and saying no costs nothing.',
+    "- A visit with two or more services: the called tech chooses **Do all** or **Split**. On a split she keeps what she picks; the rest goes back to the line for the next tech, with the client's original wait.",
+    '',
+    '## Levels',
+    '',
+    '| Tech | Level | Does not do (unticked by the owner) |',
+    '| --- | --- | --- |',
+    ...r.levels.map(
+      (l) =>
+        `| ${l.name} | ${l.level ? LEVEL[l.level] : 'not set'} | ${l.not.join(', ') || 'nothing unticked'} |`,
+    ),
+    '',
+    '| Service | Goes by turn to |',
+    '| --- | --- |',
+    ...r.menu.map(
+      (m) =>
+        `| ${m.name} | ${m.deskPicks ? 'nobody: the desk picks the tech' : m.turnLevels ? m.turnLevels.map((l) => LEVEL[l]).join(', ') : 'every level'} |`,
+    ),
     '',
     '## The board, in queue order',
     '',
-    '| Turn | Tech | Status | Points | Checked in | How the points add up |',
-    '| --- | --- | --- | --- | --- | --- |',
+    '| Turn | Tech | Level | Status | Points | Checked in | How the points add up |',
+    '| --- | --- | --- | --- | --- | --- | --- |',
   );
   for (const b of r.board) {
     const lines = b.lines.length
       ? b.lines.map((l) => `${signed(l.delta)} ${l.what}`).join('; ')
       : 'nothing yet';
     out.push(
-      `| ${b.turn} | ${b.name} | ${STATUS[b.status] ?? b.status} | ${fmtPoints(b.points, b.hadAppointmentLast)} | ${ordinal(b.checkInRank)} | ${lines} |`,
+      `| ${b.turn} | ${b.name} | ${b.level ? LEVEL[b.level] : 'not set'} | ${STATUS[b.status] ?? b.status} | ${fmtPoints(b.points, b.hadAppointmentLast)} | ${ordinal(b.checkInRank)} | ${lines} |`,
     );
   }
   out.push('', 'Why this order:', '');
@@ -843,12 +944,27 @@ export function renderDemoExpected(r: DemoReport): string {
     const skipped = c.skipped.length
       ? ` Skipped: ${c.skipped.map((s) => `${s.name} (${(WHY[s.why] ?? (() => s.why))(s.detail)})`).join(', ')}.`
       : '';
-    if (c.picked) out.push(`${head} → **${c.picked}**.${skipped}`);
+    if (c.deskPick) {
+      const who = c.deskPick
+        .map((t) => `${t.name} (${t.canCall ? 'free' : (STATUS[t.status] ?? t.status)})`)
+        .join(', ');
+      out.push(
+        `${head} → never called by turn. Press **Pick a tech**: ${who || 'nobody does it'}. The picked tech may say no with no penalty.`,
+      );
+      return;
+    }
+    const mixed = c.mixed
+      ? ` On her phone she chooses **Do all** or **Split** (the sheet assumes Do all).`
+      : '';
+    const ask = c.mayAsk?.length
+      ? ` The desk may press **Ask a higher-level tech**: ${c.mayAsk.join(', ')}.`
+      : '';
+    if (c.picked) out.push(`${head} → **${c.picked}**.${skipped}${mixed}`);
     else if (c.waitingFor)
       out.push(
         `${head} → nobody yet: the client asked for ${c.waitingFor}, so the visit waits for her.${skipped}`,
       );
-    else out.push(`${head} → nobody yet: every tech is busy or held out.${skipped}`);
+    else out.push(`${head} → nobody by turn yet.${skipped}${ask}`);
   });
   out.push(
     '',

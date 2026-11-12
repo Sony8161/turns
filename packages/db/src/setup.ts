@@ -14,7 +14,7 @@ import {
   services,
   setupCodes,
 } from './schema';
-import { HEAVENLY_CATEGORIES, HEAVENLY_RULE_CONFIG_V1, HEAVENLY_SERVICES } from './seed';
+import { HEAVENLY_CATEGORIES, HEAVENLY_RULE_CONFIG_V1, HEAVENLY_SERVICES, menuRow } from './seed';
 import type { Db } from './server';
 import { writeAudit } from './status';
 
@@ -105,8 +105,7 @@ export async function redeemSetupCode(
         organizationId: org.id,
         locationId: loc.id,
         categoryId: categoryByName.get(s.category)!,
-        name: s.name,
-        defaultDurationMin: s.minutes,
+        ...menuRow(s),
       })),
     );
     await tx.insert(ruleConfigs).values({

@@ -124,6 +124,14 @@ export const AUDIT_ACTIONS = [
   'visit_note_changed',
   'visit_reassigned',
   'visit_completed',
+  'visit_split',
+  'offer_sent',
+  'offer_accepted',
+  'offer_declined',
+  'desk_pick_sent',
+  'desk_pick_declined',
+  'technician_level_changed',
+  'service_levels_changed',
   'appointment_added',
   'appointment_changed',
   'appointment_cancelled',
@@ -298,11 +306,16 @@ export function auditFields(e: {
 
   switch (e.action) {
     case 'call_sent':
+    case 'offer_sent':
+    case 'desk_pick_sent':
       add('visit', after['visitId']);
       add('called', nameOf(after['technicianId']));
       return out;
     case 'call_accepted':
     case 'call_denied':
+    case 'offer_accepted':
+    case 'offer_declined':
+    case 'desk_pick_declined':
       add('visit', after['visitId']);
       if (e.responseSeconds !== null) add('response_s', Math.round(e.responseSeconds));
       add('deny_reason', after['denyReason']);
@@ -420,7 +433,7 @@ export async function auditEntries(db: Db, filter: AuditFilter): Promise<AuditRo
         order by m.active desc, m.created_at desc limit 1)`,
       technicianId: TECHNICIAN_OF,
       responseSeconds: sql<string | null>`case when ${auditLog.entityType} = 'turn_calls'
-        and ${auditLog.action} in ('call_accepted', 'call_denied')
+        and ${auditLog.action} in ('call_accepted', 'call_denied', 'offer_accepted', 'offer_declined', 'desk_pick_declined')
         then (select extract(epoch from (c.responded_at - c.called_at))
               from turn_calls c where c.id = ${auditLog.entityId}) end`,
     })
@@ -668,7 +681,7 @@ export async function dailyTurnReport(
       technicianId: turnCalls.technicianId,
       calls: sql<string>`count(*)`,
       accepted: sql<string>`count(*) filter (where ${turnCalls.response} = 'accepted')`,
-      denied: sql<string>`count(*) filter (where ${turnCalls.response} = 'denied')`,
+      denied: sql<string>`count(*) filter (where ${turnCalls.response} = 'denied' and ${turnCalls.kind} = 'turn')`,
       avg: sql<
         string | null
       >`avg(extract(epoch from (${turnCalls.respondedAt} - ${turnCalls.calledAt})))

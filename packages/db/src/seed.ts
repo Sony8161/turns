@@ -78,16 +78,65 @@ export const HEAVENLY_CATEGORIES = [
 
 // A starting menu so the front desk has something to pick. The owner edits it
 // later; archived services stay for history.
-export const HEAVENLY_SERVICES = [
-  { category: 'manicure', name: 'Basic manicure', minutes: 30 },
-  { category: 'manicure', name: 'Gel manicure', minutes: 45 },
-  { category: 'pedicure', name: 'Basic pedicure', minutes: 45 },
-  { category: 'pedicure', name: 'Spa pedicure', minutes: 60 },
-  { category: 'fill', name: 'Acrylic fill', minutes: 45 },
-  { category: 'fill', name: 'Gel fill', minutes: 45 },
-  { category: 'full_set', name: 'Acrylic full set', minutes: 75 },
-  { category: 'full_set', name: 'Gel-X full set', minutes: 75 },
-] as const;
+//
+// Levels (v0.14.0, Duong 2026-11-12): `min` is the lowest level that does the
+// service; `turn` the levels that get it by turn (null = everyone). A regular
+// manicure goes to regular and gel technicians by turn; gel work to gel, dip
+// and acrylic; pedicures to everyone; dip to dip and acrylic; acrylic to
+// acrylic. Nail art is picked by the desk, never called by turn. Gel fill and
+// Gel-X are placed at the gel level (not confirmed with Phu; the owner edits).
+type MenuLevel = 'regular' | 'gel' | 'dip' | 'acrylic';
+const GEL_UP: MenuLevel[] = ['gel', 'dip', 'acrylic'];
+export const HEAVENLY_SERVICES: readonly {
+  category: (typeof HEAVENLY_CATEGORIES)[number]['name'];
+  name: string;
+  minutes: number;
+  min: MenuLevel;
+  turn: MenuLevel[] | null;
+  deskPicks?: boolean;
+}[] = [
+  {
+    category: 'manicure',
+    name: 'Basic manicure',
+    minutes: 30,
+    min: 'regular',
+    turn: ['regular', 'gel'],
+  },
+  { category: 'manicure', name: 'Gel manicure', minutes: 45, min: 'gel', turn: GEL_UP },
+  { category: 'manicure', name: 'Dip powder', minutes: 60, min: 'dip', turn: ['dip', 'acrylic'] },
+  {
+    category: 'manicure',
+    name: 'Nail art / design',
+    minutes: 30,
+    min: 'regular',
+    turn: null,
+    deskPicks: true,
+  },
+  { category: 'pedicure', name: 'Basic pedicure', minutes: 45, min: 'regular', turn: null },
+  { category: 'pedicure', name: 'Spa pedicure', minutes: 60, min: 'regular', turn: null },
+  { category: 'pedicure', name: 'Gel pedicure', minutes: 60, min: 'gel', turn: GEL_UP },
+  { category: 'fill', name: 'Acrylic fill', minutes: 45, min: 'acrylic', turn: ['acrylic'] },
+  { category: 'fill', name: 'Gel fill', minutes: 45, min: 'gel', turn: GEL_UP },
+  {
+    category: 'full_set',
+    name: 'Acrylic full set',
+    minutes: 75,
+    min: 'acrylic',
+    turn: ['acrylic'],
+  },
+  { category: 'full_set', name: 'Gel-X full set', minutes: 75, min: 'gel', turn: GEL_UP },
+];
+
+/** A menu row as the services table takes it. */
+export function menuRow(s: (typeof HEAVENLY_SERVICES)[number]) {
+  return {
+    name: s.name,
+    defaultDurationMin: s.minutes,
+    minLevel: s.min,
+    turnLevels: s.turn,
+    deskPicks: s.deskPicks ?? false,
+  };
+}
 
 export async function seedHeavenly(
   url: string,
@@ -137,8 +186,7 @@ export async function seedHeavenly(
             organizationId,
             locationId,
             categoryId: byName.get(s.category)!,
-            name: s.name,
-            defaultDurationMin: s.minutes,
+            ...menuRow(s),
           })),
         )
         .onConflictDoNothing();
