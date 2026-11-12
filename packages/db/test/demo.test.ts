@@ -124,6 +124,10 @@ describe('demo day', () => {
       ['Minh Tran', null], // regular manicure: only Mai is free, and she is acrylic level
       ['Lan Nguyen', 'Mai'], // gel manicure: hers by turn
       ['Bích', null], // kiosk: waits for the desk's confirm
+      ['Trang Ho', null], // v0.16.0: a fix, entered by the receptionist: approved, then the desk picks
+      ['Quynh', null], // v0.16.0: a kiosk group of three, waiting for the desk's confirm
+      ['Hien', null],
+      ['Ly', null],
     ]);
     // D: the desk row for the request.
     expect(report.calls[0]!.waitingFor).toBe('Hoa');
@@ -165,6 +169,45 @@ describe('demo day', () => {
     ]);
     expect(report.calls[6]!.needsConfirm).toBe(true);
     expect(report.calls[6]!.askedFor).toBe('Vân');
+    expect(report.calls[6]!.partySize).toBeUndefined();
+  });
+
+  it('v0.16.0: client left, a pending fix, a kiosk group of three and a help request', () => {
+    // Sara Kim's call went to Linh (Thảo is held for her appointment); the
+    // client left before the service: no points, Linh keeps her place.
+    expect(report.left).toEqual([
+      { client: 'Sara Kim', services: ['Gel manicure'], technician: 'Linh' },
+    ]);
+    const fix = report.calls[7]!;
+    expect(fix.services).toEqual(['Nail fix / repair']);
+    expect(fix.fix).toEqual({ original: 'Linh', daysAgo: 5, pending: true });
+    // The tech who did the original work comes first (busy with Ngoc Vo's pedicure by then).
+    expect(fix.deskPick?.[0]).toEqual({
+      name: 'Linh',
+      status: 'in_service',
+      canCall: false,
+      original: true,
+    });
+    for (const c of report.calls.slice(8)) {
+      expect(c.needsConfirm).toBe(true);
+      expect(c.partySize).toBe(3);
+    }
+    expect(report.help).toEqual([{ name: 'Mai', reason: 'Need more acetone at station 4' }]);
+    expect(report.servicePoints).toEqual(
+      expect.arrayContaining([
+        { name: 'Polish change', points: 0 },
+        { name: 'Gel polish change', points: 1 },
+        { name: 'Nail fix / repair', points: 0 },
+      ]),
+    );
+  });
+
+  it('keeps owners and managers out of the rotation (they do not do nails)', async () => {
+    expect(report.board.map((b) => b.name)).not.toContain('Phu');
+    const rows = await sql`
+      select m.role from memberships m join technicians t on t.user_id = m.user_id and t.location_id = m.location_id
+      where m.role in ('owner', 'manager')`;
+    expect(rows.length).toBe(0);
   });
 
   it('offers on the kiosk only who is in today and does every chosen service', () => {
@@ -208,8 +251,11 @@ describe('demo day', () => {
   });
 
   it('leaves the call simulation out of the database', async () => {
+    // v0.16.0: one open call stays: Sara Kim's, for the demo's "Client left".
     const [open] = await sql`select count(*)::int as n from turn_calls where responded_at is null`;
-    expect(open!.n).toBe(0);
+    expect(open!.n).toBe(1);
+    const [left] = await sql`select count(*)::int as n from visits where status = 'left'`;
+    expect(left!.n).toBe(0);
   });
 
   it('matches the committed cheat sheet exactly', () => {

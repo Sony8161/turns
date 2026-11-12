@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { techniciansFor } from '@turn/db/kiosk';
-import { kioskFromForm, techsFor, type KioskTech } from './form';
+import { kioskFromForm, kioskGroupFromForm, techsFor, type KioskTech } from './form';
 
 const A = '11111111-1111-4111-8111-111111111111';
 const B = '22222222-2222-4222-8222-222222222222';
@@ -143,5 +143,64 @@ describe('kiosk technician list', () => {
     for (const ids of [[], [A], [B], [A, B]]) {
       expect(techsFor(techs, ids)).toEqual(techniciansFor(techs, ids));
     }
+  });
+});
+
+describe('v0.16.0: the kiosk group form', () => {
+  const group = (people: unknown, phone = '') =>
+    fd([
+      ['people', JSON.stringify(people)],
+      ['phone', phone],
+    ]);
+
+  it('reads each person with their own services, technician and note, and one phone', () => {
+    expect(
+      kioskGroupFromForm(
+        group(
+          [
+            { name: 'Lan', lastName: 'Ng', serviceIds: [A], requestedTechnicianId: B, note: 'Red' },
+            { name: 'Mai', serviceIds: [A, B] },
+          ],
+          '813 555 0142',
+        ),
+      ),
+    ).toEqual({
+      ok: true,
+      phone: '813 555 0142',
+      people: [
+        { name: 'Lan', lastName: 'Ng', serviceIds: [A], requestedTechnicianId: B, note: 'Red' },
+        {
+          name: 'Mai',
+          lastName: null,
+          serviceIds: [A, B],
+          requestedTechnicianId: null,
+          note: null,
+        },
+      ],
+    });
+  });
+
+  it('refuses a person with no name or no service, odd ids, and more than eight people', () => {
+    expect(kioskGroupFromForm(group([{ name: ' ', serviceIds: [A] }]))).toEqual({
+      ok: false,
+      reason: 'bad_name',
+    });
+    expect(kioskGroupFromForm(group([{ name: 'A', serviceIds: [] }]))).toEqual({
+      ok: false,
+      reason: 'no_services',
+    });
+    expect(kioskGroupFromForm(group([{ name: 'A', serviceIds: ["1' or 1=1"] }]))).toEqual({
+      ok: false,
+      reason: 'unknown_service',
+    });
+    expect(
+      kioskGroupFromForm(group([{ name: 'A', serviceIds: [A], requestedTechnicianId: 'x' }])),
+    ).toEqual({ ok: false, reason: 'unknown_technician' });
+    const nine = Array.from({ length: 9 }, () => ({ name: 'A', serviceIds: [A] }));
+    expect(kioskGroupFromForm(group(nine))).toEqual({ ok: false, reason: 'party_too_big' });
+    expect(kioskGroupFromForm(fd([['people', '{not json']]))).toEqual({
+      ok: false,
+      reason: 'bad_name',
+    });
   });
 });

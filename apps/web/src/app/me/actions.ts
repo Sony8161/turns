@@ -2,7 +2,14 @@
 
 import { eq } from 'drizzle-orm';
 import { technicianStatus } from '@turn/db';
-import { DENY_REASONS, finishVisit, respondToCall, type DenyReason } from '@turn/db/engine';
+import {
+  clientLeft,
+  DENY_REASONS,
+  finishVisit,
+  respondToCall,
+  type DenyReason,
+} from '@turn/db/engine';
+import { askForHelp } from '@turn/db/help';
 import { checkIn, transition, type TechnicianState } from '@turn/db/status';
 import { revalidatePath } from 'next/cache';
 import { db } from '@/lib/db';
@@ -25,6 +32,8 @@ export type MeState = {
     | 'no_visit_in_service'
     | 'open_call'
     | 'bad_split'
+    | 'too_many'
+    | 'not_called'
     | 'server';
   distanceM?: number;
   radiusM?: number;
@@ -137,6 +146,51 @@ async function answerCallRun(_prev: MeState, formData: FormData): Promise<MeStat
     return { error: result.reason };
   }
   return { error: 'illegal_transition' };
+}
+
+/** v0.16.0: the called technician marks that the client left before she started. */
+export async function markClientLeft(prev: MeState, formData: FormData): Promise<MeState> {
+  return guarded('markClientLeft', { error: 'server' } as MeState, () =>
+    markClientLeftRun(prev, formData),
+  );
+}
+
+async function markClientLeftRun(_prev: MeState, formData: FormData): Promise<MeState> {
+  const actor = await requireActor();
+  const tech = await technicianForUser(actor.userId);
+  if (!tech) return { error: 'not_technician' };
+  const visitId = String(formData.get('visitId') ?? '');
+  if (!isUuid(visitId)) return { error: 'not_called' };
+  const result = await clientLeft(db(), {
+    visitId,
+    actor: { userId: actor.userId },
+    locationId: tech.locationId,
+    technicianId: tech.id,
+  });
+  revalidatePath('/me');
+  revalidatePath('/admin');
+  if (result.ok) return {};
+  return { error: result.reason === 'not_your_call' ? 'not_your_call' : 'not_called' };
+}
+
+/** v0.16.0: "Need help": the desk board shows it until someone acknowledges it. */
+export async function askHelp(prev: MeState, formData: FormData): Promise<MeState> {
+  return guarded('askHelp', { error: 'server' } as MeState, () => askHelpRun(prev, formData));
+}
+
+async function askHelpRun(_prev: MeState, formData: FormData): Promise<MeState> {
+  const actor = await requireActor();
+  const tech = await technicianForUser(actor.userId);
+  if (!tech) return { error: 'not_technician' };
+  const result = await askForHelp(db(), {
+    technicianId: tech.id,
+    actor: { userId: actor.userId },
+    reason: String(formData.get('reason') ?? '').slice(0, 200),
+  });
+  revalidatePath('/me');
+  revalidatePath('/admin');
+  if (result.ok) return {};
+  return { error: result.reason === 'too_many' ? 'too_many' : 'not_technician' };
 }
 
 function readPosition(formData: FormData): { lat: number; lng: number; accuracyM?: number } | null {

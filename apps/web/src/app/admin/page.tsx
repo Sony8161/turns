@@ -11,6 +11,7 @@ import {
   waitingVisits,
 } from '@turn/db/engine';
 import { feedSummary, FEED_STALE_MIN } from '@turn/db/feeds';
+import { openHelpRequests } from '@turn/db/help';
 import { requestHolds } from '@turn/db/requests';
 import { ensureDailySummary, localDate, previousDate } from '@turn/db/reports';
 import { activeRules } from '@turn/db/rules';
@@ -51,7 +52,12 @@ export default async function AdminPage() {
     ? await Promise.all([
         boardRows(membership.locationId),
         db()
-          .select({ id: services.id, name: services.name, category: serviceCategories.name })
+          .select({
+            id: services.id,
+            name: services.name,
+            category: serviceCategories.name,
+            isFix: services.isFix,
+          })
           .from(services)
           .innerJoin(serviceCategories, eq(serviceCategories.id, services.categoryId))
           .where(and(eq(services.locationId, membership.locationId), isNull(services.archivedAt)))
@@ -79,16 +85,24 @@ export default async function AdminPage() {
   const options = membership ? await deskOptions(db(), membership.locationId) : new Map();
   // v0.15.0: visits waiting for a requested or booked technician who is busy,
   // and the rules' queue order for the "why this order" lines.
-  const [holds, rules] = membership
+  const [holds, rules, help] = membership
     ? await Promise.all([
         requestHolds(db(), membership.locationId, now),
         activeRules(db(), membership.locationId),
+        // v0.16.0: "Need help" taps nobody has acknowledged yet.
+        openHelpRequests(db(), membership.locationId),
       ])
-    : [new Map(), null];
+    : [new Map(), null, []];
   const clock = new Intl.DateTimeFormat(lang === 'vi' ? 'vi-VN' : 'en-US', {
     timeZone: loc?.timezone ?? 'America/New_York',
     hour: 'numeric',
     minute: '2-digit',
+  });
+  const day = new Intl.DateTimeFormat(lang === 'vi' ? 'vi-VN' : 'en-US', {
+    timeZone: loc?.timezone ?? 'America/New_York',
+    weekday: 'short',
+    month: 'short',
+    day: 'numeric',
   });
   const nextAppointments = upcoming.filter((a) => !a.arrivedAt && !a.cancelledAt).slice(0, 4);
   const owner = !!membership && can(membership.role, 'manage_rules');
@@ -253,9 +267,21 @@ export default async function AdminPage() {
                 held: v.held,
                 booked: v.source === 'appointment',
                 hold: holdOf(holds.get(v.id), now, clock),
+                partyId: v.partyId,
+                partySize: v.partySize,
+                isFix: v.isFix,
+                needsApproval: v.needsApproval,
+                fixOf: v.fixOf
+                  ? {
+                      date: day.format(v.fixOf.at),
+                      services: v.fixOf.services,
+                      technician: v.fixOf.technician,
+                    }
+                  : null,
                 options: (options.get(v.id)?.technicians ?? []).map(
                   (o: {
                     technicianId: string;
+                    original?: boolean;
                     displayName: string;
                     level: string | null;
                     turn: number;
@@ -263,6 +289,7 @@ export default async function AdminPage() {
                     canCall: boolean;
                   }) => ({
                     technicianId: o.technicianId,
+                    ...(o.original ? { original: true } : {}),
                     name: o.displayName,
                     level: o.level,
                     turn: o.turn,
@@ -291,7 +318,20 @@ export default async function AdminPage() {
                   over: x.over,
                 })),
                 outOverMin: attention.outOverMin,
+                help: help.map((h) => ({
+                  id: h.id,
+                  name: h.technician,
+                  reason: h.reason,
+                  waitedSeconds: secondsSince(h.createdAt),
+                })),
               }}
+              canApprove={can(membership.role, 'approve_fixes')}
+              fixWindowDays={rules?.fixes.window_days ?? 14}
+              fixNeedsApproval={
+                !can(membership.role, 'approve_fixes') &&
+                (rules?.fixes.receptionist_needs_approval ?? true)
+              }
+              groupMax={rules?.groups.max_people ?? 8}
               t={t.desk}
               levelNames={t.levels.name}
               statusNames={t.board.status}

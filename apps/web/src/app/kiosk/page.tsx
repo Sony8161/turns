@@ -67,6 +67,7 @@ export default async function KioskPage() {
       locationName={loc?.name ?? t.app.name}
       services={menu.services}
       technicians={menu.technicians}
+      groupMax={menu.groupMax}
       notice={notice}
       languageToggle={toggle}
     />

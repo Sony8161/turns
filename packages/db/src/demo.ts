@@ -13,8 +13,10 @@
 // sheet is the same on every run.
 import { and, asc, eq, inArray, isNull, sql } from 'drizzle-orm';
 import { addAppointment, appointmentArrived } from './appointments';
+import { upsertClient } from './clients';
 import {
   callNext,
+  clientLeft,
   createWalkIn,
   deskOptions,
   finishVisit,
@@ -25,9 +27,12 @@ import {
   type Candidate,
   type Skipped,
 } from './engine';
+import { reviewFix } from './fixes';
+import { askForHelp, openHelpRequests } from './help';
 import {
   createKioskDevice,
   kioskCheckIn,
+  kioskGroupCheckIn,
   kioskMenu,
   pairKiosk,
   techniciansFor,
@@ -497,6 +502,91 @@ export async function buildDemoDay(db: Db, ctx: DemoContext): Promise<void> {
     }),
     'kiosk check-in',
   );
+
+  // v0.16.0. A fix: Trang Ho had a gel manicure with Linh five days ago (an
+  // earlier day, so it is written straight into the history) and is back with
+  // a chipped nail. Hạnh, a receptionist, enters the fix: it waits for a
+  // manager or owner to approve it, then the desk picks Linh first.
+  const fixDay = minus(now, 5 * 24 * 60);
+  const trang = await db.transaction((tx) =>
+    upsertClient(tx, {
+      organizationId: ctx.organizationId,
+      locationId: ctx.locationId,
+      firstName: 'Trang',
+      lastName: 'Ho',
+      phone: '813-555-0206',
+      gender: 'female',
+    }),
+  );
+  if (!trang.ok || !trang.clientId) throw new Error('demo: fix client');
+  const [earlier] = await db
+    .insert(visits)
+    .values({
+      organizationId: ctx.organizationId,
+      locationId: ctx.locationId,
+      source: 'walk_in',
+      status: 'completed',
+      clientId: trang.clientId,
+      clientGender: 'female',
+      assignedTechnicianId: tech['Linh'].id,
+      createdBy: ctx.receptionistUserId,
+      arrivedAt: fixDay,
+      startedAt: fixDay,
+      completedAt: plus(fixDay, 45),
+      pointsPosted: '1.0',
+    })
+    .returning({ id: visits.id });
+  await db.insert(visitServices).values({
+    organizationId: ctx.organizationId,
+    visitId: earlier!.id,
+    serviceId: svc('Gel manicure'),
+    pointsValueSnapshot: '1.0',
+  });
+  must(
+    await createWalkIn(db, {
+      organizationId: ctx.organizationId,
+      locationId: ctx.locationId,
+      serviceIds: [svc('Nail fix / repair')],
+      actor: { userId: ctx.receptionistUserId },
+      fix: { enteredBy: 'receptionist', ofVisitId: earlier!.id },
+    }),
+    'fix entered by the receptionist',
+  );
+
+  // A group of three checks in on the kiosk ("We're a group"): one visit
+  // each, linked, waiting for the desk to confirm all at once or one by one.
+  must(
+    await kioskGroupCheckIn(db, {
+      device: paired.device,
+      phone: '813-555-0207',
+      people: [
+        { name: 'Quynh', lastName: 'Tran', serviceIds: [svc('Gel manicure')] },
+        { name: 'Hien', serviceIds: [svc('Basic pedicure')], note: 'Short and square' },
+        { name: 'Ly', serviceIds: [svc('Polish change')] },
+      ],
+    }),
+    'kiosk group',
+  );
+
+  // Called, not started: Linh is next in line (Thảo is held for her
+  // appointment) and is called for Sara Kim, who then walks out. The desk
+  // (or Linh on her phone) presses "Client left": no points, Linh keeps her place.
+  const gone = await walkIn(['Gel manicure'], {
+    client: { name: 'Sara Kim' },
+    attributes: { gender: 'female', isKid: false, age: null },
+  });
+  await call(gone.visitId, 'Linh');
+
+  // Mai taps "Need help" on her phone: the desk board shows it until someone
+  // presses "On my way".
+  must(
+    await askForHelp(db, {
+      technicianId: tech['Mai'].id,
+      actor: actorOf('Mai'),
+      reason: 'Need more acetone at station 4',
+    }),
+    'Mai asks for help',
+  );
 }
 
 /** One calendar row per demo technician who has calendar appointments:
@@ -588,7 +678,7 @@ export type DemoCall = {
   waitingFor?: string | null;
   needsConfirm?: boolean;
   /** v0.14.0: the desk picks the technician: who does it, and who is free now. */
-  deskPick?: { name: string; status: string; canCall: boolean }[];
+  deskPick?: { name: string; status: string; canCall: boolean; original?: boolean }[];
   /** Higher-level technicians the desk may ask (held out by the level rule alone). */
   mayAsk?: string[];
   /** Two or more services: the called technician chooses all or split. */
@@ -601,7 +691,14 @@ export type DemoCall = {
   hold?: { status: string; attention: boolean };
   /** A kiosk check-in that asked for a technician (pending the desk's confirm). */
   askedFor?: string | null;
+  /** v0.16.0: one of a group that came in together. */
+  partySize?: number | null;
+  /** v0.16.0: a fix: who did the original work, how long ago, and whether
+   *  it waited for approval (approved in the simulation, then the desk picks). */
+  fix?: { original: string | null; daysAgo: number | null; pending: boolean };
 };
+/** v0.16.0: a called visit whose client left before the service started. */
+export type DemoLeft = { client: string; services: string[]; technician: string };
 /** v0.15.0: who the kiosk offers for a choice of services (names only). */
 export type DemoKioskChoice = { services: string[]; technicians: string[] };
 export type DemoLevel = { name: string; level: SkillLevel | null; not: string[] };
@@ -620,6 +717,11 @@ export type DemoReport = {
   levels: DemoLevel[];
   menu: DemoService[];
   kiosk: DemoKioskChoice[];
+  /** v0.16.0 */
+  left: DemoLeft[];
+  /** A service's own points (rules by_service), by name. */
+  servicePoints: { name: string; points: number }[];
+  help: { name: string; reason: string | null }[];
 };
 
 class Rollback extends Error {}
@@ -723,9 +825,28 @@ export async function demoReport(db: Db, locationId: string): Promise<DemoReport
 
   const nameOfTech = new Map(queue.map((c) => [c.technicianId, c.displayName]));
   const calls: DemoCall[] = [];
+  const left: DemoLeft[] = [];
+  const help = (await openHelpRequests(db, locationId)).map((h) => ({
+    name: h.technician,
+    reason: h.reason,
+  }));
   try {
     await db.transaction(async (tx) => {
       const txDb = tx as unknown as Db;
+      // v0.16.0: first, the called visit whose client walked out: "Client left".
+      for (const v of (await waitingVisits(txDb, locationId)).filter(
+        (x) => x.status === 'called',
+      )) {
+        const r = must(
+          await clientLeft(txDb, { visitId: v.id, actor: { userId: null }, locationId }),
+          'simulated client left',
+        );
+        left.push({
+          client: v.kioskName ?? v.clientName ?? 'Walk-in',
+          services: v.services,
+          technician: nameOfTech.get(r.technicianId) ?? '?',
+        });
+      }
       const waiting = (await waitingVisits(txDb, locationId)).filter((v) => v.status === 'waiting');
       const holds = await requestHolds(txDb, locationId, now);
       for (const v of waiting) {
@@ -738,8 +859,33 @@ export async function demoReport(db: Db, locationId: string): Promise<DemoReport
             skipped: [],
             needsConfirm: true,
             askedFor: v.requestedTechnician ?? null,
+            ...(v.partySize && v.partySize > 1 ? { partySize: v.partySize } : {}),
           });
           continue;
+        }
+        // v0.16.0: a fix a receptionist entered: a manager approves it here.
+        const fix = v.isFix
+          ? {
+              original: v.fixOf?.technician ?? null,
+              daysAgo: v.fixOf
+                ? Math.round((now.getTime() - v.fixOf.at.getTime()) / (24 * 60 * 60_000))
+                : null,
+              pending: v.needsApproval,
+            }
+          : undefined;
+        if (v.needsApproval) {
+          const [loc] = await txDb
+            .select({ organizationId: locations.organizationId })
+            .from(locations)
+            .where(eq(locations.id, locationId));
+          must(
+            await reviewFix(txDb, {
+              actor: { userId: null, organizationId: loc!.organizationId, locationId },
+              visitId: v.id,
+              decision: 'approve',
+            }),
+            'simulated fix approval',
+          );
         }
         const r = await callNext(txDb, { visitId: v.id, actor: { userId: null }, locationId });
         const skipped = (list: Skipped[]) =>
@@ -759,7 +905,9 @@ export async function demoReport(db: Db, locationId: string): Promise<DemoReport
               name: t.displayName,
               status: t.status,
               canCall: t.canCall,
+              ...(t.original ? { original: true } : {}),
             })),
+            ...(fix ? { fix } : {}),
           });
           continue;
         }
@@ -851,6 +999,11 @@ export async function demoReport(db: Db, locationId: string): Promise<DemoReport
     rules,
     board,
     calls,
+    left,
+    help,
+    servicePoints: menu
+      .filter((m) => rules.points.by_service?.[m.id] !== undefined)
+      .map((m) => ({ name: m.name, points: rules.points.by_service![m.id]! })),
     kiosk,
     menu: menu.map((m) => ({ name: m.name, turnLevels: m.turnLevels, deskPicks: m.deskPicks })),
     levels: queue.map((c) => {
@@ -976,6 +1129,26 @@ export function renderDemoExpected(r: DemoReport): string {
     '- Levels are a ladder: regular polish, gel, dip, acrylic. A service goes by turn only to the levels listed for it below. A higher-level tech who is next keeps her place and is skipped with no penalty; the desk may ask her (**Ask a higher-level tech**), and saying no costs nothing.',
     "- A visit with two or more services goes by turn to the first tech who gets at least one of them. If she does all of them she chooses **Do all** or **Split**; if she does only some she takes those. The rest waits until she is finished, then goes by turn with the client's original wait, and the next tech's call card shows a slip: who did what, what is left, and the request note.",
     '- The kiosk offers only techs who are in today and do every chosen service, with **Anyone** first.',
+    `- A requested visit counts ${
+      r.rules.requests.requested_counts_points === null ||
+      r.rules.requests.requested_counts_points === 1
+        ? 'as a full normal turn'
+        : `at ${r.rules.requests.requested_counts_points}× its points`
+    }; a manager can still adjust points by hand.`,
+    ...(r.servicePoints.length
+      ? [
+          `- A service's own points come first: ${r.servicePoints
+            .map((s) => `${s.name} ${fmtPoints(s.points)}`)
+            .join(', ')}.`,
+        ]
+      : []),
+    `- A nail fix or repair is free and entered at the desk only (never the kiosk). The desk sees the client's visits from the last ${r.rules.fixes.window_days} days` +
+      (r.rules.fixes.receptionist_needs_approval
+        ? '; a fix a receptionist enters waits for a manager or owner to approve it'
+        : '') +
+      '. The desk picks the tech, the one who did the work first; saying no costs nothing.',
+    `- A group checks in together (up to ${r.rules.groups.max_people}): each person is their own client and visit, called by turn on their own.`,
+    '- A called visit whose client walks out before the service starts: **Client left**. No points, the tech keeps her place.',
     '',
     '## Levels',
     '',
@@ -1035,11 +1208,17 @@ export function renderDemoExpected(r: DemoReport): string {
     '(or the owner accepts for her from Manage).',
     '',
   );
+  for (const l of r.left) {
+    out.push(
+      `First: **${l.client}** (${l.services.join(' + ')}) shows ${l.technician} called, but the client walked out. Press **Client left** on the row (or ${l.technician} presses it on her phone): no points, ${l.technician} keeps her place.`,
+      '',
+    );
+  }
   r.calls.forEach((c, i) => {
     const head = `${i + 1}. **${c.client}**, ${c.services.join(' + ')}`;
     if (c.needsConfirm) {
       out.push(
-        `${head}: a kiosk check-in. It cannot be called until the desk presses Confirm.` +
+        `${head}: a kiosk check-in${c.partySize ? `, one of a group of ${c.partySize} (the desk row says "Group of ${c.partySize}"; **Confirm all ${c.partySize}** or one by one)` : ''}. It cannot be called until the desk presses Confirm.` +
           (c.askedFor
             ? ` The client picked ${c.askedFor} on the kiosk: **Confirm** keeps the request, **Confirm, no request** sends it by turn.`
             : ''),
@@ -1051,10 +1230,19 @@ export function renderDemoExpected(r: DemoReport): string {
       : '';
     if (c.deskPick) {
       const who = c.deskPick
-        .map((t) => `${t.name} (${t.canCall ? 'free' : (STATUS[t.status] ?? t.status)})`)
+        .map(
+          (t) =>
+            `${t.name} (${t.canCall ? 'free' : (STATUS[t.status] ?? t.status)}${t.original ? ', did the original work' : ''})`,
+        )
         .join(', ');
+      const fix = c.fix
+        ? ` A fix of ${c.fix.original ?? 'nobody found'}'s work${c.fix.daysAgo !== null ? ` ${c.fix.daysAgo} days ago` : ''}, free.` +
+          (c.fix.pending
+            ? ' Hạnh (receptionist) entered it, so it waits until a manager or owner presses **Approve fix** (sign in as Phu or Vy); the sheet assumes approved.'
+            : '')
+        : '';
       out.push(
-        `${head} → never called by turn. Press **Pick a tech**: ${who || 'nobody does it'}. The picked tech may say no with no penalty.`,
+        `${head} → never called by turn.${fix} Press **Pick a tech**: ${who || 'nobody does it'}. The picked tech may say no with no penalty.`,
       );
       return;
     }
@@ -1096,6 +1284,14 @@ export function renderDemoExpected(r: DemoReport): string {
         `| ${k.services.join(' + ')} | Anyone, ${k.technicians.join(', ') || '(nobody else)'} |`,
     ),
   );
+  if (r.help.length) {
+    out.push('', '## Need help', '');
+    for (const h of r.help) {
+      out.push(
+        `- ${h.name} tapped **Need help**${h.reason ? ` ("${h.reason}")` : ''}. The desk board shows "${h.name} needs help" with the time waiting until someone presses **On my way**.`,
+      );
+    }
+  }
   out.push(
     '',
     '## Appointments today',

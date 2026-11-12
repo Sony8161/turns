@@ -39,6 +39,9 @@ export function sortWith(base: readonly string[], order: AppointmentOrder): stri
   return [...rest.slice(0, at), key, ...rest.slice(at)];
 }
 
+/** v0.16.0: the fix window's two presets (Heavenly: 14; 7 is the other). */
+export const FIX_WINDOW_CHOICES = [7, 14] as const;
+
 /** Empty late-tier rows shown beyond the stored ones. */
 export const TIER_SLOTS = 5;
 
@@ -85,7 +88,21 @@ export type FormParse = {
  * overrides for categories the form did not show (archived ones) are copied
  * from the base config so a save never silently drops them.
  */
-export function configFromForm(fd: FormData, base: RuleConfig, categoryIds: string[]): FormParse {
+export function configFromForm(
+  fd: FormData,
+  base: RuleConfig,
+  categoryIds: string[],
+  /** v0.16.0: the services shown (points per service); others are kept from base. */
+  serviceIds: string[] = [],
+): FormParse {
+  const byService: Record<string, unknown> = {};
+  for (const [id, points] of Object.entries(base.points.by_service ?? {})) {
+    if (!serviceIds.includes(id)) byService[id] = points;
+  }
+  for (const id of serviceIds) {
+    const v = num(fd.get(`service.${id}`));
+    if (v !== undefined) byService[id] = v;
+  }
   const byCategory: Record<string, unknown> = {};
   for (const [id, points] of Object.entries(base.points.by_category ?? {})) {
     if (!categoryIds.includes(id)) byCategory[id] = points;
@@ -118,6 +135,7 @@ export function configFromForm(fd: FormData, base: RuleConfig, categoryIds: stri
       combined_fill_full_cap: cap === undefined ? null : cap,
       post_on: base.points.post_on,
       by_category: byCategory,
+      by_service: byService,
     },
     penalties: {
       deny: num(fd.get('penalties.deny')),
@@ -153,6 +171,14 @@ export function configFromForm(fd: FormData, base: RuleConfig, categoryIds: stri
       // Blank = as long as a long wait (the validator's fallback).
       ...(requestWait === undefined ? {} : { request_wait_min: requestWait }),
     },
+    // v0.16.0
+    fixes: {
+      window_days: num(fd.get('fixes.window_days')),
+      receptionist_needs_approval: bool(fd.get('fixes.receptionist_needs_approval')),
+    },
+    groups: {
+      max_people: num(fd.get('groups.max_people')),
+    },
   };
   return { candidate, tierSlots };
 }
@@ -161,6 +187,8 @@ export function configFromForm(fd: FormData, base: RuleConfig, categoryIds: stri
 export function fieldFor(path: string, tierSlots: number[]): string {
   const category = /^points\.by_category\.(.+)$/.exec(path);
   if (category) return `category.${category[1]}`;
+  const service = /^points\.by_service\.(.+)$/.exec(path);
+  if (service) return `service.${service[1]}`;
   const tier = /^penalties\.late_tiers\.(\d+)\.(after_minutes|start_points)$/.exec(path);
   if (tier) {
     const slot = tierSlots[Number(tier[1])] ?? Number(tier[1]);
@@ -199,7 +227,13 @@ export function formValues(config: RuleConfig): Record<string, string> {
     'attention.default_service_min': String(config.attention.default_service_min),
     'attention.request_wait_min': String(config.attention.request_wait_min),
     'queue.appointment_order': appointmentOrderFor(config.queue.sort),
+    'fixes.window_days': String(config.fixes.window_days),
+    'fixes.receptionist_needs_approval': config.fixes.receptionist_needs_approval ? 'on' : '',
+    'groups.max_people': String(config.groups.max_people),
   };
+  for (const [id, points] of Object.entries(config.points.by_service ?? {})) {
+    v[`service.${id}`] = String(points);
+  }
   for (const r of DENY_REASONS) {
     v[`deny_excused.${r}`] = config.penalties.deny_excused_reasons.includes(r) ? 'on' : '';
   }

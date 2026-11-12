@@ -79,3 +79,75 @@ export function techsFor(technicians: KioskTech[], serviceIds: string[]): KioskT
     (t) => t.serviceIds === null || serviceIds.every((id) => t.serviceIds!.includes(id)),
   );
 }
+
+/** v0.16.0: the most people one group check-in carries from the form; the
+ *  rules may allow fewer (the server checks). */
+export const KIOSK_GROUP_MAX = 8;
+
+export type KioskGroupForm =
+  | {
+      ok: true;
+      phone: string | null;
+      people: {
+        name: string;
+        lastName: string | null;
+        serviceIds: string[];
+        requestedTechnicianId: string | null;
+        note: string | null;
+      }[];
+    }
+  | {
+      ok: false;
+      reason:
+        'no_services' | 'unknown_service' | 'unknown_technician' | 'bad_name' | 'party_too_big';
+    };
+
+/**
+ * v0.16.0: the kiosk's group check-in. The screen sends the people as one JSON
+ * field (built on the iPad, one person at a time) and the group's phone as its
+ * own field. Shapes only: names, services and technicians are checked again
+ * on the server against the menu and who is in today.
+ */
+export function kioskGroupFromForm(fd: FormData): KioskGroupForm {
+  let raw: unknown;
+  try {
+    raw = JSON.parse(String(fd.get('people') ?? '[]').slice(0, 20_000));
+  } catch {
+    return { ok: false, reason: 'bad_name' };
+  }
+  if (!Array.isArray(raw)) return { ok: false, reason: 'bad_name' };
+  if (raw.length > KIOSK_GROUP_MAX) return { ok: false, reason: 'party_too_big' };
+  const people: Extract<KioskGroupForm, { ok: true }>['people'] = [];
+  for (const p of raw) {
+    if (typeof p !== 'object' || p === null) return { ok: false, reason: 'bad_name' };
+    const r = p as Record<string, unknown>;
+    const name = typeof r['name'] === 'string' ? r['name'].slice(0, 200) : '';
+    if (!name.trim()) return { ok: false, reason: 'bad_name' };
+    const ids = Array.isArray(r['serviceIds'])
+      ? [...new Set(r['serviceIds'].filter((x): x is string => typeof x === 'string'))]
+      : [];
+    if (ids.length === 0) return { ok: false, reason: 'no_services' };
+    if (ids.length > KIOSK_MAX_SERVICES || !ids.every(isUuid)) {
+      return { ok: false, reason: 'unknown_service' };
+    }
+    const tech = typeof r['requestedTechnicianId'] === 'string' ? r['requestedTechnicianId'] : '';
+    if (tech && !isUuid(tech)) return { ok: false, reason: 'unknown_technician' };
+    const lastName = typeof r['lastName'] === 'string' ? r['lastName'].trim().slice(0, 200) : '';
+    const note = typeof r['note'] === 'string' ? r['note'].trim().slice(0, 400) : '';
+    people.push({
+      name,
+      lastName: lastName || null,
+      serviceIds: ids,
+      requestedTechnicianId: tech || null,
+      note: note || null,
+    });
+  }
+  return {
+    ok: true,
+    phone:
+      String(fd.get('phone') ?? '')
+        .trim()
+        .slice(0, 32) || null,
+    people,
+  };
+}

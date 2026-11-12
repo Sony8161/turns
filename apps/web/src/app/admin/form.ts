@@ -20,6 +20,40 @@ function text(raw: FormDataEntryValue | null, max: number): string | null {
   return s ? s.slice(0, max) : null;
 }
 
+/** v0.16.0: the most people the group form offers (the rules may allow fewer). */
+export const GROUP_FORM_MAX = 8;
+
+export type GroupPersonForm = {
+  firstName: string;
+  lastName: string | null;
+  phone: string | null;
+  serviceIds: string[];
+  requestedTechnicianId: string | null;
+  note: string | null;
+};
+
+/** v0.16.0: the desk's group form: fields p0.firstName, p0.service, ... per person,
+ *  in the order added; a person with nothing typed and nothing picked is skipped. */
+export function groupFromForm(fd: FormData): GroupPersonForm[] {
+  const out: GroupPersonForm[] = [];
+  // Slot numbers grow as people are removed and added; the engine caps the count.
+  for (let i = 0; i < GROUP_FORM_MAX * 8; i++) {
+    const firstName = String(fd.get(`p${i}.firstName`) ?? '').slice(0, 60);
+    const serviceIds = fd.getAll(`p${i}.service`).map(String).filter(Boolean);
+    if (!fd.has(`p${i}.firstName`) && serviceIds.length === 0) continue;
+    if (!firstName.trim() && serviceIds.length === 0) continue;
+    out.push({
+      firstName,
+      lastName: text(fd.get(`p${i}.lastName`), 60),
+      phone: text(fd.get(`p${i}.phone`), 32),
+      serviceIds,
+      requestedTechnicianId: text(fd.get(`p${i}.requestedTechnician`), 64),
+      note: text(fd.get(`p${i}.note`), 300),
+    });
+  }
+  return out;
+}
+
 /** Builds the engine input from the form. Unknown values stay as typed where
  *  the engine checks them (age), and fall to "not asked" elsewhere. */
 export function walkInFromForm(fd: FormData): WalkInForm {

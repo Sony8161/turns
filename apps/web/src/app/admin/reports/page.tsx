@@ -9,6 +9,7 @@ import {
   signed,
 } from '@turn/db/reports';
 import { locations } from '@turn/db';
+import { fixesByOriginalTech } from '@turn/db/fixes';
 import { eq } from 'drizzle-orm';
 import { redirect } from 'next/navigation';
 import { AdminNav } from '@/components/AdminNav';
@@ -89,10 +90,12 @@ export default async function ReportsPage({
   const today = localDate(new Date(), tz);
   const asked = parseDate(Array.isArray(params.date) ? params.date[0] : params.date);
   const day = asked && asked <= today ? asked : today;
-  const [report, week, summary] = await Promise.all([
+  const [report, week, summary, fixes] = await Promise.all([
     dailyTurnReport(db(), m.locationId, day),
     overrideSummary(db(), m.locationId, addDays(day, -6), day),
     day < today ? ensureDailySummary(db(), m.locationId, day) : Promise.resolve(null),
+    // v0.16.0: fixes per technician who did the original work.
+    fixesByOriginalTech(db(), m.locationId, day),
   ]);
   const clock = new Intl.DateTimeFormat(lang === 'vi' ? 'vi-VN' : 'en-US', {
     timeZone: tz,
@@ -228,6 +231,43 @@ export default async function ReportsPage({
           </>
         ) : (
           <p className="text-slate/80">{t.reports.endOfDayToday}</p>
+        )}
+      </section>
+
+      <section className="flex flex-col gap-3">
+        <h2 className="text-lead font-semibold">{t.reports.fixes}</h2>
+        <p className="max-w-[70ch] text-slate/80">{t.reports.fixesLead}</p>
+        {fixes.length === 0 ? (
+          <p>{t.reports.fixesEmpty}</p>
+        ) : (
+          <div className="overflow-x-auto">
+            <table className="w-full border-collapse text-left text-small">
+              <thead>
+                <tr className="border-b-2 border-slate/30">
+                  {[
+                    t.reports.fixesCols.original,
+                    t.reports.fixesCols.fixes,
+                    t.reports.fixesCols.same,
+                  ].map((h) => (
+                    <th key={h} scope="col" className="px-2 py-2 font-semibold">
+                      {h}
+                    </th>
+                  ))}
+                </tr>
+              </thead>
+              <tbody>
+                {fixes.map((f) => (
+                  <tr key={f.technicianId ?? 'none'} className="border-b border-slate/15">
+                    <td className={`${cell} font-semibold`}>
+                      {f.technician ?? t.reports.fixesNoOrigin}
+                    </td>
+                    <td className={cell}>{f.fixes}</td>
+                    <td className={cell}>{f.technicianId ? f.doneBySameTech : ''}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
         )}
       </section>
 

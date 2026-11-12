@@ -1,5 +1,5 @@
 import { and, eq, inArray, isNull } from 'drizzle-orm';
-import { locations, profiles, serviceCategories } from '@turn/db';
+import { locations, profiles, serviceCategories, services } from '@turn/db';
 import { ruleHistory } from '@turn/db/rules';
 import Link from 'next/link';
 import { redirect } from 'next/navigation';
@@ -80,6 +80,12 @@ export default async function RulesPage() {
       .where(eq(locations.id, m.locationId))
       .then((r) => r[0]),
   ]);
+  // v0.16.0: points per service (polish change, fix).
+  const menu = await db()
+    .select({ id: services.id, name: services.name, categoryId: services.categoryId })
+    .from(services)
+    .where(and(eq(services.locationId, m.locationId), isNull(services.archivedAt)))
+    .orderBy(services.name);
   const current = history.find((h) => h.valid);
   const authors = [...new Set(history.map((h) => h.createdBy).filter((x): x is string => !!x))];
   const names = authors.length
@@ -126,6 +132,11 @@ export default async function RulesPage() {
         <RulesForm
           values={formValues(current.config)}
           categories={categories}
+          services={menu.map((s) => ({
+            id: s.id,
+            name: s.name,
+            category: categories.find((c) => c.id === s.categoryId)?.name ?? '',
+          }))}
           version={history[0]?.version ?? current.version}
           t={t.rules}
         />

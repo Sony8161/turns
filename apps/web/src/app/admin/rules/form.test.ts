@@ -32,11 +32,49 @@ describe('rule builder form', () => {
     const checked = validateRuleConfig(candidate);
     expect(checked.ok).toBe(true);
     if (!checked.ok) return;
-    const gotPoints = { ...checked.config.points, by_category: undefined };
-    const wantPoints = { ...base.points, by_category: undefined };
+    const gotPoints = { ...checked.config.points, by_category: undefined, by_service: undefined };
+    const wantPoints = { ...base.points, by_category: undefined, by_service: undefined };
     expect({ ...checked.config, points: gotPoints }).toEqual({ ...base, points: wantPoints });
     expect(checked.config.penalties.late_tiers[2]?.start_points).toBeNull();
-    expect(checked.config.requests.requested_counts_points).toBeNull();
+    // v0.16.0 (Duong): a request counts as a full normal turn.
+    expect(checked.config.requests.requested_counts_points).toBe(1);
+  });
+
+  it('v0.16.0: points per service, the fix window and the group size round-trip', () => {
+    const polish = '00000000-0000-4000-8000-0000000000a1';
+    const hidden = '00000000-0000-4000-8000-0000000000a2';
+    const withService: RuleConfig = {
+      ...base,
+      points: { ...base.points, by_service: { [polish]: 0, [hidden]: 2 } },
+      fixes: { window_days: 7, receptionist_needs_approval: false },
+      groups: { max_people: 5 },
+    };
+    const values = formValues(withService);
+    expect(values[`service.${polish}`]).toBe('0');
+    expect(values['fixes.window_days']).toBe('7');
+    expect(values['fixes.receptionist_needs_approval']).toBe('');
+    expect(values['groups.max_people']).toBe('5');
+    // The form shows only `polish`; the other service's points are kept from the base.
+    const { candidate } = configFromForm(form(values), withService, [], [polish]);
+    const checked = validateRuleConfig(candidate);
+    expect(checked.ok).toBe(true);
+    if (!checked.ok) return;
+    expect(checked.config.points.by_service).toEqual({ [polish]: 0, [hidden]: 2 });
+    expect(checked.config.fixes).toEqual({ window_days: 7, receptionist_needs_approval: false });
+    expect(checked.config.groups).toEqual({ max_people: 5 });
+    // Blank clears a service's own points (its category's value applies).
+    const cleared = configFromForm(
+      form({ ...values, [`service.${polish}`]: '' }),
+      withService,
+      [],
+      [polish],
+    );
+    const again = validateRuleConfig(cleared.candidate);
+    expect(again.ok && again.config.points.by_service).toEqual({ [hidden]: 2 });
+    expect(fieldFor(`points.by_service.${polish}`, [])).toBe(`service.${polish}`);
+    // A group of one, or of nine, is refused.
+    const nine = configFromForm(form({ ...values, 'groups.max_people': '9' }), withService, []);
+    expect(validateRuleConfig(nine.candidate).ok).toBe(false);
   });
 
   it('keeps text in a number field so the validator names it; accepts a decimal comma', () => {

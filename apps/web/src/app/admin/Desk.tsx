@@ -1,13 +1,16 @@
 'use client';
 
 import { ErrorRef } from '@/components/ErrorRef';
-import { useActionState } from 'react';
+import { useActionState, useState } from 'react';
 import { formatClock } from '@/components/Board';
 import { Button } from '@/components/ui';
 import { fill, type Dictionary } from '@/i18n/dictionary';
 import {
+  ackHelpFor,
   callNextFor,
   clearCallFor,
+  clientLeftFor,
+  reviewFixFor,
   deskCallFor,
   enterWalkIn,
   requestHoldFor,
@@ -17,8 +20,10 @@ import {
   type DeskState,
 } from './actions';
 import { skipText, visitChips } from './chips';
+import { FixLookup } from './FixLookup';
+import { GroupWalkIn } from './GroupWalkIn';
 
-type Service = { id: string; name: string; category: string };
+type Service = { id: string; name: string; category: string; isFix?: boolean };
 export type Waiting = {
   id: string;
   status: string;
@@ -63,9 +68,18 @@ export type Waiting = {
     waitedMin: number;
     attention: boolean;
   } | null;
+  /** v0.16.0: people who came in together; partySize counts them all. */
+  partyId: string | null;
+  partySize: number | null;
+  /** v0.16.0: a nail fix or repair, the visit it fixes, and the approval. */
+  isFix: boolean;
+  needsApproval: boolean;
+  fixOf: { date: string; services: string[]; technician: string | null } | null;
   /** Who the desk may ask (higher level) or pick (desk-pick service). */
   options: {
     technicianId: string;
+    /** v0.16.0: she did the work this fix repairs. */
+    original?: boolean;
     name: string;
     level: string | null;
     turn: number;
@@ -88,6 +102,8 @@ export type Attention = {
     over: boolean;
   }[];
   outOverMin: number;
+  /** v0.16.0: technicians who tapped "Need help", oldest first. */
+  help: { id: string; name: string; reason: string | null; waitedSeconds: number }[];
 };
 
 /** The front desk: what needs a person now, enter a walk-in, see who is
@@ -101,7 +117,17 @@ export function Desk({
   levelNames,
   statusNames,
   bookDefault,
+  canApprove,
+  fixWindowDays,
+  fixNeedsApproval,
+  groupMax,
 }: {
+  /** v0.16.0: a manager or owner: approves a receptionist's fix. */
+  canApprove: boolean;
+  fixWindowDays: number;
+  /** A fix entered by this person waits for approval (receptionist + rules). */
+  fixNeedsApproval: boolean;
+  groupMax: number;
   /** v0.15.0: the start offered for "Book for later" (datetime-local, salon time). */
   bookDefault: string;
   services: Service[];
@@ -120,6 +146,12 @@ export function Desk({
   const [noteState, saveNote, savingNote] = useActionState<DeskState, FormData>(setNoteFor, {});
   const [askState, ask, asking] = useActionState<DeskState, FormData>(deskCallFor, {});
   const [holdState, decide, deciding] = useActionState<DeskState, FormData>(requestHoldFor, {});
+  const [fixState, reviewFix, reviewingFix] = useActionState<DeskState, FormData>(reviewFixFor, {});
+  const [leftState, markLeft, markingLeft] = useActionState<DeskState, FormData>(clientLeftFor, {});
+  const [helpState, ackHelp, acking] = useActionState<DeskState, FormData>(ackHelpFor, {});
+  // v0.16.0: one client or a group; the fix lookup shows when a fix is ticked.
+  const [mode, setMode] = useState<'one' | 'group'>('one');
+  const [fixTicked, setFixTicked] = useState(false);
   const optionLine = (o: Waiting['options'][number]) =>
     fill(t.optionLine, {
       level: o.level ? (levelNames[o.level] ?? o.level) : '–',
@@ -135,6 +167,7 @@ export function Desk({
         ? t.noWait
         : fill(t.estimatedWait, { minutes: attention.estimatedWaitMin });
   const needsPerson =
+    attention.help.length > 0 ||
     attention.unansweredCalls.length > 0 ||
     attention.longWait ||
     attention.timers.some((x) => x.over);
@@ -146,6 +179,38 @@ export function Desk({
         className={`flex flex-col gap-3 border-l-[12px] bg-board p-5 ${needsPerson ? 'border-polish' : 'border-teal'}`}
       >
         <h2 className="text-heading font-semibold">{t.attentionTitle}</h2>
+        {attention.help.map((h) => (
+          // v0.16.0: "Mai needs help", with the time waiting, until someone acknowledges it.
+          <form
+            key={h.id}
+            action={ackHelp}
+            className="flex flex-wrap items-center gap-3 border-l-4 border-polish pl-3"
+          >
+            <input type="hidden" name="helpId" value={h.id} />
+            <span className="flex flex-col">
+              <span className="text-lead font-semibold text-polish">
+                {fill(t.helpTitle, { name: h.name })}
+              </span>
+              <span className="text-small text-slate/80">
+                {fill(t.helpWaiting, { time: formatClock(h.waitedSeconds) })}
+                {h.reason ? ` · ${fill(t.helpReason, { reason: h.reason })}` : ''}
+              </span>
+            </span>
+            <Button
+              type="submit"
+              disabled={acking}
+              aria-label={`${t.helpAck}: ${fill(t.helpTitle, { name: h.name })}`}
+            >
+              {t.helpAck}
+            </Button>
+          </form>
+        ))}
+        {helpState.error ? (
+          <p role="alert" className="text-polish">
+            {t.errors[helpState.error] ?? helpState.error}
+            <ErrorRef refId={helpState.ref} />
+          </p>
+        ) : null}
         {attention.unansweredCalls.map((c) => (
           <form key={c.callId} action={clear} className="flex flex-wrap items-center gap-3">
             <input type="hidden" name="callId" value={c.callId} />
@@ -205,109 +270,143 @@ export function Desk({
       </section>
 
       <div className="grid gap-8 md:grid-cols-2">
-        <form action={enter} className="flex flex-col gap-4 bg-board p-5">
+        <div className="flex flex-col gap-4 bg-board p-5">
           <h2 className="text-heading font-semibold">{t.walkIn}</h2>
-          <p className="text-slate/80">{t.pickServices}</p>
-          <div className="flex flex-col gap-2">
-            {services.map((s) => (
-              <label key={s.id} className="flex min-h-11 items-center gap-3 text-lead">
-                <input type="checkbox" name="service" value={s.id} className="h-6 w-6" />
-                <span>{s.name}</span>
-                <span className="text-small text-slate/80">{s.category}</span>
-              </label>
+          <div role="tablist" aria-label={t.walkIn} className="flex gap-2">
+            {(['one', 'group'] as const).map((k) => (
+              <button
+                key={k}
+                type="button"
+                role="tab"
+                aria-selected={mode === k}
+                onClick={() => setMode(k)}
+                className={`min-h-12 flex-1 rounded-control border-2 px-4 font-semibold ${mode === k ? 'border-navy bg-navy text-board' : 'border-slate/30 text-slate'}`}
+              >
+                {k === 'one' ? t.walkInOne : t.walkInGroup}
+              </button>
             ))}
           </div>
-          <label className="flex min-h-11 items-center gap-3">
-            <input type="checkbox" name="sameTime" className="h-6 w-6" />
-            <span>{t.sameTime}</span>
-          </label>
-
-          <fieldset className="flex flex-col gap-3 border-t border-pumice pt-4">
-            <legend className="font-medium">{t.client}</legend>
-            <p className="text-small text-slate/70">{t.clientHint}</p>
-            <div
-              role="radiogroup"
-              aria-labelledby="desk-gender"
-              className="flex flex-wrap items-center gap-4"
-            >
-              <span id="desk-gender" className="font-medium">
-                {t.gender}
-              </span>
-              {(['unspecified', 'female', 'male'] as const).map((g) => (
-                <label key={g} className="flex min-h-11 items-center gap-2">
-                  <input
-                    type="radio"
-                    name="gender"
-                    value={g}
-                    defaultChecked={g === 'unspecified'}
-                    className="h-5 w-5"
-                  />
-                  <span>{t.genders[g]}</span>
-                </label>
-              ))}
-            </div>
-            <div className="flex flex-wrap items-end gap-4">
+          {mode === 'group' ? (
+            <GroupWalkIn t={t} services={services} technicians={technicians} max={groupMax} />
+          ) : (
+            <form action={enter} className="flex flex-col gap-4">
+              <p className="text-slate/80">{t.pickServices}</p>
+              <div className="flex flex-col gap-2">
+                {services.map((s) => (
+                  <label key={s.id} className="flex min-h-11 items-center gap-3 text-lead">
+                    <input
+                      type="checkbox"
+                      name="service"
+                      value={s.id}
+                      className="h-6 w-6"
+                      onChange={s.isFix ? (e) => setFixTicked(e.target.checked) : undefined}
+                    />
+                    <span>{s.name}</span>
+                    <span className="text-small text-slate/80">{s.category}</span>
+                  </label>
+                ))}
+              </div>
+              {fixTicked ? (
+                <FixLookup t={t} windowDays={fixWindowDays} needsApproval={fixNeedsApproval} />
+              ) : null}
               <label className="flex min-h-11 items-center gap-3">
-                <input type="checkbox" name="kid" className="h-6 w-6" />
-                <span>{t.kid}</span>
+                <input type="checkbox" name="sameTime" className="h-6 w-6" />
+                <span>{t.sameTime}</span>
               </label>
-              <label className="flex flex-col gap-1">
-                <span className="text-small font-medium">{t.age}</span>
-                <input name="age" inputMode="numeric" maxLength={3} className={`${field} w-24`} />
+
+              <fieldset className="flex flex-col gap-3 border-t border-pumice pt-4">
+                <legend className="font-medium">{t.client}</legend>
+                <p className="text-small text-slate/70">{t.clientHint}</p>
+                <div
+                  role="radiogroup"
+                  aria-labelledby="desk-gender"
+                  className="flex flex-wrap items-center gap-4"
+                >
+                  <span id="desk-gender" className="font-medium">
+                    {t.gender}
+                  </span>
+                  {(['unspecified', 'female', 'male'] as const).map((g) => (
+                    <label key={g} className="flex min-h-11 items-center gap-2">
+                      <input
+                        type="radio"
+                        name="gender"
+                        value={g}
+                        defaultChecked={g === 'unspecified'}
+                        className="h-5 w-5"
+                      />
+                      <span>{t.genders[g]}</span>
+                    </label>
+                  ))}
+                </div>
+                <div className="flex flex-wrap items-end gap-4">
+                  <label className="flex min-h-11 items-center gap-3">
+                    <input type="checkbox" name="kid" className="h-6 w-6" />
+                    <span>{t.kid}</span>
+                  </label>
+                  <label className="flex flex-col gap-1">
+                    <span className="text-small font-medium">{t.age}</span>
+                    <input
+                      name="age"
+                      inputMode="numeric"
+                      maxLength={3}
+                      className={`${field} w-24`}
+                    />
+                  </label>
+                </div>
+                <div className="flex flex-wrap gap-4">
+                  <label className="flex flex-col gap-1">
+                    <span className="text-small font-medium">{t.clientFirstName}</span>
+                    <input name="clientFirstName" maxLength={60} className={`${field} w-40`} />
+                  </label>
+                  <label className="flex flex-col gap-1">
+                    <span className="text-small font-medium">{t.clientLastName}</span>
+                    <input name="clientLastName" maxLength={60} className={`${field} w-40`} />
+                  </label>
+                  <label className="flex flex-col gap-1">
+                    <span className="text-small font-medium">{t.clientPhone}</span>
+                    <input
+                      name="clientPhone"
+                      inputMode="tel"
+                      maxLength={32}
+                      className={`${field} w-48`}
+                    />
+                  </label>
+                </div>
+              </fieldset>
+
+              <label className="flex flex-col gap-2">
+                <span className="font-medium">{t.requestedTech}</span>
+                <select name="requestedTechnician" className={field}>
+                  <option value="">{t.anyTech}</option>
+                  {technicians.map((x) => (
+                    <option key={x.id} value={x.id}>
+                      {x.name}
+                    </option>
+                  ))}
+                </select>
               </label>
-            </div>
-            <div className="flex flex-wrap gap-4">
-              <label className="flex flex-col gap-1">
-                <span className="text-small font-medium">{t.clientFirstName}</span>
-                <input name="clientFirstName" maxLength={60} className={`${field} w-40`} />
-              </label>
-              <label className="flex flex-col gap-1">
-                <span className="text-small font-medium">{t.clientLastName}</span>
-                <input name="clientLastName" maxLength={60} className={`${field} w-40`} />
-              </label>
-              <label className="flex flex-col gap-1">
-                <span className="text-small font-medium">{t.clientPhone}</span>
-                <input
-                  name="clientPhone"
-                  inputMode="tel"
-                  maxLength={32}
-                  className={`${field} w-48`}
+              <label className="flex flex-col gap-2">
+                <span className="font-medium">{t.note}</span>
+                <textarea
+                  name="note"
+                  maxLength={300}
+                  rows={2}
+                  placeholder={t.notePlaceholder}
+                  className="rounded-control border-2 border-slate/30 bg-board px-3 py-2 text-lead"
                 />
               </label>
-            </div>
-          </fieldset>
-
-          <label className="flex flex-col gap-2">
-            <span className="font-medium">{t.requestedTech}</span>
-            <select name="requestedTechnician" className={field}>
-              <option value="">{t.anyTech}</option>
-              {technicians.map((x) => (
-                <option key={x.id} value={x.id}>
-                  {x.name}
-                </option>
-              ))}
-            </select>
-          </label>
-          <label className="flex flex-col gap-2">
-            <span className="font-medium">{t.note}</span>
-            <textarea
-              name="note"
-              maxLength={300}
-              rows={2}
-              placeholder={t.notePlaceholder}
-              className="rounded-control border-2 border-slate/30 bg-board px-3 py-2 text-lead"
-            />
-          </label>
-          {entry.error ? (
-            <p role="alert" className="text-polish">
-              {t.errors[entry.error] ?? entry.error}
-              <ErrorRef refId={entry.ref} />
-            </p>
-          ) : null}
-          <Button type="submit" disabled={entering}>
-            {t.addWalkIn}
-          </Button>
-        </form>
+              {entry.error ? (
+                <p role="alert" className="text-polish">
+                  {t.errors[entry.error] ?? entry.error}
+                  <ErrorRef refId={entry.ref} />
+                </p>
+              ) : null}
+              <Button type="submit" disabled={entering}>
+                {t.addWalkIn}
+              </Button>
+            </form>
+          )}
+        </div>
 
         <section className="flex flex-col gap-3">
           <h2 className="text-heading font-semibold">{t.waiting}</h2>
@@ -334,6 +433,18 @@ export function Desk({
             <p role="alert" className="text-polish">
               {t.errors[holdState.error] ?? holdState.error}
               <ErrorRef refId={holdState.ref} />
+            </p>
+          ) : null}
+          {fixState.error ? (
+            <p role="alert" className="text-polish">
+              {t.errors[fixState.error] ?? fixState.error}
+              <ErrorRef refId={fixState.ref} />
+            </p>
+          ) : null}
+          {leftState.error ? (
+            <p role="alert" className="text-polish">
+              {t.errors[leftState.error] ?? leftState.error}
+              <ErrorRef refId={leftState.ref} />
             </p>
           ) : null}
           {callState.error ? (
@@ -368,9 +479,34 @@ export function Desk({
               return (
                 <li
                   key={v.id}
-                  className={`flex flex-wrap items-center gap-4 bg-board px-4 py-3 ${v.needsConfirm ? 'border-l-[12px] border-amber' : ''}`}
+                  className={`flex flex-wrap items-center gap-4 bg-board px-4 py-3 ${v.needsConfirm || v.needsApproval ? 'border-l-[12px] border-amber' : ''}`}
                 >
                   <span className="flex min-w-0 flex-1 flex-col">
+                    {v.partySize && v.partySize > 1 ? (
+                      <span className="w-fit rounded-control bg-teal px-2 py-0.5 text-small font-semibold text-board">
+                        {fill(t.groupOf, { n: v.partySize })}
+                      </span>
+                    ) : null}
+                    {v.isFix ? (
+                      <span className="w-fit rounded-control border-2 border-navy px-2 py-0.5 text-small font-semibold">
+                        {t.fixBadge}
+                      </span>
+                    ) : null}
+                    {v.isFix ? (
+                      v.fixOf ? (
+                        <span className="text-small text-slate/80">
+                          {fill(t.fixOfLine, {
+                            date: v.fixOf.date,
+                            services: v.fixOf.services.join(' + '),
+                            tech: v.fixOf.technician ?? t.fixNoTech,
+                          })}
+                        </span>
+                      ) : (
+                        <span className="text-small font-semibold text-polish">
+                          {t.fixNoOrigin}
+                        </span>
+                      )
+                    ) : null}
                     {v.fromKiosk ? (
                       <span className="text-small font-semibold">
                         {v.needsConfirm ? t.kioskPending : t.kioskConfirmed}
@@ -466,8 +602,72 @@ export function Desk({
                           : fill(t.waitingLine, { time: formatClock(v.waitSeconds) })}
                     </span>
                   </span>
-                  {v.status === 'waiting' && v.needsConfirm ? (
+                  {v.status === 'called' ? (
+                    // v0.16.0: the client walked out after the call, before the service.
+                    <form action={markLeft} className="flex flex-col items-end gap-1">
+                      <input type="hidden" name="visitId" value={v.id} />
+                      <Button
+                        type="submit"
+                        tone="quiet"
+                        disabled={markingLeft}
+                        aria-label={`${t.clientLeft}: ${rowLabel(v)}`}
+                      >
+                        {t.clientLeft}
+                      </Button>
+                      <span className="max-w-[24ch] text-right text-small text-slate/70">
+                        {t.clientLeftLead}
+                      </span>
+                    </form>
+                  ) : null}
+                  {v.status === 'waiting' && v.needsApproval ? (
+                    // v0.16.0: a receptionist's fix: a manager or owner approves it first.
+                    <span className="flex flex-col items-end gap-2">
+                      <span className="font-semibold">{t.fixPending}</span>
+                      {canApprove ? (
+                        <span className="flex flex-wrap gap-2">
+                          <form action={reviewFix}>
+                            <input type="hidden" name="visitId" value={v.id} />
+                            <input type="hidden" name="decision" value="approve" />
+                            <Button
+                              type="submit"
+                              disabled={reviewingFix}
+                              aria-label={`${t.fixApprove}: ${rowLabel(v)}`}
+                            >
+                              {t.fixApprove}
+                            </Button>
+                          </form>
+                          <form action={reviewFix}>
+                            <input type="hidden" name="visitId" value={v.id} />
+                            <input type="hidden" name="decision" value="decline" />
+                            <Button
+                              type="submit"
+                              tone="quiet"
+                              disabled={reviewingFix}
+                              aria-label={`${t.fixDecline}: ${rowLabel(v)}`}
+                            >
+                              {t.fixDecline}
+                            </Button>
+                          </form>
+                        </span>
+                      ) : null}
+                    </span>
+                  ) : v.status === 'waiting' && v.needsConfirm ? (
                     <span className="flex flex-wrap gap-2">
+                      {v.partyId && v.partySize && v.partySize > 1 ? (
+                        // v0.16.0: a group from the kiosk: confirm everyone at once.
+                        <form action={review}>
+                          <input type="hidden" name="visitId" value={v.id} />
+                          <input type="hidden" name="decision" value="confirm" />
+                          <input type="hidden" name="wholeParty" value="true" />
+                          <Button
+                            type="submit"
+                            disabled={reviewing}
+                            aria-label={`${fill(t.groupConfirmAll, { n: v.partySize })}: ${rowLabel(v)}`}
+                          >
+                            {fill(t.groupConfirmAll, { n: v.partySize })}
+                          </Button>
+                        </form>
+                      ) : null}
                       <form action={review}>
                         <input type="hidden" name="visitId" value={v.id} />
                         <input type="hidden" name="decision" value="confirm" />
@@ -532,7 +732,12 @@ export function Desk({
                               >
                                 {fill(t.pickButton, { name: o.name })}
                               </Button>
-                              <span className="text-small text-slate/80">{optionLine(o)}</span>
+                              <span className="text-small text-slate/80">
+                                {optionLine(o)}
+                                {o.original ? (
+                                  <span className="font-semibold"> · {t.originalTech}</span>
+                                ) : null}
+                              </span>
                             </form>
                           </li>
                         ))}

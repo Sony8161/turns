@@ -11,6 +11,7 @@ import { useActionState, useCallback, useEffect, useRef, useState, type ReactNod
 import { fill, type Dictionary } from '@/i18n/dictionary';
 import { checkInAction, unlockAction, type KioskState } from './actions';
 import { techsFor, type KioskTech } from './form';
+import { KioskGroup } from './KioskGroup';
 
 export const IDLE_SECONDS = 60;
 const DONE_SECONDS = 12;
@@ -33,6 +34,8 @@ export function KioskScreen(props: {
   services: Service[];
   /** v0.15.0: only who is in today; serviceIds narrows it to the chosen services. */
   technicians: KioskTech[];
+  /** v0.16.0: most people in one group check-in (rules). */
+  groupMax: number;
   notice: { show: false } | { show: true; minutes: number | null };
   languageToggle: ReactNode;
 }) {
@@ -52,10 +55,13 @@ function KioskRound({
   locationName,
   services,
   technicians,
+  groupMax,
   notice,
   languageToggle,
   onReset,
 }: Parameters<typeof KioskScreen>[0] & { onReset: () => void }) {
+  // v0.16.0: "Just me" or "We're a group" comes first.
+  const [mode, setMode] = useState<'me' | 'group' | null>(null);
   const [state, action, pending] = useActionState<KioskState, FormData>(checkInAction, {});
   const [step, setStep] = useState(1);
   const [stepError, setStepError] = useState<string | null>(null);
@@ -158,7 +164,35 @@ function KioskRound({
         {languageToggle}
       </header>
 
-      {state.done ? (
+      {mode === null && !state.done ? (
+        <section className="flex flex-1 flex-col justify-center gap-6">
+          <h1 className="text-name font-semibold">{t.modeQuestion}</h1>
+          <div className="grid gap-4 sm:grid-cols-2">
+            <button type="button" onClick={() => setMode('me')} className={choice(false)}>
+              {t.modeJustMe}
+            </button>
+            <button type="button" onClick={() => setMode('group')} className={choice(false)}>
+              {t.modeGroup}
+            </button>
+          </div>
+          {notice.show ? (
+            <p className="text-lead font-semibold text-polish">
+              {notice.minutes ? fill(t.noticeMinutes, { minutes: notice.minutes }) : t.notice}
+            </p>
+          ) : null}
+        </section>
+      ) : mode === 'group' ? (
+        <KioskGroup
+          t={t}
+          services={services}
+          technicians={technicians}
+          max={groupMax}
+          onBack={() => setMode(null)}
+          onReset={onReset}
+          choice={choice}
+          input={input}
+        />
+      ) : state.done ? (
         <section
           aria-live="polite"
           className="flex flex-1 flex-col justify-center gap-6 text-center"
@@ -321,20 +355,18 @@ function KioskRound({
           ) : null}
 
           <div className="mt-auto flex items-center justify-between gap-4">
-            {step > 1 ? (
-              <button
-                type="button"
-                onClick={() => {
-                  setStepError(null);
-                  setStep((s) => s - 1);
-                }}
-                className="min-h-20 rounded-control border-4 border-slate px-8 text-kiosk-button font-semibold text-slate"
-              >
-                {t.back}
-              </button>
-            ) : (
-              <span />
-            )}
+            <button
+              type="button"
+              onClick={() => {
+                setStepError(null);
+                // v0.16.0: Back on the first question goes to "Just me / group".
+                if (step === 1) setMode(null);
+                else setStep((s) => s - 1);
+              }}
+              className="min-h-20 rounded-control border-4 border-slate px-8 text-kiosk-button font-semibold text-slate"
+            >
+              {t.back}
+            </button>
             {/* Distinct keys: one reused <button> flipped to type=submit during the
                 tap on Next and sent the form a step early (v0.10.2). */}
             {step < STEPS ? (

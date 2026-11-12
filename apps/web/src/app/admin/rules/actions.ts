@@ -1,7 +1,7 @@
 'use server';
 
-import { eq } from 'drizzle-orm';
-import { serviceCategories } from '@turn/db';
+import { and, eq, isNull } from 'drizzle-orm';
+import { serviceCategories, services } from '@turn/db';
 import { compareQueue } from '@turn/db/engine';
 import {
   activeRules,
@@ -94,17 +94,23 @@ async function rulesActionRun(_prev: RulesState, formData: FormData): Promise<Ru
   if (!m) return { error: 'not_allowed' };
   const typed = typedOf(formData);
 
-  const [base, categories] = await Promise.all([
+  const [base, categories, menu] = await Promise.all([
     activeRules(db(), m.locationId),
     db()
       .select({ id: serviceCategories.id })
       .from(serviceCategories)
       .where(eq(serviceCategories.locationId, m.locationId)),
+    // v0.16.0: the services the form shows (not archived), for points per service.
+    db()
+      .select({ id: services.id })
+      .from(services)
+      .where(and(eq(services.locationId, m.locationId), isNull(services.archivedAt))),
   ]);
   const { candidate, tierSlots } = configFromForm(
     formData,
     base,
     categories.map((c) => c.id),
+    menu.map((s) => s.id),
   );
 
   // A template fills the form and shows its preview; nothing is saved.

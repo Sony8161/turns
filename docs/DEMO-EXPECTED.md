@@ -19,6 +19,11 @@ start, and timers move on. Load again for a fresh copy.
 - Levels are a ladder: regular polish, gel, dip, acrylic. A service goes by turn only to the levels listed for it below. A higher-level tech who is next keeps her place and is skipped with no penalty; the desk may ask her (**Ask a higher-level tech**), and saying no costs nothing.
 - A visit with two or more services goes by turn to the first tech who gets at least one of them. If she does all of them she chooses **Do all** or **Split**; if she does only some she takes those. The rest waits until she is finished, then goes by turn with the client's original wait, and the next tech's call card shows a slip: who did what, what is left, and the request note.
 - The kiosk offers only techs who are in today and do every chosen service, with **Anyone** first.
+- A requested visit counts as a full normal turn; a manager can still adjust points by hand.
+- A service's own points come first: Gel polish change 1, Nail fix / repair 0, Polish change 0.
+- A nail fix or repair is free and entered at the desk only (never the kiosk). The desk sees the client's visits from the last 14 days; a fix a receptionist enters waits for a manager or owner to approve it. The desk picks the tech, the one who did the work first; saying no costs nothing.
+- A group checks in together (up to 8): each person is their own client and visit, called by turn on their own.
+- A called visit whose client walks out before the service starts: **Client left**. No points, the tech keeps her place.
 
 ## Levels
 
@@ -41,8 +46,11 @@ start, and timers move on. Load again for a fresh copy.
 | Gel fill | gel, dip, acrylic |
 | Gel manicure | gel, dip, acrylic |
 | Gel pedicure | gel, dip, acrylic |
+| Gel polish change | gel, dip, acrylic |
 | Gel-X full set | gel, dip, acrylic |
 | Nail art / design | nobody: the desk picks the tech |
+| Nail fix / repair | nobody: the desk picks the tech |
+| Polish change | regular polish, gel |
 | Spa pedicure | every level |
 
 ## The board, in queue order
@@ -69,6 +77,8 @@ Why this order:
 Press **Call next** on each waiting row, top to bottom; each called tech accepts on her phone
 (or the owner accepts for her from Manage).
 
+First: **Sara Kim** (Gel manicure) shows Linh called, but the client walked out. Press **Client left** on the row (or Linh presses it on her phone): no points, Linh keeps her place.
+
 1. **Thu Pham**, Gel manicure → nobody yet: the client asked for Hoa, so the visit waits for her and never falls back. The row shows Hoa: with a client. It is flagged already (this client arrived 12 minutes ago): **Keep waiting**, **Book for later** or **Send by turn**.
 2. **Hanh Bui**, Nail art / design → never called by turn. Press **Pick a tech**: Linh (free), Vân (free), Hoa (with a client). The picked tech may say no with no penalty.
 3. **Ngoc Vo**, Dip powder + Basic pedicure → **Linh**. Skipped: Thảo (appointment in 20 min). She does Basic pedicure only, so she takes that. Dip powder stays on the desk as "waits until Linh finishes", then goes by turn with the slip.
@@ -76,6 +86,10 @@ Press **Call next** on each waiting row, top to bottom; each called tech accepts
 5. **Minh Tran**, Basic manicure → nobody by turn yet. Skipped: Thảo (takes no male clients), Linh (with a client), Tâm (on break), Vân (with a client), Hoa (with a client), Mai (Basic manicure is not her level's by turn). The desk may press **Ask a higher-level tech**: Mai.
 6. **Lan Nguyen**, Gel manicure → **Mai**. Skipped: Thảo (appointment in 20 min), Linh (with a client), Tâm (on break), Vân (with a client), Hoa (with a client).
 7. **Bích**, Basic manicure: a kiosk check-in. It cannot be called until the desk presses Confirm. The client picked Vân on the kiosk: **Confirm** keeps the request, **Confirm, no request** sends it by turn.
+8. **Trang Ho**, Nail fix / repair → never called by turn. A fix of Linh's work 5 days ago, free. Hạnh (receptionist) entered it, so it waits until a manager or owner presses **Approve fix** (sign in as Phu or Vy); the sheet assumes approved. Press **Pick a tech**: Linh (with a client, did the original work), Thảo (available), Tâm (on break), Vân (with a client), Hoa (with a client), Mai (with a client). The picked tech may say no with no penalty.
+9. **Quynh**, Gel manicure: a kiosk check-in, one of a group of 3 (the desk row says "Group of 3"; **Confirm all 3** or one by one). It cannot be called until the desk presses Confirm.
+10. **Hien**, Basic pedicure: a kiosk check-in, one of a group of 3 (the desk row says "Group of 3"; **Confirm all 3** or one by one). It cannot be called until the desk presses Confirm.
+11. **Ly**, Polish change: a kiosk check-in, one of a group of 3 (the desk row says "Group of 3"; **Confirm all 3** or one by one). It cannot be called until the desk presses Confirm.
 
 ## The kiosk: who a client can pick
 
@@ -86,6 +100,10 @@ Only techs who are in today and do every chosen service, names only, with **Anyo
 | Basic pedicure | Anyone, Hoa, Linh, Mai, Tâm, Thảo, Vân |
 | Gel manicure | Anyone, Hoa, Linh, Mai, Thảo |
 | Acrylic fill + Spa pedicure | Anyone, Hoa, Mai |
+
+## Need help
+
+- Mai tapped **Need help** ("Need more acetone at station 4"). The desk board shows "Mai needs help" with the time waiting until someone presses **On my way**.
 
 ## Appointments today
 

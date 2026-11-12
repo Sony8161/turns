@@ -27,6 +27,7 @@ export type Capability =
   | 'view_audit' // managers: own location only, enforced by scoping
   | 'export_data'
   | 'manage_kiosks' // pair, re-pair and revoke the customer check-in iPads (Part 9)
+  | 'approve_fixes' // v0.16.0: approve or decline a nail fix a receptionist entered
   | 'technician_actions' // own status, accept, deny, finish
   | 'view_own_schedule' // own calls and upcoming appointments
   | 'delete_records'; // nobody, on purpose
@@ -48,6 +49,7 @@ const TABLE: Record<Capability, readonly Role[]> = {
   view_audit: ['owner', 'manager'],
   export_data: ['owner'],
   manage_kiosks: ['owner', 'manager'],
+  approve_fixes: ['owner', 'manager'],
   technician_actions: ['technician'],
   view_own_schedule: ['technician'],
   delete_records: [],

@@ -6,20 +6,24 @@ import { formatPoints } from '@/components/Board';
 import { Button } from '@/components/ui';
 import { fill, type Dictionary } from '@/i18n/dictionary';
 import { rulesAction, type RulesState } from './actions';
-import { DENY_REASONS, TIER_SLOTS } from './form';
+import { DENY_REASONS, FIX_WINDOW_CHOICES, TIER_SLOTS } from './form';
 
 type Category = { id: string; name: string; isFillOrFullSet: boolean };
+type Service = { id: string; name: string; category: string };
 
 /** The rule builder: one field per value, Preview and Save. Values are
  *  strings in and out; the server validates and names each problem. */
 export function RulesForm({
   values,
   categories,
+  services,
   version,
   t,
 }: {
   values: Record<string, string>;
   categories: Category[];
+  /** v0.16.0: points per service (blank = its category's). */
+  services: Service[];
   /** The newest stored version; the save is refused if it moves meanwhile. */
   version: number;
   t: Dictionary['rules'];
@@ -150,6 +154,19 @@ export function RulesForm({
       )}
 
       {section(
+        t.sections.services,
+        <div className="flex flex-col gap-3">
+          <p className="max-w-[70ch] text-slate/80">{t.servicesLead}</p>
+          <div className="flex flex-wrap gap-5">
+            {services.map((s) => number(`service.${s.id}`, s.name, s.category))}
+          </div>
+          {err('points.by_service') ? (
+            <span className="text-polish">{err('points.by_service')}</span>
+          ) : null}
+        </div>,
+      )}
+
+      {section(
         t.sections.penalties,
         <div className="flex flex-wrap gap-5">
           {number('penalties.deny', t.fields.deny)}
@@ -243,6 +260,28 @@ export function RulesForm({
           {number('attention.long_wait_min', t.fields.long_wait_min)}
           {number('attention.default_service_min', t.fields.default_service_min)}
           {number('attention.request_wait_min', t.fields.request_wait_min)}
+        </div>,
+      )}
+
+      {section(
+        t.sections.fixes,
+        <div className="flex flex-col gap-3">
+          <p className="max-w-[70ch] text-slate/80">{t.fixesLead}</p>
+          {select(
+            'fixes.window_days',
+            t.fields.fix_window_days,
+            [...new Set([...FIX_WINDOW_CHOICES, Number(v['fixes.window_days'] ?? 14) || 14])].map(
+              (d) => ({ value: String(d), label: fill(t.fields.fix_window_choice, { days: d }) }),
+            ),
+          )}
+          {toggle('fixes.receptionist_needs_approval', t.fields.fix_needs_approval)}
+        </div>,
+      )}
+
+      {section(
+        t.sections.groups,
+        <div className="flex flex-wrap gap-5">
+          {number('groups.max_people', t.fields.group_max_people)}
         </div>,
       )}
 

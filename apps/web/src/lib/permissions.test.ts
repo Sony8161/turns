@@ -28,6 +28,8 @@ const TABLE: Record<Capability, Record<Role, boolean>> = {
   view_audit: OM,
   export_data: O,
   manage_kiosks: OM,
+  // v0.16.0 (Duong): a receptionist's fix waits for a manager or owner.
+  approve_fixes: OM,
   technician_actions: T,
   view_own_schedule: T,
   delete_records: NOBODY,

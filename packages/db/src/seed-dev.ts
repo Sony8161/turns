@@ -377,6 +377,9 @@ export async function seedDev(url: string, opts: { demo?: boolean } = {}): Promi
             'DEMO DAY (npm run up -- -Demo): six technicians on the floor with points, a break, an out-over,',
             'appointments (Fresha calendar and desk) and seven clients waiting. What the engine should do',
             'next, and why, is in docs/DEMO-EXPECTED.md. Press Call next on the waiting rows top to bottom.',
+            'v0.16.0 on the demo day: Sara Kim was called to Linh and left (press Client left); a nail fix',
+            'for Trang Ho entered by Hạnh waits for Phu or Vy to approve; a kiosk group of three waits for',
+            'Confirm all 3; Mai tapped Need help (On my way on the desk clears it).',
             '',
           ]
         : [

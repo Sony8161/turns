@@ -18,6 +18,8 @@ import { feedStateFor } from '@turn/db/fresha';
 import { stateLine } from '@/components/fresha-state';
 import { signOut } from '../login/actions';
 import { CallPanel } from './CallPanel';
+import { ClientLeftButton, HelpPanel } from './MeExtras';
+import { myOpenHelp } from '@turn/db/help';
 import { StatusPanel } from './StatusPanel';
 
 // The technician's own screen: status, today's points, the call if there is
@@ -27,7 +29,7 @@ export default async function MePage() {
   const tech = await technicianForUser(actor.userId);
   // Part 6: the out-over penalty posts even if nobody looked at the board.
   if (tech) await sweepFloor(db(), tech.locationId);
-  const [board, call, rules, upcoming, loc, calendar] = tech
+  const [board, call, rules, upcoming, loc, calendar, help] = tech
     ? await Promise.all([
         locationStatus(db(), tech.locationId),
         openCallFor(db(), tech.id),
@@ -41,8 +43,10 @@ export default async function MePage() {
           .then((r) => r[0]),
         // v0.11.0: the own calendar's state, never its link.
         feedStateFor(db(), tech.id),
+        // v0.16.0: her own open "Need help", if any.
+        myOpenHelp(db(), tech.id),
       ])
-    : [[], null, null, [], undefined, null];
+    : [[], null, null, [], undefined, null, null];
   const timeOf = new Intl.DateTimeFormat(lang === 'vi' ? 'vi-VN' : 'en-US', {
     timeZone: loc?.timezone ?? 'America/New_York',
     weekday: 'short',
@@ -114,7 +118,14 @@ export default async function MePage() {
               t={t.me}
             />
           ) : null}
+          {call ? <ClientLeftButton visitId={call.visitId} t={t.me} /> : null}
           <StatusPanel status={status} called={!!call} t={t.me} />
+          {status !== 'off' ? (
+            <HelpPanel
+              openMinutes={help ? Math.floor(secondsSince(help.createdAt) / 60) : null}
+              t={t.me}
+            />
+          ) : null}
           <section className="flex flex-wrap items-center justify-between gap-3">
             <p className="text-slate/80">
               <span className="font-semibold">{t.fresha.meLine}: </span>

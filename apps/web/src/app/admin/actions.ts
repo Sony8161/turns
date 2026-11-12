@@ -2,16 +2,21 @@
 
 import {
   callNext,
+  clientLeft,
   createWalkIn,
   deskCall,
   expireCall,
   setLongWaitNotice,
   setVisitNote,
 } from '@turn/db/engine';
+import { fixCandidates, reviewFix } from '@turn/db/fixes';
+import { acknowledgeHelp } from '@turn/db/help';
 import { reviewKioskVisit } from '@turn/db/kiosk';
+import { createParty } from '@turn/db/party';
 import { bookForLater, keepWaiting, sendByTurn } from '@turn/db/requests';
-import { locations } from '@turn/db';
-import { eq } from 'drizzle-orm';
+import { locations, services } from '@turn/db';
+import { and, eq, inArray } from 'drizzle-orm';
+import { getDictionary } from '@/i18n/lang';
 import { revalidatePath } from 'next/cache';
 import { membershipWith, requireActor, type Membership } from '@/lib/auth';
 import { db } from '@/lib/db';
@@ -19,7 +24,7 @@ import { uuidOf } from '@/lib/ids';
 import { can } from '@/lib/permissions';
 import { toSkippedLines, type SkippedLine } from './chips';
 import { salonTime } from './appointments/form';
-import { walkInFromForm } from './form';
+import { groupFromForm, walkInFromForm } from './form';
 import { guarded } from '@/lib/action';
 
 export type DeskState = {
@@ -29,6 +34,8 @@ export type DeskState = {
   detail?: string;
   /** Who was passed over for the last call, and why (Part 6). */
   skipped?: SkippedLine[];
+  /** v0.16.0: set when a group was added, so the form starts over. */
+  done?: number;
 };
 
 async function deskMembership(): Promise<Membership | null> {
@@ -50,6 +57,22 @@ async function enterWalkInRun(_prev: DeskState, formData: FormData): Promise<Des
   const m = await deskMembership();
   if (!m) return { error: 'not_allowed' };
   const w = walkInFromForm(formData);
+  // v0.16.0: a nail fix: the role decides whether it waits for approval.
+  const fixes = w.serviceIds.length
+    ? await db()
+        .select({ id: services.id })
+        .from(services)
+        .where(
+          and(
+            inArray(
+              services.id,
+              w.serviceIds.filter((id) => uuidOf(id)),
+            ),
+            eq(services.locationId, m.locationId),
+            eq(services.isFix, true),
+          ),
+        )
+    : [];
   const result = await createWalkIn(db(), {
     organizationId: m.organizationId,
     locationId: m.locationId,
@@ -60,8 +83,158 @@ async function enterWalkInRun(_prev: DeskState, formData: FormData): Promise<Des
     attributes: w.attributes,
     sameTime: w.sameTime,
     actor: { userId: actor.userId },
+    ...(fixes.length && m.role !== 'technician'
+      ? { fix: { enteredBy: m.role, ofVisitId: uuidOf(formData.get('fixOfVisit')) } }
+      : {}),
   });
   revalidatePath('/admin');
+  return result.ok ? {} : { error: result.reason };
+}
+
+/** v0.16.0: the client's visits inside the fix window, for the desk's fix entry. */
+export type FixLookup = {
+  windowDays: number;
+  visits: {
+    visitId: string;
+    client: string | null;
+    date: string;
+    services: string[];
+    technician: string | null;
+    technicianWorking: boolean;
+  }[];
+};
+
+export async function lookupFixVisits(query: string): Promise<FixLookup | { error: string }> {
+  return guarded<FixLookup | { error: string }>(
+    'lookupFixVisits',
+    { error: 'server' },
+    async () => {
+      const m = await deskMembership();
+      if (!m) return { error: 'not_allowed' };
+      const [{ lang }, loc] = await Promise.all([
+        getDictionary(),
+        db()
+          .select({ timezone: locations.timezone })
+          .from(locations)
+          .where(eq(locations.id, m.locationId))
+          .then((r) => r[0]),
+      ]);
+      const found = await fixCandidates(db(), {
+        locationId: m.locationId,
+        query: String(query ?? '').slice(0, 60),
+      });
+      const day = new Intl.DateTimeFormat(lang === 'vi' ? 'vi-VN' : 'en-US', {
+        timeZone: loc?.timezone ?? 'America/New_York',
+        weekday: 'short',
+        month: 'short',
+        day: 'numeric',
+      });
+      return {
+        windowDays: found.windowDays,
+        visits: found.visits.map((v) => ({
+          visitId: v.visitId,
+          client: v.client,
+          date: day.format(v.at),
+          services: v.services,
+          technician: v.technician,
+          technicianWorking: v.technicianWorking,
+        })),
+      };
+    },
+  );
+}
+
+/** v0.16.0: a group at the desk: one visit per person, linked by a party id. */
+export async function enterGroup(prev: DeskState, formData: FormData): Promise<DeskState> {
+  return guarded('enterGroup', { error: 'server' } as DeskState, () =>
+    enterGroupRun(prev, formData),
+  );
+}
+
+async function enterGroupRun(_prev: DeskState, formData: FormData): Promise<DeskState> {
+  const actor = await requireActor();
+  const m = await deskMembership();
+  if (!m) return { error: 'not_allowed' };
+  const people = groupFromForm(formData);
+  const result = await createParty(db(), {
+    organizationId: m.organizationId,
+    locationId: m.locationId,
+    actor: { userId: actor.userId },
+    people,
+  });
+  revalidatePath('/admin');
+  return result.ok
+    ? { done: Date.now() }
+    : {
+        error: result.reason,
+        ...(result.person !== undefined ? { detail: String(result.person + 1) } : {}),
+      };
+}
+
+/** v0.16.0: a manager or owner approves or declines a receptionist's fix. */
+export async function reviewFixFor(prev: DeskState, formData: FormData): Promise<DeskState> {
+  return guarded('reviewFixFor', { error: 'server' } as DeskState, () =>
+    reviewFixForRun(prev, formData),
+  );
+}
+
+async function reviewFixForRun(_prev: DeskState, formData: FormData): Promise<DeskState> {
+  const actor = await requireActor();
+  const m = await deskMembership();
+  if (!m || !can(m.role, 'approve_fixes')) return { error: 'not_allowed' };
+  const visitId = uuidOf(formData.get('visitId'));
+  if (!visitId) return { error: 'unknown_visit' };
+  const result = await reviewFix(db(), {
+    actor: { userId: actor.userId, organizationId: m.organizationId, locationId: m.locationId },
+    visitId,
+    decision: formData.get('decision') === 'decline' ? 'decline' : 'approve',
+  });
+  revalidatePath('/admin');
+  return result.ok ? {} : { error: result.reason };
+}
+
+/** v0.16.0: the client left after the call, before the service started. */
+export async function clientLeftFor(prev: DeskState, formData: FormData): Promise<DeskState> {
+  return guarded('clientLeftFor', { error: 'server' } as DeskState, () =>
+    clientLeftForRun(prev, formData),
+  );
+}
+
+async function clientLeftForRun(_prev: DeskState, formData: FormData): Promise<DeskState> {
+  const actor = await requireActor();
+  const m = await deskMembership();
+  if (!m || !can(m.role, 'call_technician')) return { error: 'not_allowed' };
+  const visitId = uuidOf(formData.get('visitId'));
+  if (!visitId) return { error: 'unknown_visit' };
+  const result = await clientLeft(db(), {
+    visitId,
+    actor: { userId: actor.userId },
+    locationId: m.locationId,
+  });
+  revalidatePath('/admin');
+  revalidatePath('/me');
+  return result.ok ? {} : { error: result.reason };
+}
+
+/** v0.16.0: someone at the desk is on a technician's "Need help". */
+export async function ackHelpFor(prev: DeskState, formData: FormData): Promise<DeskState> {
+  return guarded('ackHelpFor', { error: 'server' } as DeskState, () =>
+    ackHelpForRun(prev, formData),
+  );
+}
+
+async function ackHelpForRun(_prev: DeskState, formData: FormData): Promise<DeskState> {
+  const actor = await requireActor();
+  const m = await deskMembership();
+  if (!m) return { error: 'not_allowed' };
+  const id = uuidOf(formData.get('helpId'));
+  if (!id) return { error: 'unknown_request' };
+  const result = await acknowledgeHelp(db(), {
+    actor: { userId: actor.userId, organizationId: m.organizationId, locationId: m.locationId },
+    id,
+  });
+  revalidatePath('/admin');
+  revalidatePath('/me');
   return result.ok ? {} : { error: result.reason };
 }
 
@@ -210,6 +383,8 @@ async function reviewKioskForRun(_prev: DeskState, formData: FormData): Promise<
     actor: { userId: actor.userId, organizationId: m.organizationId, locationId: m.locationId },
     visitId,
     decision,
+    // v0.16.0: "Confirm all" on a group from the kiosk.
+    wholeParty: formData.get('wholeParty') === 'true',
   });
   revalidatePath('/admin');
   return result.ok ? {} : { error: result.reason };
