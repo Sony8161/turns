@@ -48,6 +48,8 @@ export type TechCard = {
   tags: string[];
   restrictions: Restriction[];
   nextAppointmentAt: Date | null;
+  /** That appointment is inside the buffer: the engine holds them out of the line. */
+  heldForAppointment: boolean;
   /** The services of the client in the chair (in service) or being called. */
   currentServices: string[];
   lines: LedgerLine[];
@@ -160,6 +162,8 @@ export async function techBoard(db: Db, locationId: string, now = new Date()): P
       tags: profile?.tags ?? [],
       restrictions: profile?.restrictions ?? [],
       nextAppointmentAt: next.get(r.technicianId) ?? null,
+      heldForAppointment:
+        (next.get(r.technicianId)?.getTime() ?? Infinity) <= now.getTime() + bufferMs,
       currentServices: namesOf(chairVisit.get(r.technicianId)),
       lines: ledger
         .filter((l) => l.shiftId === r.shiftId)

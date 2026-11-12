@@ -317,6 +317,17 @@ points, what they do and do not take, the next appointment, who is in the
 chair, and "Why this order?" with every ledger line behind the total and the
 tie-break against the next tech.
 
+### Tech settings, rule templates, clients (v0.13.0)
+
+Each technician has a settings page: today's status and points (with a
+reason), and what they do and do not take. Owners and managers use it, and
+receptionists too unless the owner switches that off; technicians never.
+The rule builder starts from a template (the Heavenly standard, or a simple
+rotation) and previews today's line now and under the new rules side by side
+before anything is saved. Clients have first and last names; the desk finds
+a client by phone or name on Clients. The Fresha client list is imported
+before launch (backlog).
+
 ## How the pieces talk to each other
 
 ```

@@ -3,6 +3,7 @@ import { aheadBecause } from '@turn/db/board';
 import Link from 'next/link';
 import { formatPoints } from '@/components/Board';
 import { fill, type Dictionary } from '@/i18n/dictionary';
+import { lineText, signedPoints } from './tech-lines';
 
 const BAR: Record<TechCard['status'], string> = {
   off: 'border-pumice',
@@ -15,42 +16,6 @@ const BAR: Record<TechCard['status'], string> = {
 };
 
 const chip = 'inline-flex min-h-8 items-center rounded-full px-3 text-small font-medium';
-
-/** Signed points for one ledger line: +1, +½, −1. */
-export function signedPoints(delta: number): string {
-  return delta < 0 ? `−${formatPoints(-delta)}` : `+${formatPoints(delta)}`;
-}
-
-/** One ledger line in words. Exported for the test. */
-export function lineText(
-  line: TechCard['lines'][number],
-  t: Dictionary['techBoard'],
-  reasons: Record<string, string>,
-): string {
-  const minutes = line.note?.match(/\d+/)?.[0] ?? '';
-  const services = line.services.join(' + ');
-  switch (line.kind) {
-    case 'visit':
-      return fill(
-        line.source === 'appointment'
-          ? t.line.appointment
-          : line.source === 'request'
-            ? t.line.request
-            : t.line.visit,
-        { services },
-      );
-    case 'deny':
-      return fill(t.line.deny, { reason: reasons[line.note ?? 'other'] ?? line.note ?? '' });
-    case 'excuse':
-      return t.line.excuse;
-    case 'late':
-      return fill(t.line.late, { minutes });
-    case 'out_over':
-      return fill(t.line.out_over, { minutes });
-    default:
-      return t.line.manual;
-  }
-}
 
 /**
  * The tech board: one card per technician on shift, in the order the next call
@@ -78,7 +43,8 @@ export function TechCards({
     hour: 'numeric',
     minute: '2-digit',
   });
-  const firstFree = cards.find((c) => c.status === 'available');
+  // "Next up": the first one the engine would call for a plain walk-in.
+  const firstFree = cards.find((c) => c.status === 'available' && !c.heldForAppointment);
   return (
     <section aria-labelledby="tech-cards" className="flex flex-col gap-3">
       <div className="flex flex-col gap-1">
@@ -151,7 +117,9 @@ export function TechCards({
               </ul>
               <p className="text-slate/80">
                 {c.nextAppointmentAt
-                  ? fill(tb.nextAppointment, { time: clock.format(c.nextAppointmentAt) })
+                  ? fill(c.heldForAppointment ? tb.heldForAppointment : tb.nextAppointment, {
+                      time: clock.format(c.nextAppointmentAt),
+                    })
                   : tb.noAppointment}
               </p>
 

@@ -2,6 +2,46 @@
 
 One version per delivered part. Tags point at the commits.
 
+## v0.13.0, 2026-11-12: Tech settings, rule templates, client names and search
+
+- **A technician's settings page** (`/admin/staff/<id>`, from "Change this
+  technician" on a tech card or Staff). Today: status buttons for them (check
+  in, ready, break, out, check out; in service stays the engine's) and a points
+  adjustment in half steps with a required reason. Below it, skills, tags and
+  restrictions as before. Owners and managers always; **receptionists too,
+  unless the owner turns it off** (Staff → "Receptionists can change
+  technicians", on by default, audited as `technician_edits_setting`).
+  Technicians never: the check is in the database layer next to each write
+  (`tech-settings.ts`, `saveProfile`), and the database itself refuses a
+  technician writing points, skills, status, the setting or clients (tests).
+  Every change is in the Log with who made it, before and after.
+- **Make it yours: rule templates** on Rules. "Standard (Heavenly Nails)" and
+  "Simple rotation" (every service is 1 turn, appointments count like any
+  other visit, no cap, line by turns then check-in) fill the form; the salon's
+  attention timers and per-category points are kept. Nothing is saved until
+  Save. "Points by price tier" is not offered: services have no prices yet; per
+  category points already exist in the rule builder.
+- **Preview side by side.** Preview (and a template) shows today's line now
+  and under the typed rules next to each other, in the engine's own order (0
+  before 00 included); names that move are in blue. Fixed on the way: an
+  excused deny now stays cancelled in the preview when the deny penalty
+  changes (it used to leave the difference).
+- **Clients get a first and last name.** Existing names were split at the
+  first space (migration 0024). The kiosk asks first name (required) and last
+  name (optional); the desk's walk-in form has both; the desk edits both on the
+  client's page. Boards and the desk show "First L."; the full name is on the
+  client's page only.
+- **Client search** (`/admin/clients`, nav "Clients"; owner, managers,
+  receptionists). By phone in any format (3+ digits) or by name without
+  accents ("ngoc" finds "Ngọc"; a lower-case, accent-free copy is kept and
+  indexed). Shows visits, last visit; the client's page adds the usual
+  technician, the last ten visits and notes. No download of the list; 60
+  searches per person per 5 minutes. Opening a client is not written to the
+  audit log (the log would fill with reads; edits are logged, as
+  `client_updated` with the fields changed, never their values).
+- Backlog: importing the Fresha client list (DATA-001 in `08-backlog.md`).
+- Tests: `packages/db/test/v013.test.ts` (12), `apps/web/src/components/tech-lines.test.ts` (2), one more each in the desk and kiosk form tests.
+
 ## v0.12.0, 2026-11-12: Demo day, the tech board, "Why this order?"
 
 So the calling can be watched and the numbers checked by hand.

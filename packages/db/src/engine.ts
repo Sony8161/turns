@@ -149,6 +149,12 @@ export async function createWalkIn(
           organizationId: input.organizationId,
           locationId: input.locationId,
           name: input.client?.name ?? null,
+          ...(input.client?.firstName !== undefined || input.client?.lastName !== undefined
+            ? {
+                firstName: input.client?.firstName ?? null,
+                lastName: input.client?.lastName ?? null,
+              }
+            : {}),
           phone: input.client?.phone ?? null,
           gender,
         });

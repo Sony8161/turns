@@ -201,7 +201,7 @@ export function parseClientQuery(raw: string): { phone: string } | { name: strin
     return { phone: digits.length === 11 && digits.startsWith('1') ? digits.slice(1) : digits };
   }
   const name = searchKey(q);
-  return name.length >= 2 ? { name } : null;
+  return name.length >= 2 && /\p{L}/u.test(name) ? { name } : null;
 }
 
 export async function searchClients(

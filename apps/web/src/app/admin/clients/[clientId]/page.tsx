@@ -58,7 +58,11 @@ export default async function ClientPage({ params }: { params: Promise<{ clientI
           {tc.back}
         </Link>
         <h1 className="text-heading font-semibold">{full}</h1>
-        <p className="text-lead">{c.phone ?? tc.noPhone}</p>
+        <p className="text-lead">
+          {c.phone?.match(/^\+1(\d{3})(\d{3})(\d{4})$/)
+            ? c.phone.replace(/^\+1(\d{3})(\d{3})(\d{4})$/, '($1) $2-$3')
+            : (c.phone ?? tc.noPhone)}
+        </p>
         <p className="text-slate/80">
           {fill(tc.visits, { n: c.visitCount })}
           {c.lastVisitAt ? ` · ${fill(tc.lastVisit, { date: day.format(c.lastVisitAt) })}` : ''}

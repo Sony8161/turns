@@ -160,6 +160,8 @@ describe('demo day', () => {
     expect(card('Hoa').currentServices).toEqual(['Spa pedicure']);
     expect(card('Hoa').status).toBe('in_service');
     expect(card('Thảo').nextAppointmentAt).not.toBeNull(); // in 20 min
+    expect(card('Thảo').heldForAppointment).toBe(true);
+    expect(card('Linh').heldForAppointment).toBe(false); // 3 hours away
     expect(card('Tâm').nextAppointmentAt).toBeNull(); // her calendar client is a no-show
     expect(card('Vân').skills).toEqual(['manicure', 'pedicure']);
     expect(card('Linh').skills).toBeNull();

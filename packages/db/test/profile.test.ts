@@ -170,11 +170,16 @@ describe('saveProfile', () => {
     expect((await loadProfiles(db, LOC)).get(tech)).toBeUndefined();
   });
 
-  it('a receptionist cannot; a manager at another location cannot; unknown ids are refused', async () => {
+  it('a receptionist cannot when the owner turned it off (v0.13.0: on by default); a manager at another location cannot; unknown ids are refused', async () => {
     const empty = { skillCategoryIds: null, tags: [], restrictions: [] };
+    await sql`update locations set receptionist_edits_technicians = false`;
     expect(
       await saveProfile(db, { actor: receptionist, technicianId: tech, profile: empty }),
     ).toEqual({ ok: false, reason: 'not_allowed' });
+    await sql`update locations set receptionist_edits_technicians = true`;
+    expect(
+      (await saveProfile(db, { actor: receptionist, technicianId: tech, profile: empty })).ok,
+    ).toBe(true);
     expect(await saveProfile(db, { actor: managerB, technicianId: tech, profile: empty })).toEqual({
       ok: false,
       reason: 'wrong_location',

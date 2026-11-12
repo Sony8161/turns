@@ -905,6 +905,7 @@ const en = {
       full_set: 'full set',
     } as Record<string, string>,
     nextAppointment: 'Next appointment {time}',
+    heldForAppointment: 'Appointment at {time}: held out of the line until the client arrives',
     noAppointment: 'No appointment coming up',
     withClient: 'With a client: {services}',
     called: 'Being called: {services}',
@@ -935,7 +936,7 @@ const en = {
   techSettings: {
     lead: "Today's status and points, and what this technician does and does not take. Every change is in the Log with who made it.",
     todayTitle: 'Today',
-    statusLine: '{name} is {status}, {points} points today.',
+    statusLine: '{name}: {status}, {points} points today.',
     setStatus: 'Change status for them (a phone that died, a forgotten tap):',
     inServiceNote: 'With a client now. Status changes when they tap Finished.',
     moves: {
@@ -1919,6 +1920,7 @@ const vi: Dictionary = {
       full_set: 'full set',
     } as Record<string, string>,
     nextAppointment: 'Hẹn kế tiếp {time}',
+    heldForAppointment: 'Có hẹn lúc {time}: tạm không nhận lượt cho đến khi khách tới',
     noAppointment: 'Không có hẹn sắp tới',
     withClient: 'Đang làm cho khách: {services}',
     called: 'Đang được gọi: {services}',
@@ -1949,7 +1951,7 @@ const vi: Dictionary = {
   techSettings: {
     lead: 'Trạng thái và điểm hôm nay, và thợ này làm gì, không nhận ai. Mọi thay đổi đều ghi vào Nhật ký kèm người sửa.',
     todayTitle: 'Hôm nay',
-    statusLine: '{name} đang {status}, hôm nay {points} điểm.',
+    statusLine: '{name}: {status}, hôm nay {points} điểm.',
     setStatus: 'Đổi trạng thái giúp thợ (điện thoại hết pin, quên bấm):',
     inServiceNote: 'Đang làm cho khách. Trạng thái đổi khi thợ bấm Xong.',
     moves: {

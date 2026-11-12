@@ -546,6 +546,29 @@ calendar sync / export link; it starts with
    loading; after that Thảo's client is close to due. Load again for a fresh
    copy.
 
+## 8l. Tech settings, rule templates, clients (v0.13.0)
+
+Load the demo first (`npm run up -- -Demo`, section 8k).
+
+1. **Tech settings as the receptionist.** Sign in as Hạnh (+18135550102). On the
+   board, open a tech card's "Why this order?" and "Change this technician".
+   Press Break, then Ready: the card follows. Adjust +½ with a reason: the
+   total moves and the card's lines show "Adjusted by a manager". Log: both
+   with Hạnh's name.
+2. **The owner's switch.** Sign in as Phu, Staff → untick "Receptionists can
+   change technicians", Save. As Hạnh the link is gone and the page says her
+   role cannot. Tick it again.
+3. **A technician cannot.** As Linh, `/admin/staff/<any id>` sends her to `/me`.
+4. **Templates.** As Phu, Rules → "Use this template" on Simple rotation. The
+   preview shows the line now and under the template side by side (Linh's ½
+   appointment becomes a full 1, Hoa's fill counts 1). Nothing is saved; press
+   Save to make it the rules, or leave the page.
+5. **Names.** On the kiosk, type a first and last name. The desk row shows
+   "First L."; Clients → the full name.
+6. **Search.** Clients → `0201` finds Lan Nguyen; `ngoc` finds Ngoc Vo; `minh`
+   finds Minh Tran. Open one: visits, usual technician, notes. Edit the last
+   name, Save: Log shows "Client name or notes changed" without the name.
+
 ## 9. If something is off
 
 - **"Something went wrong on our side"** on sign-in: the local stack is probably
@@ -561,4 +584,4 @@ calendar sync / export link; it starts with
 
 ## What is not here yet
 
-Push to the phone (the end-of-day summary included) and the Expo app. Heavenly's real Fresha feed has not been opened yet.
+Push to the phone (the end-of-day summary included) and the Expo app. Heavenly's real Fresha feed has not been opened yet. Importing the Fresha client list (backlog DATA-001). Rule templates priced by service (services have no prices yet).

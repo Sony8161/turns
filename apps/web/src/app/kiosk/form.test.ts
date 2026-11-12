@@ -24,6 +24,7 @@ describe('kiosk form', () => {
     ).toEqual({
       ok: true,
       name: 'Lan',
+      lastName: null,
       phone: '813 555 0142',
       serviceIds: [A],
       requestedTechnicianId: null,
