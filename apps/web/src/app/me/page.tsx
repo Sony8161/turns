@@ -14,6 +14,8 @@ import { getDictionary } from '@/i18n/lang';
 import { requireActor } from '@/lib/auth';
 import { db } from '@/lib/db';
 import { technicianForUser } from '@/lib/technician';
+import { feedStateFor } from '@turn/db/fresha';
+import { stateLine } from '@/components/fresha-state';
 import { signOut } from '../login/actions';
 import { CallPanel } from './CallPanel';
 import { StatusPanel } from './StatusPanel';
@@ -25,7 +27,7 @@ export default async function MePage() {
   const tech = await technicianForUser(actor.userId);
   // Part 6: the out-over penalty posts even if nobody looked at the board.
   if (tech) await sweepFloor(db(), tech.locationId);
-  const [board, call, rules, upcoming, loc] = tech
+  const [board, call, rules, upcoming, loc, calendar] = tech
     ? await Promise.all([
         locationStatus(db(), tech.locationId),
         openCallFor(db(), tech.id),
@@ -37,8 +39,10 @@ export default async function MePage() {
           .from(locations)
           .where(eq(locations.id, tech.locationId))
           .then((r) => r[0]),
+        // v0.11.0: the own calendar's state, never its link.
+        feedStateFor(db(), tech.id),
       ])
-    : [[], null, null, [], undefined];
+    : [[], null, null, [], undefined, null];
   const timeOf = new Intl.DateTimeFormat(lang === 'vi' ? 'vi-VN' : 'en-US', {
     timeZone: loc?.timezone ?? 'America/New_York',
     weekday: 'short',
@@ -107,6 +111,36 @@ export default async function MePage() {
             />
           ) : null}
           <StatusPanel status={status} called={!!call} t={t.me} />
+          <section className="flex flex-wrap items-center justify-between gap-3">
+            <p className="text-slate/80">
+              <span className="font-semibold">{t.fresha.meLine}: </span>
+              {calendar?.connected
+                ? stateLine(
+                    t.fresha,
+                    calendar.lastError
+                      ? {
+                          kind: 'failing',
+                          error:
+                            t.fresha.errors[calendar.lastError] ??
+                            t.appointments.feedErrors[calendar.lastError] ??
+                            calendar.lastError,
+                        }
+                      : calendar.lastSyncedAt
+                        ? {
+                            kind: calendar.stale ? 'stale' : 'ok',
+                            time: timeOf.format(calendar.lastSyncedAt),
+                          }
+                        : { kind: 'never' },
+                  )
+                : t.fresha.stateNone}
+            </p>
+            <Link
+              href="/me/calendar"
+              className="inline-flex min-h-11 items-center font-semibold underline"
+            >
+              {calendar?.connected ? t.fresha.meManage : t.fresha.meAdd}
+            </Link>
+          </section>
           {upcoming.length > 0 ? (
             <section className="flex flex-col gap-2">
               <h2 className="text-lead font-semibold">{t.me.upcoming}</h2>

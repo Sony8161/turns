@@ -37,8 +37,11 @@ export function AppointmentsPanel({
   technicians,
   sync,
   appointments,
+  otherLinks,
 }: {
   t: Dictionary['appointments'];
+  /** The folded generic-link section's title (v0.11.0). */
+  otherLinks: string;
   isOwner: boolean;
   now: string;
   services: Service[];
@@ -251,8 +254,12 @@ export function AppointmentsPanel({
       </form>
 
       {isOwner ? (
-        <section className="flex flex-col gap-3">
-          <h2 className="text-heading font-semibold">{t.feeds}</h2>
+        // v0.11.0: Fresha links go through the Connect Fresha card above; any
+        // other calendar (the generic link path) stays here, folded away.
+        <details className="flex flex-col gap-3">
+          <summary className="min-h-11 cursor-pointer text-lead font-semibold">
+            {otherLinks}
+          </summary>
           <p className="max-w-[70ch] text-slate/80">{t.feedsLead}</p>
           <ol className="flex flex-col gap-2">
             {technicians.map((x) => (
@@ -298,7 +305,7 @@ export function AppointmentsPanel({
               </li>
             ))}
           </ol>
-        </section>
+        </details>
       ) : null}
     </div>
   );

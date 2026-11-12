@@ -30,7 +30,8 @@ export async function GET(request: NextRequest) {
       locationName: pending.locationName.trim().slice(0, 80),
       ...contact,
     });
-    return to(result.ok ? '/admin' : `/setup?error=${result.reason}`);
+    // v0.11.0: the optional last step, connecting Fresha calendars.
+    return to(result.ok ? '/setup/calendars' : `/setup?error=${result.reason}`);
   }
 
   const result = await redeemInvite(db(), {
@@ -39,5 +40,7 @@ export async function GET(request: NextRequest) {
     displayName: name,
     ...contact,
   });
-  return to(result.ok ? '/admin' : `/join?error=${result.reason}`);
+  if (!result.ok) return to(`/join?error=${result.reason}`);
+  // v0.11.0: a new technician is offered their own Fresha calendar (optional).
+  return to(result.role === 'technician' ? '/me/calendar?welcome=1' : '/admin');
 }

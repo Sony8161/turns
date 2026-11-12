@@ -5,12 +5,14 @@ import { and, asc, eq, isNull } from 'drizzle-orm';
 import { redirect } from 'next/navigation';
 import { AdminNav } from '@/components/AdminNav';
 import { AutoRefresh } from '@/components/AutoRefresh';
+import { FreshaConnect } from '@/components/FreshaConnect';
 import { Button } from '@/components/ui';
 import { fill } from '@/i18n/dictionary';
 import { LanguageToggle } from '@/i18n/LanguageToggle';
 import { getDictionary } from '@/i18n/lang';
 import { membershipWith, requireActor } from '@/lib/auth';
 import { db } from '@/lib/db';
+import { ownerRows } from '@/lib/fresha-rows';
 import { can } from '@/lib/permissions';
 import { signOut } from '../../login/actions';
 import { AppointmentsPanel } from './AppointmentsPanel';
@@ -105,6 +107,8 @@ export default async function AppointmentsPage() {
     minute: '2-digit',
   });
   const feedByTech = new Map(feeds.map((f) => [f.technicianId, f]));
+  // v0.11.0: the Connect Fresha card, owner only, with each technician's state.
+  const freshaRows = isOwner ? await ownerRows(m.locationId, t, lang, timezone) : [];
 
   return (
     <main className="mx-auto flex w-full max-w-5xl flex-1 flex-col gap-8 px-4 py-6 sm:px-8">
@@ -124,8 +128,22 @@ export default async function AppointmentsPage() {
         </h1>
         <p className="max-w-[70ch] text-slate/80">{t.appointments.lead}</p>
       </section>
+      {isOwner ? (
+        <section className="flex flex-col gap-3" aria-labelledby="fresha-title">
+          <h2 id="fresha-title" className="text-heading font-semibold">
+            {t.fresha.title}
+          </h2>
+          <p className="max-w-[70ch] text-slate/80">{t.fresha.howTo}</p>
+          {freshaRows.length > 0 ? (
+            <FreshaConnect t={t.fresha} mode="owner" rows={freshaRows} />
+          ) : (
+            <p className="max-w-[70ch]">{t.fresha.noTechs}</p>
+          )}
+        </section>
+      ) : null}
       <AppointmentsPanel
         t={t.appointments}
+        otherLinks={t.fresha.otherLinks}
         isOwner={isOwner}
         now={salonInput(now, timezone)}
         services={menu}
