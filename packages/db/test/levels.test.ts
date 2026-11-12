@@ -445,6 +445,12 @@ describe('asking a higher-level technician', () => {
     });
   });
 
+  it('while someone can take it by turn, the desk is not offered the higher level', async () => {
+    await transition(db, { technicianId: reg.id, to: 'available', actor: { userId: reg.userId } });
+    expect((await deskOptions(db, LOC)).get(visit)).toBeUndefined();
+    await transition(db, { technicianId: reg.id, to: 'break', actor: { userId: reg.userId } });
+  });
+
   it('an offer cannot go to someone who is not held out by the level rule', async () => {
     expect(
       await deskCall(db, {

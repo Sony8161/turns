@@ -375,7 +375,7 @@ export async function seedDev(url: string, opts: { demo?: boolean } = {}): Promi
       ...(opts.demo
         ? [
             'DEMO DAY (npm run up -- -Demo): six technicians on the floor with points, a break, an out-over,',
-            'appointments (Fresha calendar and desk) and six clients waiting. What the engine should do',
+            'appointments (Fresha calendar and desk) and seven clients waiting. What the engine should do',
             'next, and why, is in docs/DEMO-EXPECTED.md. Press Call next on the waiting rows top to bottom.',
             '',
           ]

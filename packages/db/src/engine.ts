@@ -975,7 +975,13 @@ export async function deskOptions(
             : c.why === 'not_by_turn',
         )
         .map(({ o }) => o);
-      if (picks || technicians.length) out.set(visit.id, { deskPicks: picks, technicians });
+      // Asking a higher level is for when nobody gets it by turn right now
+      // (Duong: "if it is very busy"); while someone does, Call next is the way.
+      const byTurnFree = queue.some((c) => c.eligible);
+      if (picks) out.set(visit.id, { deskPicks: true, technicians });
+      else if (technicians.length && !byTurnFree) {
+        out.set(visit.id, { deskPicks: false, technicians });
+      }
     }
     return out;
   });
