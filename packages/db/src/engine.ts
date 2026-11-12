@@ -97,6 +97,15 @@ export async function createWalkIn(
       lastName?: string | null;
       phone?: string | null;
     } | null;
+    /** v0.16.0: people who came in together share this id (party.ts). */
+    partyId?: string | null;
+    /** v0.16.0: a nail fix or repair entered at the desk (fixes.ts). The role
+     *  decides whether it waits for a manager's approval; ofVisitId is the
+     *  earlier visit it fixes, when the desk found one in the window. */
+    fix?: {
+      enteredBy: 'owner' | 'manager' | 'receptionist';
+      ofVisitId?: string | null;
+    } | null;
   },
 ): Promise<{ ok: true; visitId: string; visitIds: string[] } | EngineError> {
   if (input.serviceIds.length === 0) return { ok: false, reason: 'no_services' };
@@ -111,6 +120,7 @@ export async function createWalkIn(
         id: services.id,
         isFillOrFullSet: serviceCategories.isFillOrFullSet,
         categoryId: serviceCategories.id,
+        isFix: services.isFix,
       })
       .from(services)
       .innerJoin(serviceCategories, eq(serviceCategories.id, services.categoryId))
@@ -123,6 +133,27 @@ export async function createWalkIn(
       );
     if (rows.length !== new Set(input.serviceIds).size) {
       return { ok: false, reason: 'unknown_service' };
+    }
+    // v0.16.0: a fix is desk only (never the kiosk) and goes on its own visit.
+    const isFix = rows.some((r) => r.isFix);
+    if (isFix && (input.kiosk || !input.fix)) return { ok: false, reason: 'unknown_service' };
+    if (isFix && rows.length > 1) return { ok: false, reason: 'fix_alone' };
+    if (!isFix && input.fix) return { ok: false, reason: 'not_a_fix' };
+    let fixOf: { id: string; clientId: string | null } | null = null;
+    if (isFix && input.fix?.ofVisitId) {
+      const [orig] = await tx
+        .select({ id: visits.id, clientId: visits.clientId })
+        .from(visits)
+        .where(
+          and(
+            eq(visits.id, input.fix.ofVisitId),
+            eq(visits.locationId, input.locationId),
+            eq(visits.organizationId, input.organizationId),
+            eq(visits.status, 'completed'),
+          ),
+        );
+      if (!orig) return { ok: false, reason: 'unknown_fix_visit' };
+      fixOf = orig;
     }
     if (input.requestedTechnicianId) {
       const [t] = await tx
@@ -147,23 +178,31 @@ export async function createWalkIn(
     }
     const client = input.kiosk
       ? ({ ok: true, clientId: null } as const)
-      : await upsertClient(tx, {
-          organizationId: input.organizationId,
-          locationId: input.locationId,
-          name: input.client?.name ?? null,
-          ...(input.client?.firstName !== undefined || input.client?.lastName !== undefined
-            ? {
-                firstName: input.client?.firstName ?? null,
-                lastName: input.client?.lastName ?? null,
-              }
-            : {}),
-          phone: input.client?.phone ?? null,
-          gender,
-        });
+      : fixOf?.clientId
+        ? // v0.16.0: a fix belongs to the client of the visit it fixes.
+          ({ ok: true, clientId: fixOf.clientId } as const)
+        : await upsertClient(tx, {
+            organizationId: input.organizationId,
+            locationId: input.locationId,
+            name: input.client?.name ?? null,
+            ...(input.client?.firstName !== undefined || input.client?.lastName !== undefined
+              ? {
+                  firstName: input.client?.firstName ?? null,
+                  lastName: input.client?.lastName ?? null,
+                }
+              : {}),
+            phone: input.client?.phone ?? null,
+            gender,
+          });
     if (!client.ok) return { ok: false, reason: client.reason };
 
     const rules = await activeRules(tx, input.locationId);
     const source = input.source ?? 'walk_in';
+    // v0.16.0: a receptionist's fix waits for a manager or owner (rules);
+    // a manager's or owner's is approved as it is entered.
+    const needsApproval =
+      isFix && input.fix?.enteredBy === 'receptionist' && rules.fixes.receptionist_needs_approval;
+    const approvedNow = isFix && !needsApproval;
     const groupId = sameTime ? randomUUID() : null;
     const groups = sameTime ? rows.map((s) => [s]) : [rows];
     const visitIds: string[] = [];
@@ -194,6 +233,11 @@ export async function createWalkIn(
           kioskLastName: input.kiosk?.lastName ?? null,
           kioskPhone,
           needsConfirm: !!input.kiosk,
+          partyId: input.partyId ?? null,
+          isFix,
+          fixOfVisitId: fixOf?.id ?? null,
+          needsApproval,
+          ...(approvedNow ? { approvedBy: input.actor.userId, approvedAt: new Date() } : {}),
         })
         .returning({ id: visits.id });
       if (!visit) throw new Error('visit insert returned nothing');
@@ -202,7 +246,11 @@ export async function createWalkIn(
           organizationId: input.organizationId,
           visitId: visit.id,
           serviceId: s.id,
-          pointsValueSnapshot: visitPointsUnder(rules, [s], 'walk_in').toFixed(1),
+          pointsValueSnapshot: visitPointsUnder(
+            rules,
+            [{ ...s, serviceId: s.id }],
+            'walk_in',
+          ).toFixed(1),
         })),
       );
       // The attributes the engine used, never the name or phone (T11).
@@ -212,8 +260,17 @@ export async function createWalkIn(
         actorUserId: input.actor.userId,
         entityType: 'visits',
         entityId: visit.id,
-        action: input.kiosk ? 'kiosk_check_in' : 'visit_created',
+        action: input.kiosk ? 'kiosk_check_in' : isFix ? 'fix_entered' : 'visit_created',
         after: {
+          ...(input.partyId ? { partyId: input.partyId } : {}),
+          ...(isFix
+            ? {
+                fixOfVisitId: fixOf?.id ?? null,
+                // No visit found in the window: the approver saw the warning.
+                inWindow: fixOf !== null,
+                needsApproval,
+              }
+            : {}),
           source: storedSource,
           requestedTechnicianId: requested,
           ...(input.kiosk ? { kioskDeviceId: input.kiosk.deviceId } : {}),
@@ -640,6 +697,8 @@ export async function callNext(
     if (visit.status !== 'waiting') return { ok: false, reason: 'visit_not_waiting' };
     // Part 9: a kiosk check-in is confirmed by the desk first (a trigger also refuses).
     if (visit.needsConfirm) return { ok: false, reason: 'needs_confirm' };
+    // v0.16.0: a receptionist's fix waits for a manager or owner (a trigger also refuses).
+    if (visit.needsApproval) return { ok: false, reason: 'needs_approval' };
     // v0.14.0: a service the desk picks the technician for is never called by turn.
     if (await hasDeskPick(tx, visit.id)) return { ok: false, reason: 'desk_picks' };
     // v0.15.0: the rest of a split visit waits for the first part to finish.
@@ -992,6 +1051,7 @@ export async function deskCall(
     if (visit.locationId !== input.locationId) return { ok: false, reason: 'wrong_location' };
     if (visit.status !== 'waiting') return { ok: false, reason: 'visit_not_waiting' };
     if (visit.needsConfirm) return { ok: false, reason: 'needs_confirm' };
+    if (visit.needsApproval) return { ok: false, reason: 'needs_approval' };
     if (await waitsBehind(tx, visit)) return { ok: false, reason: 'waits_for_first_part' };
     const picks = await hasDeskPick(tx, visit.id);
     if (input.kind === 'desk_pick' && !picks) return { ok: false, reason: 'not_desk_pick' };
@@ -1058,6 +1118,8 @@ export async function deskCall(
 export type DeskOption = {
   technicianId: string;
   displayName: string;
+  /** v0.16.0: she did the work this fix repairs: the desk's first choice. */
+  original?: boolean;
   level: SkillLevel | null;
   /** Place in today's line, 1 = next. */
   turn: number;
@@ -1087,6 +1149,7 @@ export async function deskOptions(
           eq(visits.locationId, locationId),
           eq(visits.status, 'waiting'),
           eq(visits.needsConfirm, false),
+          eq(visits.needsApproval, false),
         ),
       );
     const out = new Map<string, { deskPicks: boolean; technicians: DeskOption[] }>();
@@ -1117,6 +1180,19 @@ export async function deskOptions(
       // Asking a higher level is for when nobody gets it by turn right now
       // (Duong: "if it is very busy"); while someone does, Call next is the way.
       const byTurnFree = queue.some((c) => c.eligible);
+      // v0.16.0: a fix: the technician who did the original work comes first,
+      // marked, when she is working today.
+      if (visit.fixOfVisitId) {
+        const [orig] = await tx
+          .select({ technicianId: visits.assignedTechnicianId })
+          .from(visits)
+          .where(eq(visits.id, visit.fixOfVisitId));
+        const at = technicians.findIndex((o) => o.technicianId === orig?.technicianId);
+        if (at >= 0) {
+          const [mine] = technicians.splice(at, 1);
+          technicians.unshift({ ...mine!, original: true });
+        }
+      }
       if (picks) out.set(visit.id, { deskPicks: true, technicians });
       else if (technicians.length && !byTurnFree) {
         out.set(visit.id, { deskPicks: false, technicians });
@@ -1145,6 +1221,7 @@ export async function finishVisit(
       .select({
         isFillOrFullSet: serviceCategories.isFillOrFullSet,
         categoryId: serviceCategories.id,
+        serviceId: visitServices.serviceId,
       })
       .from(visitServices)
       .innerJoin(services, eq(services.id, visitServices.serviceId))
@@ -1476,7 +1553,7 @@ export async function setVisitNote(
       )
       .for('update');
     if (!visit) return { ok: false, reason: 'unknown_visit' } as const;
-    if (visit.status === 'completed' || visit.status === 'cancelled') {
+    if (visit.status === 'completed' || visit.status === 'cancelled' || visit.status === 'left') {
       return { ok: false, reason: 'visit_closed' } as const;
     }
     if ((visit.note ?? null) === note) return { ok: true } as const;
@@ -1493,6 +1570,42 @@ export async function setVisitNote(
     });
     return { ok: true } as const;
   });
+}
+
+/** v0.16.0: the earlier visit a fix repairs, as the desk shows it. */
+export type FixOrigin = {
+  visitId: string;
+  at: Date;
+  services: string[];
+  technicianId: string | null;
+  technician: string | null;
+};
+
+export async function fixOrigin(db: Db | Tx, visitId: string): Promise<FixOrigin | null> {
+  const [v] = await db
+    .select({
+      id: visits.id,
+      at: visits.arrivedAt,
+      technicianId: visits.assignedTechnicianId,
+      technician: technicians.displayName,
+    })
+    .from(visits)
+    .leftJoin(technicians, eq(technicians.id, visits.assignedTechnicianId))
+    .where(eq(visits.id, visitId));
+  if (!v) return null;
+  const items = await db
+    .select({ name: services.name })
+    .from(visitServices)
+    .innerJoin(services, eq(services.id, visitServices.serviceId))
+    .where(eq(visitServices.visitId, v.id))
+    .orderBy(asc(services.name));
+  return {
+    visitId: v.id,
+    at: v.at,
+    services: items.map((i) => i.name),
+    technicianId: v.technicianId,
+    technician: v.technician,
+  };
 }
 
 /** The front desk's view: waiting, called and in-service visits with their services. */
@@ -1526,6 +1639,11 @@ export async function waitingVisits(db: Db, locationId: string) {
       splitFromVisitId: visits.splitFromVisitId,
       requestedTechnicianId: visits.requestedTechnicianId,
       callKind: turnCalls.kind,
+      // v0.16.0
+      partyId: visits.partyId,
+      isFix: visits.isFix,
+      fixOfVisitId: visits.fixOfVisitId,
+      needsApproval: visits.needsApproval,
     })
     .from(visits)
     .leftJoin(turnCalls, and(eq(turnCalls.visitId, visits.id), isNull(turnCalls.respondedAt)))
@@ -1565,8 +1683,28 @@ export async function waitingVisits(db: Db, locationId: string) {
       held: behind ? { technician: slip?.at(-1)?.technician ?? null } : null,
     });
   }
+  // v0.16.0: how many people came in together ("Group of 3").
+  const partyIds = [...new Set(rows.map((r) => r.partyId).filter((p): p is string => !!p))];
+  const partySizes = new Map<string, number>();
+  if (partyIds.length) {
+    const sizes = await db
+      .select({ partyId: visits.partyId, n: sql<number>`count(*)::int` })
+      .from(visits)
+      .where(and(inArray(visits.partyId, partyIds), eq(visits.locationId, locationId)))
+      .groupBy(visits.partyId);
+    for (const z of sizes) if (z.partyId) partySizes.set(z.partyId, Number(z.n));
+  }
+  // v0.16.0: the visit a fix repairs: when, what, and who did it.
+  const fixes = new Map<string, FixOrigin>();
+  for (const r of rows) {
+    if (!r.fixOfVisitId) continue;
+    const origin = await fixOrigin(db, r.fixOfVisitId);
+    if (origin) fixes.set(r.id, origin);
+  }
   return rows.map((r) => ({
     ...r,
+    partySize: r.partyId ? (partySizes.get(r.partyId) ?? 1) : null,
+    fixOf: fixes.get(r.id) ?? null,
     services: items.filter((i) => i.visitId === r.id).map((i) => i.name),
     /** v0.14.0: the desk picks the technician for this visit (never by turn). */
     deskPicks: items.some((i) => i.visitId === r.id && i.deskPicks),
@@ -2104,5 +2242,69 @@ export async function adjustPoints(
       reason,
     });
     return { ok: true };
+  });
+}
+
+/**
+ * v0.16.0, "Client left": the visit was called but the service had not started
+ * and the client walked out. The desk (receptionist, manager, owner) or the
+ * called technician marks it. The call closes as client_left, the visit
+ * closes as left, no points post, and the technician keeps her place: she is
+ * still available, as before the call. Visits already in service are not
+ * touched (they finish or are reassigned as before).
+ */
+export async function clientLeft(
+  db: Db,
+  input: {
+    visitId: string;
+    actor: Actor;
+    /** The caller's own location (threat model T10). */
+    locationId: string;
+    /** Set when the called technician marks it on her phone: it must be her call. */
+    technicianId?: string;
+  },
+): Promise<{ ok: true; technicianId: string } | EngineError> {
+  return db.transaction(async (tx) => {
+    const [visit] = await tx
+      .select()
+      .from(visits)
+      .where(eq(visits.id, input.visitId))
+      .for('update');
+    if (!visit) return { ok: false, reason: 'unknown_visit' };
+    if (visit.locationId !== input.locationId) return { ok: false, reason: 'wrong_location' };
+    if (visit.status !== 'called') return { ok: false, reason: 'not_called' };
+    const [call] = await tx
+      .select()
+      .from(turnCalls)
+      .where(and(eq(turnCalls.visitId, visit.id), isNull(turnCalls.respondedAt)))
+      .for('update');
+    if (!call) return { ok: false, reason: 'not_called' };
+    if (input.technicianId && call.technicianId !== input.technicianId) {
+      return { ok: false, reason: 'not_your_call' };
+    }
+    const now = new Date();
+    await tx
+      .update(turnCalls)
+      .set({ respondedAt: now, response: 'client_left' })
+      .where(eq(turnCalls.id, call.id));
+    await tx
+      .update(visits)
+      .set({ status: 'left', leftAt: now, updatedAt: now })
+      .where(eq(visits.id, visit.id));
+    await writeAudit(tx, {
+      organizationId: visit.organizationId,
+      locationId: visit.locationId,
+      actorUserId: input.actor.userId,
+      entityType: 'visits',
+      entityId: visit.id,
+      action: 'client_left',
+      after: {
+        callId: call.id,
+        technicianId: call.technicianId,
+        by: input.technicianId ? 'technician' : 'desk',
+        points: 0,
+      },
+    });
+    return { ok: true, technicianId: call.technicianId };
   });
 }

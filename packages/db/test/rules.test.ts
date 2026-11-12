@@ -106,7 +106,8 @@ describe('validateRuleConfig', () => {
     expect(r.ok).toBe(true);
     if (!r.ok) return;
     expect(r.config.penalties.late_tiers[2]?.start_points).toBeNull();
-    expect(r.config.requests.requested_counts_points).toBeNull();
+    // v0.16.0 (Duong): a request counts as a full normal turn.
+    expect(r.config.requests.requested_counts_points).toBe(1);
     expect(r.config.attention).toEqual({
       unanswered_call_min: 15,
       long_wait_min: 30,

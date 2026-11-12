@@ -14,7 +14,7 @@ import {
   services,
   setupCodes,
 } from './schema';
-import { HEAVENLY_CATEGORIES, HEAVENLY_RULE_CONFIG_V1, HEAVENLY_SERVICES, menuRow } from './seed';
+import { HEAVENLY_CATEGORIES, HEAVENLY_SERVICES, menuRow, startingRuleConfig } from './seed';
 import type { Db } from './server';
 import { writeAudit } from './status';
 
@@ -100,19 +100,22 @@ export async function redeemSetupCode(
       )
       .returning({ id: serviceCategories.id, name: serviceCategories.name });
     const categoryByName = new Map(cats.map((c) => [c.name, c.id]));
-    await tx.insert(services).values(
-      HEAVENLY_SERVICES.map((s) => ({
-        organizationId: org.id,
-        locationId: loc.id,
-        categoryId: categoryByName.get(s.category)!,
-        ...menuRow(s),
-      })),
-    );
+    const menu = await tx
+      .insert(services)
+      .values(
+        HEAVENLY_SERVICES.map((s) => ({
+          organizationId: org.id,
+          locationId: loc.id,
+          categoryId: categoryByName.get(s.category)!,
+          ...menuRow(s),
+        })),
+      )
+      .returning({ id: services.id, name: services.name });
     await tx.insert(ruleConfigs).values({
       organizationId: org.id,
       locationId: loc.id,
       version: 1,
-      config: HEAVENLY_RULE_CONFIG_V1,
+      config: startingRuleConfig(new Map(menu.map((m) => [m.name, m.id]))),
     });
     await tx
       .update(setupCodes)

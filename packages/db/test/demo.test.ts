@@ -233,6 +233,8 @@ describe('demo day', () => {
       'Basic manicure',
       'Basic pedicure',
       'Nail art / design',
+      'Nail fix / repair',
+      'Polish change',
       'Spa pedicure',
     ]);
     expect(card('Tâm').services).toContain('Gel pedicure');

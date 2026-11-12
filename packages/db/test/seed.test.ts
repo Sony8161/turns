@@ -1,6 +1,12 @@
 // Done-when (REQ-63a6ce89): seed Heavenly main location, repeatably.
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
-import { HEAVENLY, HEAVENLY_CATEGORIES, HEAVENLY_RULE_CONFIG_V1, seedHeavenly } from '../src/seed';
+import {
+  HEAVENLY,
+  HEAVENLY_CATEGORIES,
+  HEAVENLY_RULE_CONFIG_V1,
+  seedHeavenly,
+  startingRuleConfig,
+} from '../src/seed';
 import { TEST_URL, resetAndMigrate, superuser } from './helpers';
 
 const sql = superuser();
@@ -34,7 +40,20 @@ describe('seedHeavenly', () => {
 
     const [rc] =
       await sql`select config from rule_configs where location_id = ${ids.locationId} and version = 1`;
-    expect(rc?.config).toEqual(HEAVENLY_RULE_CONFIG_V1);
+    // v0.16.0: Heavenly's rules plus the starting menu's own service points.
+    const menu = await sql<
+      { id: string; name: string }[]
+    >`select id, name from services where location_id = ${ids.locationId}`;
+    expect(rc?.config).toEqual(startingRuleConfig(new Map(menu.map((m) => [m.name, m.id]))));
+    const byName = new Map(menu.map((m) => [m.id, m.name]));
+    const own = Object.entries(
+      (rc?.config as { points: { by_service: Record<string, number> } }).points.by_service,
+    ).map(([id, p]) => [byName.get(id), p]);
+    expect(own.sort()).toEqual([
+      ['Gel polish change', 1],
+      ['Nail fix / repair', 0],
+      ['Polish change', 0],
+    ]);
   });
 
   it('is idempotent', async () => {
@@ -50,8 +69,9 @@ describe('seedHeavenly', () => {
     expect(counts).toEqual({ orgs: 1, locs: 1, cats: HEAVENLY_CATEGORIES.length, rcs: 1 });
   });
 
-  it('keeps the two unconfirmed rule values as null, not a guess', () => {
-    expect(HEAVENLY_RULE_CONFIG_V1.requests.requested_counts_points).toBeNull();
+  it('keeps the unconfirmed rule value as null, not a guess', () => {
+    // v0.16.0 (Duong): a request counts as a full normal turn; no longer open.
+    expect(HEAVENLY_RULE_CONFIG_V1.requests.requested_counts_points).toBe(1);
     expect(HEAVENLY_RULE_CONFIG_V1.penalties.late_tiers[2]?.start_points).toBeNull();
   });
 });

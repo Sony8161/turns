@@ -5,7 +5,7 @@
 // Usage: DATABASE_URL=... npm run -w @turn/db db:add-location -- <organization id> "<name>"
 import { and, eq } from 'drizzle-orm';
 import { locations, memberships, ruleConfigs, serviceCategories, services } from './schema';
-import { HEAVENLY_CATEGORIES, HEAVENLY_RULE_CONFIG_V1, HEAVENLY_SERVICES, menuRow } from './seed';
+import { HEAVENLY_CATEGORIES, HEAVENLY_SERVICES, menuRow, startingRuleConfig } from './seed';
 import { createDb, type Db } from './server';
 import { writeAudit } from './status';
 
@@ -51,19 +51,22 @@ export async function addLocation(
       )
       .returning({ id: serviceCategories.id, name: serviceCategories.name });
     const byName = new Map(cats.map((c) => [c.name, c.id]));
-    await tx.insert(services).values(
-      HEAVENLY_SERVICES.map((s) => ({
-        organizationId: input.organizationId,
-        locationId: loc.id,
-        categoryId: byName.get(s.category)!,
-        ...menuRow(s),
-      })),
-    );
+    const menu = await tx
+      .insert(services)
+      .values(
+        HEAVENLY_SERVICES.map((s) => ({
+          organizationId: input.organizationId,
+          locationId: loc.id,
+          categoryId: byName.get(s.category)!,
+          ...menuRow(s),
+        })),
+      )
+      .returning({ id: services.id, name: services.name });
     await tx.insert(ruleConfigs).values({
       organizationId: input.organizationId,
       locationId: loc.id,
       version: 1,
-      config: HEAVENLY_RULE_CONFIG_V1,
+      config: startingRuleConfig(new Map(menu.map((m) => [m.name, m.id]))),
     });
     const owners = await tx
       .selectDistinct({ userId: memberships.userId })

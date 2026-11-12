@@ -323,7 +323,11 @@ describe('client names and search', () => {
 describe('rule templates and the preview', () => {
   it('standard is the Heavenly rules; simple rotation is one turn a service, no appointment discount', async () => {
     const base = await activeRules(db, LOC);
-    expect(templateConfig('standard', base)).toEqual(HEAVENLY_RULE_CONFIG_V1);
+    // v0.16.0: the salon's own service points (by_service) are kept by the template.
+    expect(templateConfig('standard', base)).toEqual({
+      ...HEAVENLY_RULE_CONFIG_V1,
+      points: { ...HEAVENLY_RULE_CONFIG_V1.points, by_service: base.points.by_service },
+    });
     const simple = templateConfig('simple_rotation', base);
     expect(validateRuleConfig(simple).ok).toBe(true);
     expect(simple.points).toMatchObject({

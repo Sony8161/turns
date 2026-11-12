@@ -125,6 +125,12 @@ export const AUDIT_ACTIONS = [
   'visit_reassigned',
   'visit_completed',
   'visit_split',
+  'client_left',
+  'fix_entered',
+  'fix_approved',
+  'fix_declined',
+  'help_requested',
+  'help_acknowledged',
   'request_keep_waiting',
   'request_booked_later',
   'request_sent_by_turn',
@@ -173,6 +179,7 @@ export const AUDIT_ACTIONS = [
 /** Changes a person made to the floor or the staff: what the weekly summary counts (T4). */
 export const OVERRIDE_ACTIONS = [
   'visit_reassigned',
+  'fix_approved',
   'points_adjusted',
   'deny_excused',
   'penalty_excused',
@@ -188,6 +195,8 @@ export const OVERRIDE_ACTIONS = [
 /** Desk entries a receptionist makes that steer a call (T4: edits per receptionist). */
 export const DESK_ACTIONS = [
   'visit_created',
+  'fix_entered',
+  'client_left',
   'visit_note_changed',
   'appointment_added',
   'appointment_changed',
@@ -327,6 +336,24 @@ export function auditFields(e: {
       return out;
     case 'call_expired':
       add('visit', after['visitId']);
+      return out;
+    case 'client_left':
+      add('visit', e.entityId);
+      add('called', nameOf(after['technicianId']));
+      add('by', after['by']);
+      return out;
+    case 'fix_entered':
+    case 'fix_approved':
+    case 'fix_declined':
+      add('visit', e.entityId);
+      add('fix_of', after['fixOfVisitId']);
+      add('in_window', after['inWindow']);
+      if (e.action === 'fix_entered') add('needs_approval', after['needsApproval']);
+      return out;
+    case 'help_requested':
+    case 'help_acknowledged':
+      add('technician', nameOf(after['technicianId']));
+      if (e.action === 'help_acknowledged') add('waited_s', num(after['waitedSeconds']));
       return out;
     case 'points_posted': {
       add('ledger', e.entityId);

@@ -7,7 +7,13 @@
 // desk confirms before anyone is called. Nothing else. It never reads a
 // client, a visit or the board, and its answer is the same whether or not the
 // phone typed is already on file (no enumeration).
-import { createHash, randomBytes, scrypt as scryptCb, timingSafeEqual } from 'node:crypto';
+import {
+  createHash,
+  randomBytes,
+  randomUUID,
+  scrypt as scryptCb,
+  timingSafeEqual,
+} from 'node:crypto';
 import { promisify } from 'node:util';
 import { and, asc, desc, eq, gt, inArray, isNull, lt, ne, or, sql } from 'drizzle-orm';
 import { upsertClient } from './clients';
@@ -524,7 +530,14 @@ export async function kioskMenu(db: Db, device: KioskDevice) {
       })
       .from(services)
       .innerJoin(serviceCategories, eq(serviceCategories.id, services.categoryId))
-      .where(and(eq(services.locationId, device.locationId), isNull(services.archivedAt)))
+      .where(
+        and(
+          eq(services.locationId, device.locationId),
+          isNull(services.archivedAt),
+          // v0.16.0: a fix or repair is entered at the desk only.
+          eq(services.isFix, false),
+        ),
+      )
       .orderBy(serviceCategories.name, services.name),
     // v0.15.0: only who is checked in today (any status but off). Names only:
     // no status and no points ever reach the kiosk.
@@ -546,6 +559,8 @@ export async function kioskMenu(db: Db, device: KioskDevice) {
   ]);
   const required = rules.eligibility.skill_match === 'required';
   return {
+    /** v0.16.0: most people in one group check-in (rules). */
+    groupMax: rules.groups.max_people,
     services: menu.map((m) => ({ id: m.id, name: m.name, category: m.category })),
     technicians: techs.map((t): KioskTechnician => {
       const lv = levels.get(t.id);
@@ -650,6 +665,104 @@ export async function kioskCheckIn(
   return { ok: true, visitIds: r.visitIds };
 }
 
+export type KioskGroupPerson = {
+  name: unknown;
+  lastName?: unknown;
+  serviceIds: string[];
+  requestedTechnicianId?: string | null;
+  note?: unknown;
+};
+
+/**
+ * v0.16.0: a group checks in on the kiosk ("We're a group"): one visit per
+ * person, linked by a party id, all waiting for the desk to confirm. The
+ * phone (optional, one for the group) waits on the first person's visit;
+ * nothing touches a client row until the desk confirms. All or nothing: a
+ * refusal names the person (0-based) so the screen can go back to them.
+ */
+export async function kioskGroupCheckIn(
+  db: Db,
+  input: { device: KioskDevice; phone?: string | null; people: KioskGroupPerson[] },
+): Promise<
+  | { ok: true; partyId: string; visitIds: string[] }
+  | { ok: false; reason: KioskCheckInError | 'party_too_big' | 'party_too_small'; person?: number }
+> {
+  const menu = await kioskMenu(db, input.device);
+  if (input.people.length < 2) return { ok: false, reason: 'party_too_small' };
+  if (input.people.length > menu.groupMax) return { ok: false, reason: 'party_too_big' };
+  const people: { name: string; lastName: string | null; p: KioskGroupPerson }[] = [];
+  for (const [i, p] of input.people.entries()) {
+    const name = cleanKioskName(p.name);
+    if (!name) return { ok: false, reason: 'bad_name', person: i };
+    const ids = [...new Set(p.serviceIds)];
+    if (ids.length === 0) return { ok: false, reason: 'no_services', person: i };
+    if (p.requestedTechnicianId) {
+      const listed = techniciansFor(menu.technicians, ids);
+      if (!listed.some((t) => t.id === p.requestedTechnicianId)) {
+        return { ok: false, reason: 'unknown_technician', person: i };
+      }
+    }
+    people.push({ name, lastName: cleanKioskName(p.lastName), p });
+  }
+  const partyId = randomUUID();
+  const phone = input.phone?.trim() || null;
+  const known: KioskCheckInError[] = [
+    'bad_phone',
+    'bad_age',
+    'no_services',
+    'unknown_service',
+    'unknown_technician',
+  ];
+  try {
+    const visitIds = await db.transaction(async (tx) => {
+      const out: string[] = [];
+      for (const [i, x] of people.entries()) {
+        const r = await createWalkIn(tx as unknown as Db, {
+          organizationId: input.device.organizationId,
+          locationId: input.device.locationId,
+          serviceIds: [...new Set(x.p.serviceIds)],
+          actor: { userId: null },
+          source: 'self_checkin',
+          requestedTechnicianId: x.p.requestedTechnicianId ?? null,
+          note: cleanKioskNote(x.p.note),
+          client: null,
+          partyId,
+          kiosk: {
+            deviceId: input.device.deviceId,
+            name: x.name,
+            lastName: x.lastName,
+            // One phone for the group, kept on the first person's visit.
+            phone: i === 0 ? phone : null,
+          },
+        });
+        if (!r.ok) {
+          throw new KioskGroupRollback(
+            (known as string[]).includes(r.reason)
+              ? (r.reason as KioskCheckInError)
+              : 'no_services',
+            i,
+          );
+        }
+        out.push(...r.visitIds);
+      }
+      return out;
+    });
+    return { ok: true, partyId, visitIds };
+  } catch (e) {
+    if (e instanceof KioskGroupRollback) return { ok: false, reason: e.reason, person: e.person };
+    throw e;
+  }
+}
+
+class KioskGroupRollback extends Error {
+  constructor(
+    readonly reason: KioskCheckInError,
+    readonly person: number,
+  ) {
+    super(reason);
+  }
+}
+
 export type KioskDecision = 'confirm' | 'confirm_no_request' | 'decline';
 
 /**
@@ -666,7 +779,14 @@ export type KioskDecision = 'confirm' | 'confirm_no_request' | 'decline';
  */
 export async function reviewKioskVisit(
   db: Db,
-  input: { actor: ManagerActor; visitId: string; decision: KioskDecision; now?: Date },
+  input: {
+    actor: ManagerActor;
+    visitId: string;
+    decision: KioskDecision;
+    now?: Date;
+    /** v0.16.0: the whole group (party) at once; otherwise one person. */
+    wholeParty?: boolean;
+  },
 ): Promise<
   | { ok: true; visitIds: string[] }
   | { ok: false; reason: 'unknown_visit' | 'wrong_location' | 'not_pending' }
@@ -674,10 +794,11 @@ export async function reviewKioskVisit(
   const now = input.now ?? new Date();
   return db.transaction(async (tx) => {
     const [first] = await tx
-      .select({ groupId: visits.groupId })
+      .select({ groupId: visits.groupId, partyId: visits.partyId })
       .from(visits)
       .where(eq(visits.id, input.visitId));
     if (!first) return { ok: false as const, reason: 'unknown_visit' as const };
+    const party = input.wholeParty && first.partyId ? first.partyId : null;
     const rows = await tx
       .select({
         id: visits.id,
@@ -690,12 +811,15 @@ export async function reviewKioskVisit(
         kioskName: visits.kioskName,
         kioskLastName: visits.kioskLastName,
         kioskPhone: visits.kioskPhone,
+        partyId: visits.partyId,
       })
       .from(visits)
       .where(
-        first.groupId
-          ? or(eq(visits.id, input.visitId), eq(visits.groupId, first.groupId))
-          : eq(visits.id, input.visitId),
+        party
+          ? or(eq(visits.id, input.visitId), eq(visits.partyId, party))
+          : first.groupId
+            ? or(eq(visits.id, input.visitId), eq(visits.groupId, first.groupId))
+            : eq(visits.id, input.visitId),
       )
       .orderBy(asc(visits.id))
       .for('update');
@@ -739,6 +863,24 @@ export async function reviewKioskVisit(
       return { ok: true as const, visitIds: ids };
     }
 
+    // v0.16.0: in a group every person is their own client. The group's phone
+    // (on the first person's visit) goes with that person; the others get a
+    // client row with the name they typed. One at a time works the same way.
+    if (group.some((g) => g.partyId)) {
+      for (const g of group) {
+        const c = await upsertClient(tx, {
+          organizationId: visit.organizationId,
+          locationId: visit.locationId,
+          firstName: g.kioskName ?? null,
+          lastName: g.kioskLastName ?? null,
+          phone: g.kioskPhone ?? null,
+          gender: null,
+          fillBlanks: false,
+        });
+        await confirmOne(tx, g, input, now, c.ok ? c.clientId : null);
+      }
+      return { ok: true as const, visitIds: ids };
+    }
     const phone = group.find((g) => g.kioskPhone)?.kioskPhone ?? null;
     let clientId: string | null = null;
     if (phone) {
@@ -753,40 +895,58 @@ export async function reviewKioskVisit(
       });
       clientId = c.ok ? c.clientId : null;
     }
-    for (const g of group) {
-      const keepRequest = input.decision === 'confirm' && !!g.requestedTechnicianId;
-      const source = keepRequest ? 'request' : g.source;
-      const requestedTechnicianId = keepRequest ? g.requestedTechnicianId : null;
-      await tx
-        .update(visits)
-        .set({
-          needsConfirm: false,
-          confirmedBy: input.actor.userId,
-          confirmedAt: now,
-          source,
-          requestedTechnicianId,
-          kioskPhone: null,
-          ...(clientId ? { clientId } : {}),
-          updatedAt: now,
-        })
-        .where(eq(visits.id, g.id));
-      await writeAudit(tx, {
-        organizationId: visit.organizationId,
-        locationId: visit.locationId,
-        actorUserId: input.actor.userId,
-        entityType: 'visits',
-        entityId: g.id,
-        action: 'kiosk_confirmed',
-        after: {
-          source,
-          requestedTechnicianId,
-          ...(g.requestedTechnicianId && !keepRequest
-            ? { droppedRequestTechnicianId: g.requestedTechnicianId }
-            : {}),
-          hasClient: clientId !== null,
-        },
-      });
-    }
+    for (const g of group) await confirmOne(tx, g, input, now, clientId);
     return { ok: true as const, visitIds: ids };
+  });
+}
+
+type Tx = Parameters<Parameters<Db['transaction']>[0]>[0];
+
+/** Confirms one kiosk visit: the request kept or dropped, the client linked. */
+async function confirmOne(
+  tx: Tx,
+  g: {
+    id: string;
+    organizationId: string;
+    locationId: string;
+    source: (typeof visits.$inferSelect)['source'];
+    requestedTechnicianId: string | null;
+    partyId: string | null;
+  },
+  input: { actor: ManagerActor; decision: KioskDecision },
+  now: Date,
+  clientId: string | null,
+): Promise<void> {
+  const keepRequest = input.decision === 'confirm' && !!g.requestedTechnicianId;
+  const source = keepRequest ? 'request' : g.source;
+  const requestedTechnicianId = keepRequest ? g.requestedTechnicianId : null;
+  await tx
+    .update(visits)
+    .set({
+      needsConfirm: false,
+      confirmedBy: input.actor.userId,
+      confirmedAt: now,
+      source,
+      requestedTechnicianId,
+      kioskPhone: null,
+      ...(clientId ? { clientId } : {}),
+      updatedAt: now,
+    })
+    .where(eq(visits.id, g.id));
+  await writeAudit(tx, {
+    organizationId: g.organizationId,
+    locationId: g.locationId,
+    actorUserId: input.actor.userId,
+    entityType: 'visits',
+    entityId: g.id,
+    action: 'kiosk_confirmed',
+    after: {
+      source,
+      requestedTechnicianId,
+      ...(g.requestedTechnicianId && !keepRequest
+        ? { droppedRequestTechnicianId: g.requestedTechnicianId }
+        : {}),
+      hasClient: clientId !== null,
+    },
   });
 }

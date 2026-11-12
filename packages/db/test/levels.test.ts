@@ -207,6 +207,9 @@ describe('setting a level', () => {
       'Basic manicure',
       'Basic pedicure',
       'Nail art / design',
+      // v0.16.0 starting menu.
+      'Nail fix / repair',
+      'Polish change',
       'Spa pedicure',
     ]);
 

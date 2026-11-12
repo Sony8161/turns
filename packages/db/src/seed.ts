@@ -62,7 +62,9 @@ export const HEAVENLY_RULE_CONFIG_V1: RuleConfig = {
   },
   requests: {
     requested_tech_bypasses_queue: true,
-    requested_counts_points: null,
+    // v0.16.0 (Duong, 2026-11-12): a request counts as a full normal turn.
+    // A manager can still adjust points by hand.
+    requested_counts_points: 1,
   },
   // Duong, 2026-11-04: an unanswered call comes back to the desk after 15
   // minutes; 30 minutes or more is a long wait. The owner edits these in the
@@ -75,6 +77,11 @@ export const HEAVENLY_RULE_CONFIG_V1: RuleConfig = {
     // is flagged to the desk (value not confirmed with Phu; the owner edits it).
     request_wait_min: 10,
   },
+  // v0.16.0 (Duong): the desk sees the client's visits from the last 14 days
+  // (7 is the other choice, a question for Phu); a receptionist's fix waits
+  // for a manager or owner. Up to 8 people check in as one group.
+  fixes: { window_days: 14, receptionist_needs_approval: true },
+  groups: { max_people: 8 },
 };
 
 // Categories named in the design doc. Points per the doc: standard 1, fill or
@@ -105,6 +112,10 @@ export const HEAVENLY_SERVICES: readonly {
   min: MenuLevel;
   turn: MenuLevel[] | null;
   deskPicks?: boolean;
+  /** v0.16.0: the service's own points, ahead of its category (rules by_service). */
+  points?: number;
+  /** v0.16.0: a nail fix or repair: desk only, free, approved by a manager. */
+  fix?: boolean;
 }[] = [
   {
     category: 'manicure',
@@ -114,6 +125,36 @@ export const HEAVENLY_SERVICES: readonly {
     turn: ['regular', 'gel'],
   },
   { category: 'manicure', name: 'Gel manicure', minutes: 45, min: 'gel', turn: GEL_UP },
+  // v0.16.0 (Duong): a regular polish change is free (0), a gel polish change
+  // is a turn (1). Placed at the same levels as the manicures.
+  {
+    category: 'manicure',
+    name: 'Polish change',
+    minutes: 15,
+    min: 'regular',
+    turn: ['regular', 'gel'],
+    points: 0,
+  },
+  {
+    category: 'manicure',
+    name: 'Gel polish change',
+    minutes: 30,
+    min: 'gel',
+    turn: GEL_UP,
+    points: 1,
+  },
+  // v0.16.0: a fix or repair of recent work. Free, desk only, the desk picks
+  // the technician (the one who did the work, when she is in).
+  {
+    category: 'manicure',
+    name: 'Nail fix / repair',
+    minutes: 15,
+    min: 'regular',
+    turn: null,
+    deskPicks: true,
+    points: 0,
+    fix: true,
+  },
   { category: 'manicure', name: 'Dip powder', minutes: 60, min: 'dip', turn: ['dip', 'acrylic'] },
   {
     category: 'manicure',
@@ -146,7 +187,21 @@ export function menuRow(s: (typeof HEAVENLY_SERVICES)[number]) {
     minLevel: s.min,
     turnLevels: s.turn,
     deskPicks: s.deskPicks ?? false,
+    isFix: s.fix ?? false,
   };
+}
+
+/** The starting rules for a new location: Heavenly's, with the starting
+ *  menu's own service points (v0.16.0) keyed by the new service ids. */
+export function startingRuleConfig(serviceIdByName: Map<string, string>): RuleConfig {
+  const config = structuredClone(HEAVENLY_RULE_CONFIG_V1);
+  const byService: Record<string, number> = {};
+  for (const s of HEAVENLY_SERVICES) {
+    const id = serviceIdByName.get(s.name);
+    if (s.points !== undefined && id) byService[id] = s.points;
+  }
+  if (Object.keys(byService).length) config.points.by_service = byService;
+  return config;
 }
 
 export async function seedHeavenly(
@@ -181,10 +236,6 @@ export async function seedHeavenly(
           })),
         )
         .onConflictDoNothing();
-      await tx
-        .insert(ruleConfigs)
-        .values({ organizationId, locationId, version: 1, config: HEAVENLY_RULE_CONFIG_V1 })
-        .onConflictDoNothing();
       const cats = await tx
         .select({ id: serviceCategories.id, name: serviceCategories.name })
         .from(serviceCategories)
@@ -200,6 +251,20 @@ export async function seedHeavenly(
             ...menuRow(s),
           })),
         )
+        .onConflictDoNothing();
+      // After the menu, so the rules can name a service's own points (v0.16.0).
+      const menu = await tx
+        .select({ id: services.id, name: services.name })
+        .from(services)
+        .where(eq(services.locationId, locationId));
+      await tx
+        .insert(ruleConfigs)
+        .values({
+          organizationId,
+          locationId,
+          version: 1,
+          config: startingRuleConfig(new Map(menu.map((m) => [m.name, m.id]))),
+        })
         .onConflictDoNothing();
     });
     return { organizationId, locationId };

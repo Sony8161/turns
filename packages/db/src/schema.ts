@@ -212,6 +212,9 @@ export const services = pgTable(
     turnLevels: skillLevelEnum('turn_levels').array(),
     // The desk picks the technician (nail art, design): never called by turn.
     deskPicks: boolean('desk_picks').notNull().default(false),
+    // v0.16.0: a nail fix or repair. Desk only (never on the kiosk), free, and
+    // a receptionist's entry waits for a manager or owner to approve it.
+    isFix: boolean('is_fix').notNull().default(false),
     archivedAt: timestamp('archived_at', { withTimezone: true }),
     createdAt: createdAt(),
     updatedAt: updatedAt(),
@@ -560,12 +563,16 @@ export const visitStatusEnum = pgEnum('visit_status', [
   'in_service',
   'completed',
   'cancelled',
+  // v0.16.0: called but not started, and the client walked out. No points.
+  'left',
 ]);
 export const callResponseEnum = pgEnum('call_response', [
   'accepted',
   'denied',
   'overridden',
   'expired',
+  // v0.16.0: the client left before the service started. Never a penalty.
+  'client_left',
 ]);
 
 export const visits = pgTable(
@@ -622,6 +629,20 @@ export const visits = pgTable(
     // v0.15.0: the client asked for (or booked) a technician who is busy and
     // the desk pressed "Keep waiting": the attention flag counts from here.
     requestAckAt: timestamp('request_ack_at', { withTimezone: true }),
+    // v0.16.0: people who came in together (kiosk or desk "We're a group").
+    // Each person is their own client and visit; this links them on the desk.
+    // Not group_id, which links one client's same-time visits.
+    partyId: uuid('party_id'),
+    // v0.16.0: a nail fix or repair, and the earlier visit it fixes (when the
+    // desk found one in the fix window). A receptionist's fix needs a manager
+    // or owner to approve it before anyone is called (needs_approval).
+    isFix: boolean('is_fix').notNull().default(false),
+    fixOfVisitId: uuid('fix_of_visit_id'),
+    needsApproval: boolean('needs_approval').notNull().default(false),
+    approvedBy: uuid('approved_by').references(() => profiles.id, { onDelete: 'restrict' }),
+    approvedAt: timestamp('approved_at', { withTimezone: true }),
+    // v0.16.0: the client left after the call, before the service started.
+    leftAt: timestamp('left_at', { withTimezone: true }),
     confirmedBy: uuid('confirmed_by').references(() => profiles.id, { onDelete: 'restrict' }),
     confirmedAt: timestamp('confirmed_at', { withTimezone: true }),
     createdAt: createdAt(),
@@ -631,6 +652,7 @@ export const visits = pgTable(
     locationFk(t, 'visits_location_fk'),
     index('visits_location_status').on(t.locationId, t.status),
     index('visits_client').on(t.clientId),
+    index('visits_party').on(t.partyId),
   ],
 ).enableRLS();
 
@@ -844,6 +866,33 @@ export const kioskDevices = pgTable(
   ],
 ).enableRLS();
 
+// Need help (v0.16.0) -----------------------------------------------------------
+
+// A technician taps "Need help" on her phone; the desk board shows it with the
+// time waiting until someone acknowledges it. The reason is short free text
+// from the technician, never shown outside the salon's staff screens.
+export const helpRequests = pgTable(
+  'help_requests',
+  {
+    id: id(),
+    organizationId: uuid('organization_id').notNull(),
+    locationId: uuid('location_id').notNull(),
+    technicianId: uuid('technician_id')
+      .notNull()
+      .references(() => technicians.id, { onDelete: 'restrict' }),
+    reason: text('reason'),
+    createdAt: createdAt(),
+    acknowledgedAt: timestamp('acknowledged_at', { withTimezone: true }),
+    acknowledgedBy: uuid('acknowledged_by').references(() => profiles.id, {
+      onDelete: 'restrict',
+    }),
+  },
+  (t) => [
+    locationFk(t, 'help_requests_location_fk'),
+    index('help_requests_location_open').on(t.locationId, t.acknowledgedAt),
+  ],
+).enableRLS();
+
 // Daily summaries (Part 8) ---------------------------------------------------
 
 // The end-of-day summary for the owner, one row per location and local date.
@@ -867,6 +916,7 @@ export const dailySummaries = pgTable(
 ).enableRLS();
 
 export const TENANT_TABLES = [
+  'help_requests',
   'kiosk_devices',
   'daily_summaries',
   'technician_skills',

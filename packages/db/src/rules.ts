@@ -44,6 +44,9 @@ export type RuleConfig = {
     post_on: 'completion';
     /** Points for one service category (by category id), overriding the two defaults. */
     by_category?: Record<string, number>;
+    /** v0.16.0: points for one service (by service id), ahead of its category
+     *  and the defaults. Heavenly: polish change 0, gel polish change 1, fix 0. */
+    by_service?: Record<string, number>;
   };
   penalties: {
     deny: number;
@@ -85,7 +88,29 @@ export type RuleConfig = {
      *  send by turn). Missing in an older config = long_wait_min. */
     request_wait_min: number;
   };
+  /** v0.16.0: nail fixes and repairs. Missing in an older config = the defaults. */
+  fixes: {
+    /** The desk is shown the client's visits from this many days back. Heavenly: 14 (or 7). */
+    window_days: number;
+    /** A fix entered by a receptionist waits for a manager or owner to approve it. */
+    receptionist_needs_approval: boolean;
+  };
+  /** v0.16.0: people who come in together. */
+  groups: {
+    /** Most people in one group check-in. Heavenly: 8. */
+    max_people: number;
+  };
 };
+
+/** v0.16.0 defaults, used when an older config has no such section. */
+export const FIX_WINDOW_PRESETS = [7, 14] as const;
+export const FIXES_DEFAULT: RuleConfig['fixes'] = {
+  window_days: 14,
+  receptionist_needs_approval: true,
+};
+export const GROUPS_DEFAULT: RuleConfig['groups'] = { max_people: 8 };
+export const GROUP_MAX_LIMIT = 8;
+const FIX_WINDOW_MAX = 90;
 
 export const SKILL_MATCH = ['required', 'preferred', 'off'] as const;
 // 'double_zero_last' (v0.15.0, Duong 2026-11-12): at zero points only, a
@@ -133,7 +158,8 @@ export type RuleProblem =
   | 'not_allowed'
   | 'not_in_order'
   | 'not_an_object'
-  | 'unknown_category';
+  | 'unknown_category'
+  | 'unknown_service';
 
 export type RuleError = { path: string; problem: RuleProblem };
 
@@ -267,7 +293,33 @@ export function validateRuleConfig(input: unknown): ValidationResult {
       // Filled in below: optional, so configs saved before v0.15.0 still validate.
       request_wait_min: 0,
     },
+    fixes: { ...FIXES_DEFAULT },
+    groups: { ...GROUPS_DEFAULT },
   };
+
+  // v0.16.0 sections: optional, so configs saved before v0.16.0 still validate.
+  if (input['fixes'] !== undefined) {
+    const fixes = c.section(input, 'fixes');
+    if (fixes) {
+      const days = c.minutes(fixes, 'fixes.window_days');
+      if (days !== undefined) {
+        if (days < 1 || days > FIX_WINDOW_MAX) c.fail('fixes.window_days', 'not_allowed');
+        else out.fixes.window_days = days;
+      }
+      const approval = c.bool(fixes, 'fixes.receptionist_needs_approval');
+      if (approval !== undefined) out.fixes.receptionist_needs_approval = approval;
+    }
+  }
+  if (input['groups'] !== undefined) {
+    const groups = c.section(input, 'groups');
+    if (groups) {
+      const max = c.minutes(groups, 'groups.max_people');
+      if (max !== undefined) {
+        if (max < 2 || max > GROUP_MAX_LIMIT) c.fail('groups.max_people', 'not_allowed');
+        else out.groups.max_people = max;
+      }
+    }
+  }
 
   const requestWait =
     attention['request_wait_min'] === undefined
@@ -317,6 +369,19 @@ export function validateRuleConfig(input: unknown): ValidationResult {
         if (v !== undefined && v !== null) table[key] = v;
       }
       out.points.by_category = table;
+    }
+  }
+  // Points per service (v0.16.0): id -> points.
+  const byService = points['by_service'];
+  if (byService !== undefined) {
+    if (!isRecord(byService)) c.fail('points.by_service', 'not_an_object');
+    else {
+      const table: Record<string, number> = {};
+      for (const key of Object.keys(byService)) {
+        const v = c.points(byService, `points.by_service.${key}`);
+        if (v !== undefined && v !== null) table[key] = v;
+      }
+      out.points.by_service = table;
     }
   }
 
@@ -446,6 +511,20 @@ export async function saveRuleConfig(
         };
       }
     }
+    const serviceIds = Object.keys(config.points.by_service ?? {});
+    if (serviceIds.length) {
+      const known = await tx
+        .select({ id: services.id })
+        .from(services)
+        .where(and(eq(services.locationId, input.locationId), inArray(services.id, serviceIds)));
+      if (known.length !== serviceIds.length) {
+        return {
+          ok: false,
+          reason: 'invalid',
+          errors: [{ path: 'points.by_service', problem: 'unknown_service' }],
+        };
+      }
+    }
 
     // One save at a time per location, so two owners cannot both take version n+1.
     // Two-key form: the first key names this use, so a future advisory lock
@@ -494,12 +573,15 @@ export async function saveRuleConfig(
 /** Points a visit is worth under a config. Pure, so tests and the preview can pin it. */
 export function visitPointsUnder(
   rules: RuleConfig,
-  items: { isFillOrFullSet: boolean; categoryId: string }[],
+  items: { isFillOrFullSet: boolean; categoryId: string; serviceId?: string }[],
   source: 'walk_in' | 'appointment' | 'request' | 'self_checkin',
 ): number {
   const overrides = rules.points.by_category ?? {};
+  const perService = rules.points.by_service ?? {};
   let total = items.reduce((sum, s) => {
-    const own = overrides[s.categoryId];
+    // v0.16.0: a service's own points come first, then its category's.
+    const mine = s.serviceId !== undefined ? perService[s.serviceId] : undefined;
+    const own = mine !== undefined ? mine : overrides[s.categoryId];
     const value =
       own !== undefined
         ? own
@@ -579,6 +661,7 @@ export async function previewBoard(
           source: visits.source,
           isFillOrFullSet: serviceCategories.isFillOrFullSet,
           categoryId: serviceCategories.id,
+          serviceId: visitServices.serviceId,
         })
         .from(visitServices)
         .innerJoin(visits, eq(visits.id, visitServices.visitId))
@@ -676,13 +759,23 @@ const STANDARD: Omit<RuleConfig, 'attention'> = {
     honor_restrictions: true,
     skill_match: 'required',
   },
-  requests: { requested_tech_bypasses_queue: true, requested_counts_points: null },
+  // v0.16.0 (Duong): a request counts as a full normal turn.
+  requests: { requested_tech_bypasses_queue: true, requested_counts_points: 1 },
+  fixes: { ...FIXES_DEFAULT },
+  groups: { ...GROUPS_DEFAULT },
 };
 
 /** A template's config on top of the salon's current one. Pure. */
 export function templateConfig(template: RuleTemplate, base: RuleConfig): RuleConfig {
-  const standard: RuleConfig = structuredClone({ ...STANDARD, attention: base.attention });
+  const standard: RuleConfig = structuredClone({
+    ...STANDARD,
+    attention: base.attention,
+    // v0.16.0: the salon's fix window and group size are kept, like its timers.
+    fixes: base.fixes,
+    groups: base.groups,
+  });
   if (base.points.by_category) standard.points.by_category = { ...base.points.by_category };
+  if (base.points.by_service) standard.points.by_service = { ...base.points.by_service };
   if (template === 'standard') return standard;
   // Simple rotation: every service is one turn, appointments count like any
   // other visit, no cap; the line is points then check-in.
@@ -694,6 +787,8 @@ export function templateConfig(template: RuleTemplate, base: RuleConfig): RuleCo
       appointment_discount: 0,
       combined_fill_full_cap: null,
       by_category: undefined,
+      // Per-service points stay (a free fix, a free polish change); the owner
+      // edits them below the template like any other number.
     },
     // Every deny costs the same; a manager can still excuse one.
     penalties: { ...standard.penalties, deny_excused_reasons: [] },
