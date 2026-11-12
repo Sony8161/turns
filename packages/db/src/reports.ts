@@ -134,6 +134,7 @@ export const AUDIT_ACTIONS = [
   'feed_set',
   'feed_removed',
   'feed_sync_failed',
+  'feed_tested',
   'long_wait_notice',
   'kiosk_check_in',
   'kiosk_confirmed',

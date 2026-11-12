@@ -21,7 +21,8 @@
     "./feeds": "./src/feeds.ts",
     "./locations": "./src/locations.ts",
     "./reports": "./src/reports.ts",
-    "./kiosk": "./src/kiosk.ts"
+    "./kiosk": "./src/kiosk.ts",
+    "./fresha": "./src/fresha.ts"
   },
   "scripts": {
     "typecheck": "tsc --noEmit",

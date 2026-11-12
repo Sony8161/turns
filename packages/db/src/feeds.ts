@@ -10,7 +10,7 @@ import { request } from 'node:https';
 import { isIP, type LookupFunction } from 'node:net';
 import { and, asc, eq, isNull, lt, or, sql } from 'drizzle-orm';
 import { sameSlot } from './appointments';
-import { appointments, calendarFeeds, locations, technicians } from './schema';
+import { appointments, calendarFeeds, locations, memberships, technicians } from './schema';
 import type { Db } from './server';
 import type { StaffActor } from './staff';
 import { writeAudit } from './status';
@@ -50,7 +50,8 @@ export type UrlProblem =
   | 'bad_port'
   | 'too_long'
   | 'private_address'
-  | 'dns_failed';
+  | 'dns_failed'
+  | 'not_fresha';
 
 /** Syntax only: https (webcal is an alias for it), no user:pass, port 443. */
 export function checkFeedUrl(
@@ -69,6 +70,33 @@ export function checkFeedUrl(
   if (url.port && url.port !== '443') return { ok: false, problem: 'bad_port' };
   if (!url.hostname) return { ok: false, problem: 'not_a_url' };
   return { ok: true, url };
+}
+
+/** The calendar hosts the onboarding screens accept (v0.11.0). Fresha's
+ *  export host always; more by config (FEED_ALLOWED_HOSTS, comma separated,
+ *  plain host names only: no wildcards, ports or paths). */
+export const FRESHA_HOST = 'calendar-export.fresha.com';
+const HOST_NAME =
+  /^(?=.{1,253}$)([a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?)(?:\.[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?)+$/;
+
+export function feedHosts(env: string | undefined = process.env.FEED_ALLOWED_HOSTS): string[] {
+  const extra = (env ?? '')
+    .split(',')
+    .map((h) => h.trim().toLowerCase())
+    .filter((h) => HOST_NAME.test(h) && h !== FRESHA_HOST);
+  return [FRESHA_HOST, ...new Set(extra)];
+}
+
+/** checkFeedUrl, plus the host must be on the list exactly (no suffix match). */
+export function checkFreshaUrl(
+  raw: string,
+  hosts: string[] = feedHosts(),
+): { ok: true; url: URL } | { ok: false; problem: UrlProblem } {
+  const checked = checkFeedUrl(raw);
+  if (!checked.ok) return checked;
+  const host = checked.url.hostname.toLowerCase().replace(/\.$/, '');
+  if (!hosts.includes(host)) return { ok: false, problem: 'not_fresha' };
+  return checked;
 }
 
 function v4Parts(ip: string): number[] | null {
@@ -537,30 +565,70 @@ function toEvent(props: Prop[], zone: string): FeedEvent | null {
 
 export type FeedError = { ok: false; reason: string };
 
-/** The owner pastes a technician's calendar link (T13: owner only). Checked
- *  for syntax and for a public address before it is kept. */
+/** Whether `actor` may change `technicianId`'s calendar: the owner for any
+ *  technician at the location; a technician for their own row only, while
+ *  their technician membership there is active (v0.11.0). */
+export async function feedTechnician(
+  tx: Db | Tx,
+  actor: StaffActor,
+  technicianId: string,
+): Promise<{ id: string } | { error: string }> {
+  const self = actor.role === 'technician';
+  if (actor.role !== 'owner' && !self) return { error: 'not_allowed' };
+  const [tech] = await tx
+    .select({ id: technicians.id, userId: technicians.userId, active: technicians.active })
+    .from(technicians)
+    .where(
+      and(
+        eq(technicians.id, technicianId),
+        eq(technicians.locationId, actor.locationId),
+        eq(technicians.organizationId, actor.organizationId),
+      ),
+    );
+  if (!self) return tech ? { id: tech.id } : { error: 'unknown_technician' };
+  if (!tech || tech.userId !== actor.userId || !tech.active) return { error: 'not_allowed' };
+  const [member] = await tx
+    .select({ id: memberships.id })
+    .from(memberships)
+    .where(
+      and(
+        eq(memberships.userId, actor.userId),
+        eq(memberships.locationId, actor.locationId),
+        eq(memberships.role, 'technician'),
+        eq(memberships.active, true),
+      ),
+    );
+  return member ? { id: tech.id } : { error: 'not_allowed' };
+}
+
+/** The owner pastes a technician's calendar link (T13), or a technician
+ *  their own (v0.11.0). Checked for syntax and for a public address before it
+ *  is kept. A technician, and any caller passing `hosts`, may only use an
+ *  allowed calendar host (Fresha). */
 export async function setFeed(
   db: Db,
-  input: { actor: StaffActor; technicianId: string; url: string; resolve?: Resolve },
+  input: {
+    actor: StaffActor;
+    technicianId: string;
+    url: string;
+    resolve?: Resolve;
+    hosts?: string[];
+  },
 ): Promise<{ ok: true; feedId: string; urlHint: string } | FeedError> {
-  if (input.actor.role !== 'owner') return { ok: false, reason: 'not_allowed' };
-  const checked = checkFeedUrl(input.url);
+  if (input.actor.role !== 'owner' && input.actor.role !== 'technician') {
+    return { ok: false, reason: 'not_allowed' };
+  }
+  const freshaOnly = input.actor.role === 'technician' || input.hosts !== undefined;
+  const checked = freshaOnly
+    ? checkFreshaUrl(input.url, input.hosts ?? feedHosts())
+    : checkFeedUrl(input.url);
   if (!checked.ok) return { ok: false, reason: checked.problem };
   const addr = await resolvePublic(checked.url, input.resolve);
   if (!addr.ok) return { ok: false, reason: addr.problem };
   const hint = urlHint(checked.url);
   return db.transaction(async (tx) => {
-    const [tech] = await tx
-      .select({ id: technicians.id })
-      .from(technicians)
-      .where(
-        and(
-          eq(technicians.id, input.technicianId),
-          eq(technicians.locationId, input.actor.locationId),
-          eq(technicians.organizationId, input.actor.organizationId),
-        ),
-      );
-    if (!tech) return { ok: false, reason: 'unknown_technician' };
+    const tech = await feedTechnician(tx, input.actor, input.technicianId);
+    if ('error' in tech) return { ok: false, reason: tech.error };
     const now = new Date();
     const [row] = await tx
       .insert(calendarFeeds)
@@ -593,25 +661,32 @@ export async function setFeed(
       entityId: row.id,
       action: 'feed_set',
       // The hint only: the URL is a secret (T14).
-      after: { technicianId: tech.id, urlHint: hint },
+      after: { technicianId: tech.id, urlHint: hint, by: input.actor.role },
     });
     return { ok: true, feedId: row.id, urlHint: hint };
   });
 }
 
-/** The owner removes a feed: the URL is blanked, its appointments stay. */
+/** The owner removes a feed, or a technician their own: the URL is blanked,
+ *  its appointments stay. */
 export async function removeFeed(
   db: Db,
   input: { actor: StaffActor; technicianId: string },
 ): Promise<{ ok: true } | FeedError> {
-  if (input.actor.role !== 'owner') return { ok: false, reason: 'not_allowed' };
+  if (input.actor.role !== 'owner' && input.actor.role !== 'technician') {
+    return { ok: false, reason: 'not_allowed' };
+  }
   return db.transaction(async (tx) => {
+    const tech = await feedTechnician(tx, input.actor, input.technicianId);
+    if ('error' in tech) {
+      return { ok: false, reason: tech.error === 'unknown_technician' ? 'no_feed' : tech.error };
+    }
     const [feed] = await tx
       .select()
       .from(calendarFeeds)
       .where(
         and(
-          eq(calendarFeeds.technicianId, input.technicianId),
+          eq(calendarFeeds.technicianId, tech.id),
           eq(calendarFeeds.locationId, input.actor.locationId),
           isNull(calendarFeeds.archivedAt),
         ),
@@ -630,7 +705,7 @@ export async function removeFeed(
       entityType: 'calendar_feeds',
       entityId: feed.id,
       action: 'feed_removed',
-      before: { technicianId: feed.technicianId, urlHint: feed.urlHint },
+      before: { technicianId: feed.technicianId, urlHint: feed.urlHint, by: input.actor.role },
     });
     return { ok: true };
   });
@@ -837,7 +912,7 @@ export async function syncFeed(
   });
 }
 
-async function locationZone(db: Db | Tx, locationId: string): Promise<string> {
+export async function locationZone(db: Db | Tx, locationId: string): Promise<string> {
   const [l] = await db
     .select({ timezone: locations.timezone })
     .from(locations)
