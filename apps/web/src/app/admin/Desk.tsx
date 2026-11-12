@@ -481,7 +481,10 @@ export function Desk({
                   key={v.id}
                   className={`flex flex-wrap items-center gap-4 bg-board px-4 py-3 ${v.needsConfirm || v.needsApproval ? 'border-l-[12px] border-amber' : ''}`}
                 >
-                  <span className="flex min-w-0 flex-1 flex-col">
+                  {/* v0.16.1: the client info keeps a usable width (16rem); wide
+                      actions wrap onto their own line instead of squeezing it
+                      to one word per line. */}
+                  <span className="flex min-w-0 grow basis-64 flex-col">
                     {v.partySize && v.partySize > 1 ? (
                       <span className="w-fit rounded-control bg-teal px-2 py-0.5 text-small font-semibold text-board">
                         {fill(t.groupOf, { n: v.partySize })}
@@ -604,7 +607,7 @@ export function Desk({
                   </span>
                   {v.status === 'called' ? (
                     // v0.16.0: the client walked out after the call, before the service.
-                    <form action={markLeft} className="flex flex-col items-end gap-1">
+                    <form action={markLeft} className="ml-auto flex flex-col items-end gap-1">
                       <input type="hidden" name="visitId" value={v.id} />
                       <Button
                         type="submit"
@@ -621,7 +624,7 @@ export function Desk({
                   ) : null}
                   {v.status === 'waiting' && v.needsApproval ? (
                     // v0.16.0: a receptionist's fix: a manager or owner approves it first.
-                    <span className="flex flex-col items-end gap-2">
+                    <span className="ml-auto flex flex-col items-end gap-2">
                       <span className="font-semibold">{t.fixPending}</span>
                       {canApprove ? (
                         <span className="flex flex-wrap gap-2">
@@ -652,7 +655,7 @@ export function Desk({
                       ) : null}
                     </span>
                   ) : v.status === 'waiting' && v.needsConfirm ? (
-                    <span className="flex flex-wrap gap-2">
+                    <span className="ml-auto flex flex-wrap justify-end gap-2">
                       {v.partyId && v.partySize && v.partySize > 1 ? (
                         // v0.16.0: a group from the kiosk: confirm everyone at once.
                         <form action={review}>
@@ -745,7 +748,7 @@ export function Desk({
                     </div>
                   ) : v.status === 'waiting' && v.held ? (
                     // v0.15.0: the client is still in the first technician's chair.
-                    <span className="max-w-[26ch] text-right font-medium text-slate/80">
+                    <span className="ml-auto max-w-[26ch] text-right font-medium text-slate/80">
                       {v.held.technician
                         ? fill(t.heldLine, { name: v.held.technician })
                         : t.heldNobody}
@@ -838,7 +841,7 @@ export function Desk({
                       </div>
                     </div>
                   ) : v.status === 'waiting' ? (
-                    <span className="flex flex-col items-end gap-2">
+                    <span className="ml-auto flex flex-col items-end gap-2">
                       <form action={call}>
                         <input type="hidden" name="visitId" value={v.id} />
                         <Button

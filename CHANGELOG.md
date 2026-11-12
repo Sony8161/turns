@@ -2,6 +2,34 @@
 
 One version per delivered part. Tags point at the commits.
 
+## v0.16.1, 2026-11-12: Fixes from demo filming
+
+Four things the demo video showed (Duong, 2026-11-12, "fix these").
+
+- **Waiting rows no longer squash.** The client info on a desk/owner row keeps
+  a usable width (16rem) and wide actions (Approve fix / Decline fix, Confirm
+  all 3, the open "Ask a higher-level tech" box) wrap onto their own line,
+  right-aligned. Checked at iPad landscape (1366) and portrait (1024).
+- **The Log reads in words.** Details shows "Client: Jenny K. · Gel manicure",
+  technician and service names, "Status: available → break", "Points: 0 → 1",
+  "Change: +1", reasons and yes/no, in English and Vietnamese. Raw ids are
+  never shown: a visit is resolved to "First L. · services" on the page only
+  (`clients.visitLabels`, this location only; owners and managers see the same
+  on the board), and anything that can't be resolved is left out or shown as
+  "a visit". The audit rows are unchanged, and the CSV keeps its ids exactly
+  as before (`fields`); the viewer uses the new `readable` parts.
+- **A called technician's phone says so.** The line under her name reads "A
+  call is waiting for you" (polish, the colour for a call waiting) instead of
+  "You are available". "Answer your call first: Accept or Deny." only shows
+  when she taps Break, Out or Check out while the call is open (the server
+  already refused those); it is no longer always on screen.
+- **The rules preview really is blue.** A name that moves is lapis (#1D4ED8,
+  6.7:1 on white, new design token) and bold, with ↑/↓ and the number of
+  places, so it never rests on colour alone. The note says so in EN and VI.
+
+Tests: 7 db (`test/v0161.test.ts`), 9 web (`log/readable.test.ts`,
+`me/status-line.test.ts`, `rules/form.test.ts`).
+
 ## v0.16.0, 2026-11-12: Fixes, groups, client left, need help
 
 From Duong's list of 2026-11-12 (A to I). Every rule is a setting in the rule

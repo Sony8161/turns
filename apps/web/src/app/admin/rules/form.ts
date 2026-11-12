@@ -246,3 +246,13 @@ export function formValues(config: RuleConfig): Record<string, string> {
   });
   return v;
 }
+
+/**
+ * How many places a name moved in the rules preview: positive moved up
+ * (called sooner), negative moved down, 0 stayed. A name that was not in the
+ * line before counts as not moved. Pure (v0.16.1).
+ */
+export function placesMoved(before: readonly string[], name: string, index: number): number {
+  const was = before.indexOf(name);
+  return was < 0 ? 0 : was - index;
+}

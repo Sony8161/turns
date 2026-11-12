@@ -384,3 +384,48 @@ export async function updateClient(
     return { ok: true as const };
   });
 }
+
+export type VisitLabel = { client: string | null; services: string[] };
+
+/**
+ * "First L." and the services of each visit, for the audit viewer (v0.16.1),
+ * which shows a visit as people know it instead of its id. Owners and managers
+ * already see the same on the board; the CSV export never asks for this, so no
+ * client name leaves the app through the log. Only visits at this location.
+ */
+export async function visitLabels(
+  db: Db,
+  locationId: string,
+  visitIds: string[],
+): Promise<Map<string, VisitLabel>> {
+  const out = new Map<string, VisitLabel>();
+  const ids = [...new Set(visitIds)];
+  if (ids.length === 0) return out;
+  const rows = await db
+    .select({
+      id: visits.id,
+      firstName: clients.firstName,
+      lastName: clients.lastName,
+      kioskName: visits.kioskName,
+      kioskLastName: visits.kioskLastName,
+      service: services.name,
+    })
+    .from(visits)
+    .leftJoin(clients, eq(clients.id, visits.clientId))
+    .leftJoin(visitServices, eq(visitServices.visitId, visits.id))
+    .leftJoin(services, eq(services.id, visitServices.serviceId))
+    .where(and(inArray(visits.id, ids), eq(visits.locationId, locationId)))
+    .orderBy(visits.id, visitServices.createdAt);
+  for (const r of rows) {
+    let label = out.get(r.id);
+    if (!label) {
+      label = {
+        client: shortName(r.firstName, r.lastName) ?? shortName(r.kioskName, r.kioskLastName),
+        services: [],
+      };
+      out.set(r.id, label);
+    }
+    if (r.service && !label.services.includes(r.service)) label.services.push(r.service);
+  }
+  return out;
+}

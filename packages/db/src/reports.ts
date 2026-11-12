@@ -17,6 +17,7 @@ import {
   dailySummaries,
   locations,
   profiles,
+  services,
   shifts,
   technicians,
   turnCalls,
@@ -230,6 +231,8 @@ export type AuditRow = {
   technicianName: string | null;
   /** The fields the design doc's audit table lists for this event, as label → value. */
   fields: [string, string][];
+  /** The same entry for people to read (v0.16.1): names, not ids. The CSV keeps `fields`. */
+  readable: ReadablePart[];
   reason: string | null;
   /** On a call: everyone on shift at that second, in queue order. */
   queue: QueueEntry[] | null;
@@ -433,6 +436,236 @@ export function snapshotOf(after: unknown): QueueEntry[] | null {
   });
 }
 
+// ---------------------------------------------------------------------------
+// Readable details (v0.16.1). The viewer shows these instead of `fields`,
+// which keep the raw ids for the CSV. Staff names and service names are
+// resolved here; a visit stays an id (`kind: 'visit'`) and only the viewer
+// page turns it into "First L. · services" through clients.visitLabels, so no
+// client name ever sits in an AuditRow (module header). Unresolved ids are
+// dropped, never shown.
+
+export type ReadableCode =
+  | 'status'
+  | 'reason'
+  | 'deny'
+  | 'source'
+  | 'level'
+  | 'choice'
+  | 'by'
+  | 'role'
+  | 'geofence'
+  | 'call_kind';
+
+export type ReadableValue =
+  | { kind: 'text'; text: string }
+  | { kind: 'visit'; id: string }
+  | { kind: 'services'; names: string[] }
+  | { kind: 'points'; n: number; signed?: boolean }
+  | { kind: 'bool'; value: boolean }
+  | { kind: 'seconds'; n: number }
+  | { kind: 'minutes'; n: number }
+  | { kind: 'meters'; n: number }
+  | { kind: 'time'; at: string }
+  | { kind: 'number'; n: number }
+  | { kind: 'code'; group: ReadableCode; code: string }
+  | { kind: 'list'; items: string[] };
+
+/** One readable detail: what it is, its value, and what it was before when it changed. */
+export type ReadablePart = { key: string; value: ReadableValue; was?: ReadableValue };
+
+export type ReadableRefs = {
+  /** Technician and user ids at this location → display name. */
+  people: Map<string, string>;
+  /** Service ids at this location → service name. */
+  services: Map<string, string>;
+};
+
+const UUID_TEST = new RegExp(UUID_RE);
+const isId = (v: unknown): v is string => typeof v === 'string' && UUID_TEST.test(v);
+
+// Keys that are plumbing, already shown in another column, or personal.
+const SKIP_KEYS = new Set([
+  'queue',
+  'shiftId',
+  'callId',
+  'groupId',
+  'kioskDeviceId',
+  'demo',
+  'owners',
+  'kind',
+  'age',
+  'gender',
+  'hasName',
+  'hasReason',
+  'id',
+  'locationId',
+  'organizationId',
+  'skillCategoryIds',
+  'restrictions',
+  'ledgerId',
+]);
+
+const CODE_KEYS: Record<string, [string, ReadableCode]> = {
+  status: ['status', 'status'],
+  reasonType: ['reason_type', 'reason'],
+  denyReason: ['deny_reason', 'deny'],
+  source: ['source', 'source'],
+  level: ['level', 'level'],
+  choice: ['choice', 'choice'],
+  by: ['by', 'by'],
+  role: ['role', 'role'],
+};
+const SERVICE_KEYS: Record<string, string> = {
+  serviceIds: 'services',
+  keptServiceIds: 'kept',
+  sentBackServiceIds: 'sent_back',
+  takesOnly: 'takes_only',
+};
+const VISIT_KEYS: Record<string, string> = {
+  visitId: 'visit',
+  newVisitId: 'rest_of_visit',
+  fixOfVisitId: 'fix_of',
+};
+const PERSON_KEYS: Record<string, string> = {
+  technicianId: 'technician',
+  requestedTechnicianId: 'asked_for',
+  userId: 'person',
+};
+const BOOL_KEYS: Record<string, string> = {
+  excused: 'excused',
+  inWindow: 'in_window',
+  needsApproval: 'needs_approval',
+  isKid: 'kid',
+};
+const TIME_KEYS: Record<string, string> = {
+  startAt: 'start',
+  endAt: 'end',
+  expectedBackAt: 'expected_back',
+};
+
+/** One raw key and value as a readable detail, or null to leave it out. Pure. */
+function readableValue(
+  k: string,
+  v: unknown,
+  refs: ReadableRefs,
+): { key: string; value: ReadableValue } | null {
+  if (v === null || v === undefined || v === '' || SKIP_KEYS.has(k)) return null;
+  if (k in VISIT_KEYS)
+    return isId(v) ? { key: VISIT_KEYS[k]!, value: { kind: 'visit', id: v } } : null;
+  if (k in PERSON_KEYS) {
+    const name = isId(v) ? refs.people.get(v) : undefined;
+    return name ? { key: PERSON_KEYS[k]!, value: { kind: 'text', text: name } } : null;
+  }
+  if (k in SERVICE_KEYS) {
+    if (!Array.isArray(v)) return null;
+    const names = v
+      .filter(isId)
+      .map((id) => refs.services.get(id))
+      .filter((n): n is string => !!n);
+    return names.length ? { key: SERVICE_KEYS[k]!, value: { kind: 'services', names } } : null;
+  }
+  if (k in CODE_KEYS) {
+    const [key, group] = CODE_KEYS[k]!;
+    return typeof v === 'string' ? { key, value: { kind: 'code', group, code: v } } : null;
+  }
+  if (k in BOOL_KEYS) {
+    return typeof v === 'boolean'
+      ? { key: BOOL_KEYS[k]!, value: { kind: 'bool', value: v } }
+      : null;
+  }
+  if (k in TIME_KEYS) {
+    const at = typeof v === 'string' ? new Date(v) : null;
+    return at && !Number.isNaN(at.getTime())
+      ? { key: TIME_KEYS[k]!, value: { kind: 'time', at: at.toISOString() } }
+      : null;
+  }
+  if (k === 'partyId')
+    return isId(v) ? { key: 'group', value: { kind: 'bool', value: true } } : null;
+  if (k === 'delta') {
+    const n = num(v);
+    return n === null ? null : { key: 'change', value: { kind: 'points', n, signed: true } };
+  }
+  if (k === 'points') {
+    const n = num(v);
+    return n === null ? null : { key: 'points', value: { kind: 'points', n } };
+  }
+  if (k === 'lateMinutes') {
+    const n = num(v);
+    return n === null ? null : { key: 'late', value: { kind: 'minutes', n } };
+  }
+  if (k === 'waitedSeconds') {
+    const n = num(v);
+    return n === null ? null : { key: 'waited', value: { kind: 'seconds', n: Math.round(n) } };
+  }
+  if (k === 'version') {
+    const n = num(v);
+    return n === null ? null : { key: 'rules_version', value: { kind: 'number', n } };
+  }
+  if (k === 'geofence') {
+    const g = obj(v);
+    const code =
+      g['passed'] === true ? 'passed' : g['passed'] === false ? 'failed' : str(g['reason']);
+    return code ? { key: 'geofence', value: { kind: 'code', group: 'geofence', code } } : null;
+  }
+  if (k === 'tags') {
+    if (!Array.isArray(v)) return null;
+    const items = v.filter((x): x is string => typeof x === 'string' && !isId(x));
+    return { key: 'tags', value: { kind: 'list', items } };
+  }
+  // Anything else: a short plain value, never an id, never a nested object.
+  if (isId(v) || (typeof v === 'object' && v !== null)) return null;
+  const s = str(v);
+  if (s === null) return null;
+  if (typeof v === 'boolean') return { key: k, value: { kind: 'bool', value: v } };
+  return { key: k, value: { kind: 'text', text: s.length > 80 ? `${s.slice(0, 77)}...` : s } };
+}
+
+const sameValue = (a: ReadableValue, b: ReadableValue) => JSON.stringify(a) === JSON.stringify(b);
+
+/**
+ * The details of one entry as the owner reads them: names instead of ids,
+ * before → after where something changed, nothing personal and no raw ids.
+ * Pure: the caller resolves staff and service names first.
+ */
+export function readableParts(
+  e: {
+    action: string;
+    entityType: string;
+    entityId: string | null;
+    before: unknown;
+    after: unknown;
+    responseSeconds: number | null;
+  },
+  refs: ReadableRefs,
+): ReadablePart[] {
+  const before = obj(redact(e.before));
+  const after = obj(redact(e.after));
+  const out: ReadablePart[] = [];
+
+  // The visit the entry is about, when it is written on the visit itself.
+  if (e.entityType === 'visits' && isId(e.entityId) && !('visitId' in after)) {
+    out.push({ key: 'visit', value: { kind: 'visit', id: e.entityId } });
+  }
+  if (e.responseSeconds !== null && Number.isFinite(e.responseSeconds)) {
+    out.push({ key: 'response', value: { kind: 'seconds', n: Math.round(e.responseSeconds) } });
+  }
+
+  const keys = [...Object.keys(after), ...Object.keys(before).filter((k) => !(k in after))];
+  for (const k of keys) {
+    const now = k in after ? readableValue(k, after[k], refs) : null;
+    const was = k in before ? readableValue(k, before[k], refs) : null;
+    // The technician an entry is about is already in its own column; only a
+    // change of technician (a reassign) is a detail.
+    if (k === 'technicianId' && !(was && now)) continue;
+    if (now && was) {
+      if (sameValue(now.value, was.value)) out.push(now);
+      else out.push({ key: now.key, value: now.value, was: was.value });
+    } else if (now) out.push(now);
+    else if (was) out.push(was);
+  }
+  return out;
+}
+
 /** Audit entries for one location, newest first, within at most AUDIT_MAX_DAYS. */
 export async function auditEntries(db: Db, filter: AuditFilter): Promise<AuditRow[]> {
   const from = parseDate(filter.from);
@@ -479,12 +712,18 @@ export async function auditEntries(db: Db, filter: AuditFilter): Promise<AuditRo
   // Names for every technician and user an entry mentions, in two queries.
   const techIds = new Set<string>();
   const userIds = new Set<string>();
+  const serviceIds = new Set<string>();
   const isUuid = (v: unknown): v is string => typeof v === 'string' && new RegExp(UUID_RE).test(v);
   for (const r of rows) {
     if (r.technicianId) techIds.add(r.technicianId);
     for (const side of [obj(r.before), obj(r.after)]) {
       if (isUuid(side['technicianId'])) techIds.add(side['technicianId']);
+      if (isUuid(side['requestedTechnicianId'])) techIds.add(side['requestedTechnicianId']);
       if (isUuid(side['userId'])) userIds.add(side['userId']);
+      for (const k of ['serviceIds', 'keptServiceIds', 'sentBackServiceIds', 'takesOnly']) {
+        const list = side[k];
+        if (Array.isArray(list)) for (const id of list) if (isUuid(id)) serviceIds.add(id);
+      }
     }
   }
   const names = new Map<string, string>();
@@ -506,6 +745,18 @@ export async function auditEntries(db: Db, filter: AuditFilter): Promise<AuditRo
       names.set(p.id, p.name);
     }
   }
+  const serviceNames = new Map<string, string>();
+  if (serviceIds.size) {
+    for (const x of await db
+      .select({ id: services.id, name: services.name })
+      .from(services)
+      .where(
+        and(inArray(services.id, [...serviceIds]), eq(services.locationId, filter.locationId)),
+      )) {
+      serviceNames.set(x.id, x.name);
+    }
+  }
+  const refs: ReadableRefs = { people: names, services: serviceNames };
 
   return rows.map((r) => ({
     id: r.id,
@@ -525,6 +776,17 @@ export async function auditEntries(db: Db, filter: AuditFilter): Promise<AuditRo
       responseSeconds: r.responseSeconds === null ? null : Number(r.responseSeconds),
       names,
     }),
+    readable: readableParts(
+      {
+        action: r.action,
+        entityType: r.entityType,
+        entityId: r.entityId,
+        before: r.before,
+        after: r.after,
+        responseSeconds: r.responseSeconds === null ? null : Number(r.responseSeconds),
+      },
+      refs,
+    ),
     reason: r.reason,
     queue: r.action === 'call_sent' ? snapshotOf(r.after) : null,
   }));

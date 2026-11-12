@@ -21,6 +21,7 @@ import { CallPanel } from './CallPanel';
 import { ClientLeftButton, HelpPanel } from './MeExtras';
 import { myOpenHelp } from '@turn/db/help';
 import { StatusPanel } from './StatusPanel';
+import { meStatusLine } from './status-line';
 
 // The technician's own screen: status, today's points, the call if there is
 // one, and the moves allowed from here. The web version of the phone app.
@@ -91,7 +92,9 @@ export default async function MePage() {
         <>
           <section className="flex flex-col gap-1">
             <h1 className="text-heading font-semibold">{actor.displayName}</h1>
-            <p className="text-lead">{fill(t.me.statusLine, { status: t.board.status[status] })}</p>
+            <p className={`text-lead ${call ? 'font-semibold text-polish' : ''}`}>
+              {meStatusLine(t, status, !!call)}
+            </p>
             <p className="points text-slate">
               <span aria-hidden>{formatPoints(me?.points ?? 0, me?.hadAppointmentLast)}</span>
               <span className="sr-only">
@@ -119,7 +122,7 @@ export default async function MePage() {
             />
           ) : null}
           {call ? <ClientLeftButton visitId={call.visitId} t={t.me} /> : null}
-          <StatusPanel status={status} called={!!call} t={t.me} />
+          <StatusPanel status={status} t={t.me} />
           {status !== 'off' ? (
             <HelpPanel
               openMinutes={help ? Math.floor(secondsSince(help.createdAt) / 60) : null}

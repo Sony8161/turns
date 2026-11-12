@@ -6,7 +6,7 @@ import { formatPoints } from '@/components/Board';
 import { Button } from '@/components/ui';
 import { fill, type Dictionary } from '@/i18n/dictionary';
 import { rulesAction, type RulesState } from './actions';
-import { DENY_REASONS, FIX_WINDOW_CHOICES, TIER_SLOTS } from './form';
+import { DENY_REASONS, FIX_WINDOW_CHOICES, placesMoved, TIER_SLOTS } from './form';
 
 type Category = { id: string; name: string; isFillOrFullSet: boolean };
 type Service = { id: string; name: string; category: string };
@@ -304,16 +304,29 @@ export function RulesForm({
                   </h3>
                   <ol className="flex flex-col gap-1">
                     {state.preview![side].map((r, i) => {
-                      const moved =
-                        side === 'after' &&
-                        state.preview!.before.findIndex((b) => b.name === r.name) !== i;
+                      // v0.16.1: a name that moves is blue (lapis) and bold,
+                      // with an arrow and the number of places, so it never
+                      // rests on colour alone.
+                      const by =
+                        side === 'after'
+                          ? placesMoved(
+                              state.preview!.before.map((b) => b.name),
+                              r.name,
+                              i,
+                            )
+                          : 0;
                       return (
                         <li
                           key={`${side}-${r.name}`}
-                          className={`flex min-h-11 items-center justify-between gap-3 border-b border-pumice text-lead ${moved ? 'font-semibold text-navy' : ''}`}
+                          className={`flex min-h-11 items-center justify-between gap-3 border-b border-pumice text-lead ${by !== 0 ? 'font-semibold text-lapis' : ''}`}
                         >
                           <span>
                             {i + 1}. {r.name}
+                            {by !== 0 ? (
+                              <span className="ml-2 text-body">
+                                {fill(by > 0 ? t.movedUp : t.movedDown, { n: Math.abs(by) })}
+                              </span>
+                            ) : null}
                           </span>
                           <span className="tabular-nums">
                             {formatPoints(r.points, r.hadAppointmentLast)}

@@ -7,6 +7,7 @@ import {
   techniciansAt,
 } from '@turn/db/reports';
 import { locations } from '@turn/db';
+import { visitLabels } from '@turn/db/clients';
 import { eq } from 'drizzle-orm';
 import { redirect } from 'next/navigation';
 import { AdminNav } from '@/components/AdminNav';
@@ -20,11 +21,14 @@ import { can } from '@/lib/permissions';
 import { signOut } from '../../login/actions';
 import { filterQuery, parseLogFilters } from './filters';
 import { auditLabels } from './labels';
+import { formatReadable, visitIdsOf } from './readable';
 
 // Audit log viewer (Part 8). Owners and managers, at the location the session
 // says (managers: their own). Read only: the log is append-only (T17). The
 // queue snapshot on a call shows who was ahead and why (T4); technicians never
-// reach this page. No client name or phone is in the log to show.
+// reach this page. No client name or phone is in the log itself: v0.16.1 shows
+// a visit as "First L. · services", looked up here for the screen only (the
+// owner and managers see the same on the board); the CSV keeps the ids.
 export default async function LogPage({
   searchParams,
 }: {
@@ -87,6 +91,8 @@ export default async function LogPage({
     techniciansAt(db(), m.locationId),
   ]);
   const table = auditTable(rows, tz, auditLabels(t));
+  const visits = await visitLabels(db(), m.locationId, visitIdsOf(rows));
+  const readable = { t, timezone: tz, lang, visits };
   const mayExport = can(m.role, 'export_data');
   const skip = t.desk.skip as Record<string, string>;
   const status = t.board.status as Record<string, string>;
@@ -182,8 +188,14 @@ export default async function LogPage({
                         {c}
                       </td>
                     ))}
-                    <td className="px-2 py-2">
-                      {cells[6]}
+                    <td className="min-w-[16rem] px-2 py-2">
+                      {r.readable.length > 0 ? (
+                        <ul className="flex flex-col gap-0.5">
+                          {formatReadable(r.readable, readable).map((line, n) => (
+                            <li key={n}>{line}</li>
+                          ))}
+                        </ul>
+                      ) : null}
                       {r.queue ? (
                         <details className="mt-1">
                           <summary className="cursor-pointer font-medium">

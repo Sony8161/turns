@@ -15,6 +15,7 @@ import {
   DENY_REASONS,
   fieldFor,
   formValues,
+  placesMoved,
   sortWith,
 } from './form';
 
@@ -185,5 +186,17 @@ describe('rule builder form', () => {
     expect(fieldFor('points.by_category.abc', [])).toBe('category.abc');
     expect(fieldFor('penalties.late_tiers.1.start_points', [0, 2])).toBe('tier.2.start');
     expect(fieldFor('penalties.deny', [])).toBe('penalties.deny');
+  });
+});
+
+describe('placesMoved (v0.16.1: the preview marks who moves)', () => {
+  const before = ['Thảo', 'Linh', 'Mai'];
+  it('up is positive, down is negative, staying is 0', () => {
+    expect(placesMoved(before, 'Mai', 0)).toBe(2);
+    expect(placesMoved(before, 'Thảo', 1)).toBe(-1);
+    expect(placesMoved(before, 'Linh', 1)).toBe(0);
+  });
+  it('a name not in the line before is not marked', () => {
+    expect(placesMoved(before, 'Vân', 0)).toBe(0);
   });
 });

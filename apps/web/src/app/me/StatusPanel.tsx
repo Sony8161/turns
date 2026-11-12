@@ -31,16 +31,7 @@ const MOVES: Record<State, { intent: string; tone: 'primary' | 'quiet' | 'danger
   ],
 };
 
-export function StatusPanel({
-  status,
-  called = false,
-  t,
-}: {
-  status: State;
-  /** An open call: the only moves are Accept and Deny (no auto-pass). */
-  called?: boolean;
-  t: Dictionary['me'];
-}) {
+export function StatusPanel({ status, t }: { status: State; t: Dictionary['me'] }) {
   const [state, action, pending] = useActionState<MeState, FormData>(moveStatus, {});
   const [pos, setPos] = useState<{ lat: number; lng: number; accuracy: number } | null>(null);
   const asked = useRef(false);
@@ -74,7 +65,9 @@ export function StatusPanel({
           ? t.errors[state.error]
           : null;
 
-  if (called) return <p className="text-slate/80">{t.errors.open_call}</p>;
+  // v0.16.1: with a call open the moves stay on screen. Break, out and check
+  // out are refused by the server until she answers (no auto-pass), and only
+  // then does "Answer your call first" show, as the error of that tap.
 
   return (
     <form action={action} className="flex flex-col gap-4">

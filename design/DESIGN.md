@@ -30,6 +30,7 @@ The proposal PDFs Phu has already seen use navy, pink and teal. Keep those so th
 | Polish | `#C2185B` | one job: attention. A call waiting for an answer, an error, a deny |
 | Teal   | `#2A9D8F` | available, confirmed, success                                      |
 | Amber  | `#D9A441` | break, out, late (never alone: always with the word)               |
+| Lapis  | `#1D4ED8` | one job: a name that moves in the rules preview (always with ↑/↓)  |
 
 Status is always colour **and** a word **and** position in the list. Colour alone carries nothing (WCAG, and the board is read in sunlight).
 

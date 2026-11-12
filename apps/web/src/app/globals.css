@@ -10,6 +10,8 @@
   --color-polish: #c2185b;
   --color-teal: #2a9d8f;
   --color-amber: #d9a441;
+  /* v0.16.1: the rules preview marks names that move (6.7:1 on white). */
+  --color-lapis: #1d4ed8;
 
   --font-sans: var(--font-be-vietnam), system-ui, sans-serif;
 
