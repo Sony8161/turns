@@ -293,6 +293,20 @@ Store (unlisted), training and the one-page guide. **The compliance pass**
 retention) with a Florida attorney comes before a second salon pays. See
 `../13-Turn-System-GRC-Scoping.md`.
 
+### Connect Fresha (v0.11.0)
+
+Fresha has no open API, so each technician's Fresha calendar export link is
+the way appointments come in. Adding the links is part of onboarding: the
+owner's setup ends with an optional "Connect Fresha calendars" step (also on
+Appointments), and a technician who joins is offered "Add your Fresha
+calendar". Every link is tested before it is saved: the server fetches it the
+same safe way the poll does, counts the coming appointments, reads the
+calendar's name and suggests which technician it belongs to; the owner
+decides. Only Fresha's export host is accepted from these screens. Saving runs
+the first sync at once. The link stays on the server; screens show only
+"connected, last synced" or a red "sync failing". The links are read-only:
+nothing is written back to Fresha.
+
 ## How the pieces talk to each other
 
 ```

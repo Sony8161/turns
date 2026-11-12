@@ -488,6 +488,40 @@ Use two browser windows: a normal one signed in as staff, and a **private**
    Windows), a wrong kiosk answer is read out, and each **Call next** says
    whose visit it is.
 
+## 8j. Connect Fresha calendars (v0.11.0)
+
+You need a Fresha calendar export link (Fresha: your team member profile, the
+calendar sync / export link; it starts with
+`https://calendar-export.fresha.com/`). Treat it like a password.
+
+1. **Owner, Appointments.** Sign in as Phu, open Appointments. At the top is
+   "Connect Fresha calendars" with a row per technician.
+2. **Wrong link.** Paste `https://calendar.google.com/x.ics` on Linh's row and
+   press Test link: "That is not a Fresha calendar link…". Nothing is saved.
+3. **Your link.** Paste your Fresha link, Test link. Expect "Link works, no
+   appointments yet" (or "Found N upcoming appointments") and the calendar's
+   name. If the name matches another technician you see "This calendar looks
+   like …" and two Save buttons. Change one character in the box: Save
+   disappears until you test again.
+4. **Save.** Press Save for Linh. The row turns to "Connected, last synced …"
+   and any appointments in the next month appear in the list below right
+   away. View the page source: the link is not in it.
+5. **Book a test appointment in Fresha** for that team member, wait for Fresha
+   to update its file (it can lag up to 15 minutes), then press Sync now. It
+   shows here and on Linh's `/me`.
+6. **Disconnect.** Press Disconnect: "Not connected"; appointments it brought
+   in stay.
+7. **Technician.** Sign in as Linh (+18135550104). `/me` shows "Calendar: Not
+   connected" and "Add your Fresha calendar". Open it, test, Save. `/me` now
+   says "Connected, last synced …"; the link is never shown back.
+8. **New technician.** Join with the technician invite code from
+   `dev-codes.txt`: after sign-in you land on "Add your Fresha calendar" with
+   Skip for now.
+9. **New salon.** Set up a salon with the setup code: after sign-in you land
+   on "Connect Fresha calendars" (no technicians yet, so it says so) with Skip.
+10. **Log.** Log → "Calendar link tested", "Calendar link set", "Calendar link
+    removed": who and when, never the link.
+
 ## 9. If something is off
 
 - **"Something went wrong on our side"** on sign-in: the local stack is probably

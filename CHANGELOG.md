@@ -2,6 +2,43 @@
 
 One version per delivered part. Tags point at the commits.
 
+## v0.11.0, 2026-11-12: Connect Fresha onboarding
+
+Fresha's calendar export link is the way in (no open API), so adding the links
+is now part of onboarding instead of a hidden owner setting.
+
+- **Owner setup, last step (optional).** After a new salon is set up,
+  `/setup/calendars` offers "Connect Fresha calendars": one row per technician
+  with a paste box. Skip goes to the board. The same card is on Appointments.
+- **Test before save.** "Test link" fetches the calendar through the same
+  pinned, size- and time-limited fetch the poll uses, and says "Found N
+  upcoming appointments", "Link works, no appointments yet", or what is wrong
+  (not a Fresha link, Fresha did not answer, not a calendar). Nothing is saved
+  by a test; Save stays off until the link in the box is the one tested.
+- **Whose calendar is it.** The calendar's name (`X-WR-CALNAME`, e.g. "Fresha
+  - DUONG LAM Heavenly Nails") is matched against the technicians, without
+    accents or case. A mismatch shows "This calendar looks like Dương's, not
+    Linh's" and a second button to save it for Dương. Never assigned without the
+    owner pressing one.
+- **Fresha links only from these screens.** `https` on
+  `calendar-export.fresha.com`, exact host. More hosts by config
+  (`FEED_ALLOWED_HOSTS`, comma separated, plain host names). The old generic
+  link form stays on Appointments, folded under "Other calendar link (not
+  Fresha)".
+- **Technicians add their own.** A new technician lands on `/me/calendar`
+  after joining ("Add your Fresha calendar", optional); `/me` shows
+  "Calendar: Connected, last synced …" with Add or Manage. A technician can
+  set or disconnect their own calendar only, while their membership is active
+  (`feedTechnician`). They never see the link again, not even its hint.
+- **Sync now.** Saving runs the first sync straight away, so the appointments
+  are there when the screen comes back; the cron keeps it in step after that.
+- **State on Appointments.** Each technician shows Not connected, Connected
+  (last synced), not synced since … (stale), or Sync failing (red).
+- **Audit.** `feed_tested` (new, with the outcome), `feed_set` and
+  `feed_removed` (now with who: owner or technician). Never the URL or token.
+  Tests and saves are rate limited per person (20 per 15 minutes).
+- Tests: `packages/db/test/fresha.test.ts` (15), `apps/web/src/components/fresha-state.test.ts` (3).
+
 ## v0.10.2, 2026-11-12: kiosk step fix, request notes
 
 From Duong's first kiosk test.
