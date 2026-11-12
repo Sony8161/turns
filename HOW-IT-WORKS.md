@@ -328,6 +328,23 @@ before anything is saved. Clients have first and last names; the desk finds
 a client by phone or name on Clients. The Fresha client list is imported
 before launch (backlog).
 
+### Skill levels, asking a higher level, split visits (v0.14.0)
+
+Levels are a ladder (regular polish, gel, dip, acrylic) kept in
+`packages/db/src/levels.ts`. A technician's level ticks services; the ticks
+(`technician_services`) are what the engine matches a visit against. A
+service lists the levels that get it by turn (`services.turn_levels`). In
+`queueFor` (engine.ts) the level rule is checked last, so a technician whose
+only reason is `not_by_turn` is exactly one the desk may ask: `deskCall` with
+kind `offer` writes that call, and `respondToCall` posts no points when an
+offer or a desk pick is declined. A service marked `desk_picks` makes
+`callNext` answer `desk_picks`; the desk uses `deskCall` with kind
+`desk_pick`. `deskOptions` gives the desk the names for both. A technician
+accepting a visit with several services may pass `keepServiceIds`; the rest
+move to a new visit linked by `split_from_visit_id` with the same arrival
+time. Nothing here changes how points are worked out: a visit still posts
+the points of its own services when it is finished.
+
 ## How the pieces talk to each other
 
 ```

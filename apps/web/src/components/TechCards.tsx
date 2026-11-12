@@ -87,12 +87,19 @@ export function TechCards({
               </div>
 
               <ul aria-label={tb.does} className="flex flex-wrap gap-2">
+                {c.level ? (
+                  <li className={`${chip} bg-navy text-board`}>
+                    {fill(tb.level, { level: t.levels.name[c.level] ?? c.level })}
+                  </li>
+                ) : null}
                 <li className={`${chip} bg-teal/15 text-slate`}>
-                  {c.skills === null
-                    ? tb.doesEverything
-                    : fill(tb.onlyThese, {
-                        list: c.skills.map((s) => tb.category[s] ?? s).join(', '),
-                      })}
+                  {c.services !== null
+                    ? fill(tb.onlyThese, { list: c.services.join(', ') })
+                    : c.skills === null
+                      ? tb.doesEverything
+                      : fill(tb.onlyThese, {
+                          list: c.skills.map((s) => tb.category[s] ?? s).join(', '),
+                        })}
                 </li>
                 {c.tags.map((tag) => (
                   <li key={tag} className={`${chip} bg-pumice text-slate`}>

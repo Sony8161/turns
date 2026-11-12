@@ -3,6 +3,7 @@ import { serviceCategories } from '@turn/db';
 import { loadProfiles, type TechnicianProfile } from '@turn/db/profile';
 import { listStaff } from '@turn/db/staff';
 import { receptionistMayEdit } from '@turn/db/tech-settings';
+import Link from 'next/link';
 import { redirect } from 'next/navigation';
 import { AdminNav } from '@/components/AdminNav';
 import { Button } from '@/components/ui';
@@ -114,6 +115,11 @@ export default async function StaffPage() {
           {fill(t.admin.locationRole, { location: m.locationName, role: t.roles[m.role] })}
         </h1>
         <p className="max-w-[70ch] text-slate/80">{t.staff.lead}</p>
+        <p>
+          <Link href="/admin/levels" className="font-semibold underline">
+            {t.levels.link}
+          </Link>
+        </p>
       </section>
       {owner ? <ReceptionistToggle on={deskEdits} t={t.techSettings} /> : null}
       <StaffPanel

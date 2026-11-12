@@ -202,6 +202,8 @@ export type QueueEntry = {
   status: string;
   eligible: boolean;
   why: string;
+  /** What the reason is about: the services, or the minutes (v0.14.0). */
+  detail: string;
   hadAppointmentLast: boolean;
 };
 
@@ -395,6 +397,7 @@ export function snapshotOf(after: unknown): QueueEntry[] | null {
       status: str(r['status']) ?? '',
       eligible: r['eligible'] === true,
       why: str(r['why']) ?? '',
+      detail: str(r['detail']) ?? '',
       hadAppointmentLast: r['hadAppointmentLast'] === true,
     };
   });

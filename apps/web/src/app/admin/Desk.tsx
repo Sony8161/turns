@@ -8,6 +8,7 @@ import { fill, type Dictionary } from '@/i18n/dictionary';
 import {
   callNextFor,
   clearCallFor,
+  deskCallFor,
   enterWalkIn,
   reviewKioskFor,
   setNoteFor,
@@ -36,6 +37,21 @@ export type Waiting = {
   fromKiosk: boolean;
   kioskName: string | null;
   needsConfirm: boolean;
+  /** v0.14.0: never called by turn; the desk picks the technician. */
+  deskPicks: boolean;
+  /** The services a technician sent back when she split a visit. */
+  splitRest: boolean;
+  /** The open call's kind: by turn, an offer to a higher level, or a desk pick. */
+  callKind: string | null;
+  /** Who the desk may ask (higher level) or pick (desk-pick service). */
+  options: {
+    technicianId: string;
+    name: string;
+    level: string | null;
+    turn: number;
+    status: string;
+    canCall: boolean;
+  }[];
 };
 export type Attention = {
   unansweredCalls: { callId: string; technicianName: string; waitedMin: number }[];
@@ -62,12 +78,16 @@ export function Desk({
   waiting,
   attention,
   t,
+  levelNames,
+  statusNames,
 }: {
   services: Service[];
   technicians: { id: string; name: string }[];
   waiting: Waiting[];
   attention: Attention;
   t: Dictionary['desk'];
+  levelNames: Record<string, string>;
+  statusNames: Record<string, string>;
 }) {
   const [entry, enter, entering] = useActionState<DeskState, FormData>(enterWalkIn, {});
   const [callState, call, calling] = useActionState<DeskState, FormData>(callNextFor, {});
@@ -75,6 +95,13 @@ export function Desk({
   const [noticeState, notice, switching] = useActionState<DeskState, FormData>(setNotice, {});
   const [reviewState, review, reviewing] = useActionState<DeskState, FormData>(reviewKioskFor, {});
   const [noteState, saveNote, savingNote] = useActionState<DeskState, FormData>(setNoteFor, {});
+  const [askState, ask, asking] = useActionState<DeskState, FormData>(deskCallFor, {});
+  const optionLine = (o: Waiting['options'][number]) =>
+    fill(t.optionLine, {
+      level: o.level ? (levelNames[o.level] ?? o.level) : '–',
+      turn: o.turn,
+      status: statusNames[o.status] ?? o.status,
+    });
   const field = 'min-h-12 rounded-control border-2 border-slate/30 bg-board px-3 text-lead';
 
   const waitLine =
@@ -273,6 +300,12 @@ export function Desk({
               <ErrorRef refId={noteState.ref} />
             </p>
           ) : null}
+          {askState.error ? (
+            <p role="alert" className="text-polish">
+              {t.errors[askState.error] ?? askState.error}
+              <ErrorRef refId={askState.ref} />
+            </p>
+          ) : null}
           {callState.error ? (
             <p role="alert" className="text-polish">
               {t.errors[callState.error] ?? callState.error}
@@ -315,6 +348,11 @@ export function Desk({
                       </span>
                     ) : null}
                     <span className="font-semibold">{v.services.join(', ')}</span>
+                    {v.splitRest ? (
+                      <span className="w-fit rounded-control bg-pumice px-2 py-0.5 text-small font-medium">
+                        {t.splitRest}
+                      </span>
+                    ) : null}
                     {v.requestedTechnician ? (
                       // v0.10.2: the request stands out, so whoever works the
                       // floor (the owner too) sees it before calling.
@@ -363,10 +401,17 @@ export function Desk({
                     ) : null}
                     <span className="text-small text-slate/70">
                       {v.status === 'called' && v.calledTechnician
-                        ? fill(t.calledLine, {
-                            name: v.calledTechnician,
-                            time: formatClock(v.calledSeconds ?? 0),
-                          })
+                        ? fill(
+                            v.callKind === 'offer'
+                              ? t.offeredLine
+                              : v.callKind === 'desk_pick'
+                                ? t.pickedLine
+                                : t.calledLine,
+                            {
+                              name: v.calledTechnician,
+                              time: formatClock(v.calledSeconds ?? 0),
+                            },
+                          )
                         : v.status === 'in_service'
                           ? `${t.inService}${v.assignedTechnician ? `, ${v.assignedTechnician}` : ''}`
                           : fill(t.waitingLine, { time: formatClock(v.waitSeconds) })}
@@ -414,17 +459,81 @@ export function Desk({
                         </Button>
                       </form>
                     </span>
+                  ) : v.status === 'waiting' && v.deskPicks ? (
+                    // v0.14.0: never called by turn. Everyone who does it, with
+                    // level, turn and status; only a free technician can be picked.
+                    <div className="flex w-full flex-col gap-2 border-l-[12px] border-navy bg-pumice/40 p-3">
+                      <span className="font-semibold">{t.pickTech}</span>
+                      <span className="text-small text-slate/80">{t.pickLead}</span>
+                      {v.options.length === 0 ? (
+                        <span className="text-small text-polish">{t.noneCanDo}</span>
+                      ) : null}
+                      <ul className="flex flex-col gap-2">
+                        {v.options.map((o) => (
+                          <li key={o.technicianId}>
+                            <form action={ask} className="flex flex-wrap items-center gap-3">
+                              <input type="hidden" name="visitId" value={v.id} />
+                              <input type="hidden" name="technicianId" value={o.technicianId} />
+                              <input type="hidden" name="kind" value="desk_pick" />
+                              <Button
+                                type="submit"
+                                tone={o.canCall ? undefined : 'quiet'}
+                                disabled={asking || !o.canCall}
+                                aria-label={`${fill(t.pickButton, { name: o.name })}: ${rowLabel(v)}`}
+                              >
+                                {fill(t.pickButton, { name: o.name })}
+                              </Button>
+                              <span className="text-small text-slate/80">{optionLine(o)}</span>
+                            </form>
+                          </li>
+                        ))}
+                      </ul>
+                    </div>
                   ) : v.status === 'waiting' ? (
-                    <form action={call}>
-                      <input type="hidden" name="visitId" value={v.id} />
-                      <Button
-                        type="submit"
-                        disabled={calling}
-                        aria-label={`${t.callNext}: ${rowLabel(v)}`}
-                      >
-                        {t.callNext}
-                      </Button>
-                    </form>
+                    <span className="flex flex-col items-end gap-2">
+                      <form action={call}>
+                        <input type="hidden" name="visitId" value={v.id} />
+                        <Button
+                          type="submit"
+                          disabled={calling}
+                          aria-label={`${t.callNext}: ${rowLabel(v)}`}
+                        >
+                          {t.callNext}
+                        </Button>
+                      </form>
+                      {v.options.length > 0 ? (
+                        // A higher-level technician is free but it is not hers by
+                        // turn: the desk may ask her. Never automatic.
+                        <details className="text-small">
+                          <summary className="min-h-11 cursor-pointer py-2 font-semibold underline">
+                            {t.askHigher}
+                          </summary>
+                          <div className="flex max-w-[44ch] flex-col gap-2">
+                            <span className="text-slate/80">{t.askHigherLead}</span>
+                            {v.options.map((o) => (
+                              <form
+                                key={o.technicianId}
+                                action={ask}
+                                className="flex flex-wrap items-center gap-3"
+                              >
+                                <input type="hidden" name="visitId" value={v.id} />
+                                <input type="hidden" name="technicianId" value={o.technicianId} />
+                                <input type="hidden" name="kind" value="offer" />
+                                <Button
+                                  type="submit"
+                                  tone="quiet"
+                                  disabled={asking || !o.canCall}
+                                  aria-label={`${fill(t.askButton, { name: o.name })}: ${rowLabel(v)}`}
+                                >
+                                  {fill(t.askButton, { name: o.name })}
+                                </Button>
+                                <span className="text-slate/80">{optionLine(o)}</span>
+                              </form>
+                            ))}
+                          </div>
+                        </details>
+                      ) : null}
+                    </span>
                   ) : null}
                 </li>
               );

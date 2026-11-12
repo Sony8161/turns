@@ -1,6 +1,7 @@
 import { and, asc, eq, isNull } from 'drizzle-orm';
 import { serviceCategories, technicians } from '@turn/db';
 import { locationStatus } from '@turn/db/status';
+import { menuLevels, technicianLevel } from '@turn/db/levels';
 import { loadProfile } from '@turn/db/profile';
 import { mayEditTechnicians } from '@turn/db/tech-settings';
 import Link from 'next/link';
@@ -15,6 +16,7 @@ import { db } from '@/lib/db';
 import { isUuid } from '@/lib/ids';
 import { can } from '@/lib/permissions';
 import { signOut } from '../../../login/actions';
+import { LevelForm } from './LevelForm';
 import { ProfileForm } from './ProfileForm';
 import { TodayPanel } from './TodayPanel';
 
@@ -82,7 +84,7 @@ export default async function TechnicianProfilePage({
     );
   if (!tech) notFound();
 
-  const [categories, profile, floor] = await Promise.all([
+  const [categories, profile, floor, menu, level] = await Promise.all([
     db()
       .select({ id: serviceCategories.id, name: serviceCategories.name })
       .from(serviceCategories)
@@ -92,7 +94,11 @@ export default async function TechnicianProfilePage({
       .orderBy(asc(serviceCategories.name)),
     loadProfile(db(), tech.id),
     locationStatus(db(), m.locationId),
+    menuLevels(db(), m.locationId),
+    technicianLevel(db(), tech.id),
   ]);
+  // v0.14.0: levels are set by an owner or a manager only.
+  const mayLevel = can(m.role, 'edit_technicians');
   const today = floor.find((r) => r.technicianId === tech.id);
 
   return (
@@ -125,6 +131,29 @@ export default async function TechnicianProfilePage({
         t={t.techSettings}
         board={t.board}
       />
+      {mayLevel ? (
+        <LevelForm
+          key={`${level.level ?? 'none'}:${level.serviceIds.length}`}
+          technicianId={tech.id}
+          level={level.level}
+          serviceIds={level.serviceIds}
+          services={menu.map((s) => ({ id: s.id, name: s.name, minLevel: s.minLevel }))}
+          t={t.levels}
+        />
+      ) : (
+        <p className="bg-board p-5 text-slate/80">
+          {fill(t.levels.readOnly, {
+            level: level.level ? (t.levels.name[level.level] ?? level.level) : t.levels.notSet,
+          })}
+        </p>
+      )}
+      {mayLevel ? (
+        <p>
+          <Link href="/admin/levels" className="font-semibold underline">
+            {t.levels.link}
+          </Link>
+        </p>
+      ) : null}
       <section className="flex flex-col gap-2">
         <h2 className="text-heading font-semibold">{t.profile.title}</h2>
         <p className="max-w-[70ch] text-slate/80">{t.profile.lead}</p>
@@ -133,6 +162,7 @@ export default async function TechnicianProfilePage({
         technicianId={tech.id}
         categories={categories}
         skillCategoryIds={profile.skillCategoryIds}
+        levelSet={level.level !== null}
         tags={profile.tags}
         restrictions={profile.restrictions}
         t={t.profile}

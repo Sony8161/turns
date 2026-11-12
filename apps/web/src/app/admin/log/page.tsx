@@ -200,7 +200,7 @@ export default async function LogPage({
                                 })}
                                 {q.eligible
                                   ? ''
-                                  : ` (${fill(t.log.queueSkipped, { why: skip[q.why] ?? q.why })})`}
+                                  : ` (${fill(t.log.queueSkipped, { why: fill(skip[q.why] ?? q.why, { detail: q.detail }) })})`}
                               </li>
                             ))}
                           </ol>

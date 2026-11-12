@@ -2,6 +2,70 @@
 
 One version per delivered part. Tags point at the commits.
 
+## v0.14.0, 2026-11-12: Skill levels, offer to a higher level, split visits
+
+From Duong's answers (2026-11-12, 01:33).
+
+- **Levels are a ladder:** regular polish, gel, dip, acrylic. Each technician
+  has one level, set by an owner or a manager on the technician's page
+  (**Level and services**); never a receptionist, never the technician.
+  Picking the level ticks every service at or below it; the owner or manager
+  then unticks single services (a gel pedicure but not a gel manicure) or
+  ticks extras. **The ticks are what the engine uses.** A technician with no
+  level set keeps the Part 6 category skills, so nothing changes for a salon
+  until it sets levels. Audited as `technician_level_changed`.
+- **Each service names the levels that get it by turn** (`/admin/levels`,
+  linked from Staff, Rules and a technician's page; owners and managers).
+  Starting values: regular manicure to regular polish and gel; gel manicure,
+  gel pedicure, gel fill and Gel-X to gel, dip and acrylic; pedicures to
+  everyone; dip to dip and acrylic; acrylic to acrylic. Audited as
+  `service_levels_changed`. New on the starting menu: Gel pedicure, Dip
+  powder, Nail art / design.
+- **Calling:** the lowest turn among the technicians the service goes to. A
+  higher-level technician whose turn it is, is skipped with **no penalty and
+  no change to her place**; the reason (`not_by_turn`, with the service) is in
+  the skipped list, in the call's queue snapshot in the Log, and on the cheat
+  sheet. A client who asked for her, or booked her, still gets her.
+- **Ask a higher-level tech.** When a service waits and a higher-level
+  technician is free but held out only by that rule, the desk (receptionist or
+  manager) gets "Ask a higher-level tech" under Call next. Her phone says "The
+  desk is asking you"; **No, thanks** adds no points; taking it posts the
+  normal points. Never automatic. Audited: `offer_sent`, `offer_accepted`,
+  `offer_declined`.
+- **Visits with two or more services:** the called technician chooses **Do
+  all** or **Split**. On a split she ticks what she keeps; the rest goes back
+  to the line as a linked visit ("Rest of a split visit") with the client's
+  original arrival time, for the next technician it goes to. Each technician
+  gets points only for the visit she finishes. Audited: `visit_split`, and the
+  choice (`all` or `split`) on the accept. Same-time visits are unchanged
+  (they were already one visit per service). How combined points are capped
+  or summed is **not** changed: still open with Duong.
+- **Services the desk picks the technician for** (a tick per service; on for
+  Nail art / design). Never called by turn: the desk row shows **Pick a tech**
+  with everyone who does it, their level, turn and status. The picked
+  technician may say no without a penalty; points post as normal. Audited:
+  `desk_pick_sent`, `desk_pick_declined`.
+- **Tech cards** show the level and the services ticked.
+- **Demo day:** six technicians at four levels (Tâm does a gel pedicure but
+  not a gel manicure); waiting rows now include a nail art visit (desk pick),
+  a regular manicure whose next free technician is acrylic level (skip, then
+  "Ask a higher-level tech"), and a two-service visit (Do all or Split).
+  `docs/DEMO-EXPECTED.md` regenerated; its drift test passes.
+- Database: migration 0025 (`skill_level` type, `technicians.skill_level`,
+  `services.min_level / turn_levels / desk_picks`, `technician_services`,
+  `turn_calls.kind`, `visits.split_from_visit_id`). 25 new tests
+  (`levels.test.ts`).
+
+Readings taken where the answers left room (say if any is wrong):
+
+- A visit with several services is called by turn only to a technician who
+  does all of them and gets all of them by turn; she then splits if she
+  wants. A technician who does only one half is not called for it by turn.
+- Gel fill and Gel-X full set are placed at the gel level.
+- A declined desk pick, like a declined offer, is never a penalty.
+- The rest of a split visit goes by turn as a walk-in: a request or an
+  appointment stays with the first technician's part.
+
 ## v0.13.0, 2026-11-12: Tech settings, rule templates, client names and search
 
 - **A technician's settings page** (`/admin/staff/<id>`, from "Change this

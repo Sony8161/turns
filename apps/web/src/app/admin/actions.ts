@@ -3,6 +3,7 @@
 import {
   callNext,
   createWalkIn,
+  deskCall,
   expireCall,
   setLongWaitNotice,
   setVisitNote,
@@ -83,6 +84,40 @@ async function callNextForRun(_prev: DeskState, formData: FormData): Promise<Des
   return result.ok
     ? { skipped: toSkippedLines(result.skipped) }
     : { error: result.reason, detail: result.detail, skipped: toSkippedLines(result.skipped) };
+}
+
+/**
+ * v0.14.0: the desk calls one technician outside the turn order: asks a
+ * higher-level technician for a service that is not hers by turn, or picks
+ * the technician for a service that is never called by turn. Managers and
+ * receptionists (call_technician). She may say no without a penalty.
+ */
+export async function deskCallFor(prev: DeskState, formData: FormData): Promise<DeskState> {
+  return guarded('deskCallFor', { error: 'server' } as DeskState, () =>
+    deskCallForRun(prev, formData),
+  );
+}
+
+async function deskCallForRun(_prev: DeskState, formData: FormData): Promise<DeskState> {
+  const actor = await requireActor();
+  const m = await deskMembership();
+  if (!m || !can(m.role, 'call_technician')) return { error: 'not_allowed' };
+  const visitId = uuidOf(formData.get('visitId'));
+  const technicianId = uuidOf(formData.get('technicianId'));
+  const kind = String(formData.get('kind') ?? '');
+  if (!visitId || !technicianId || (kind !== 'offer' && kind !== 'desk_pick')) {
+    return { error: 'unknown_visit' };
+  }
+  const result = await deskCall(db(), {
+    kind,
+    visitId,
+    technicianId,
+    actor: { userId: actor.userId },
+    locationId: m.locationId,
+  });
+  revalidatePath('/admin');
+  revalidatePath('/me');
+  return result.ok ? {} : { error: result.reason, detail: result.detail };
 }
 
 /** The desk clears a call nobody answered (after the rules' minutes): no

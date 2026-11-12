@@ -9,6 +9,7 @@ import { db } from '@/lib/db';
 import { requireActor } from '@/lib/auth';
 import { technicianForUser } from '@/lib/technician';
 import { guarded } from '@/lib/action';
+import { isUuid } from '@/lib/ids';
 
 export type MeState = {
   /** Reference shown for an unplanned failure (v0.10.1). */
@@ -23,6 +24,7 @@ export type MeState = {
     | 'already_answered'
     | 'no_visit_in_service'
     | 'open_call'
+    | 'bad_split'
     | 'server';
   distanceM?: number;
   radiusM?: number;
@@ -105,20 +107,33 @@ async function answerCallRun(_prev: MeState, formData: FormData): Promise<MeStat
   if (!tech) return { error: 'not_technician' };
   const callId = String(formData.get('callId') ?? '');
   const intent = String(formData.get('intent') ?? '');
-  const deny = intent.startsWith('deny:') ? intent.slice(5) : null;
+  // v0.14.0: "decline" answers an offer or a desk pick (never a penalty; the
+  // engine decides that from the call, not from this word).
+  const deny = intent === 'decline' ? 'other' : intent.startsWith('deny:') ? intent.slice(5) : null;
   if (deny && !(DENY_REASONS as readonly string[]).includes(deny)) return {};
+  // "split": the services this technician keeps; the rest go back to the line.
+  const keep =
+    intent === 'split'
+      ? formData.getAll('keep').filter((v): v is string => typeof v === 'string' && isUuid(v))
+      : undefined;
+  if (keep && keep.length === 0) return { error: 'bad_split' };
 
   const result = await respondToCall(db(), {
     callId,
     technicianId: tech.id,
     response: deny ? 'denied' : 'accepted',
     denyReason: (deny ?? undefined) as DenyReason | undefined,
+    ...(keep ? { keepServiceIds: keep } : {}),
     actor: { userId: actor.userId },
   });
   revalidatePath('/me');
   revalidatePath('/admin');
   if (result.ok) return {};
-  if (result.reason === 'not_your_call' || result.reason === 'already_answered') {
+  if (
+    result.reason === 'not_your_call' ||
+    result.reason === 'already_answered' ||
+    result.reason === 'bad_split'
+  ) {
     return { error: result.reason };
   }
   return { error: 'illegal_transition' };

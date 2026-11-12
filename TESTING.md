@@ -569,6 +569,42 @@ Load the demo first (`npm run up -- -Demo`, section 8k).
    finds Minh Tran. Open one: visits, usual technician, notes. Edit the last
    name, Save: Log shows "Client name or notes changed" without the name.
 
+## 8m. Skill levels, asking a higher level, split visits (v0.14.0)
+
+Load the demo (`npm run up -- -Demo`) and keep `docs/DEMO-EXPECTED.md` open:
+its **Levels** tables say who is at which level and which levels get each
+service by turn.
+
+1. **See the levels.** As Phu, `/admin`: each tech card has a dark "Level:"
+   chip and the services ticked. Tâm's list has Gel pedicure and no Gel
+   manicure.
+2. **Desk pick.** The first waiting row is Hanh Bui, Nail art / design. There
+   is no Call next: the row shows **Pick a tech** with Linh and Vân (free) and
+   Hoa (with a client, greyed). Press **Pick Linh**. As Linh (0104), `/me`
+   says "The desk picked you" with **No, thanks**; tap it. Her points do not
+   change. Pick Vân instead and accept as Vân (0112).
+3. **Skip by level, then ask.** Work down the sheet. At Minh Tran (Basic
+   manicure) press **Call next**: "Nobody can be called", and Mai is listed
+   as "Basic manicure is not their level's by turn". Open **Ask a higher-level
+   tech** on that row and press **Ask Mai**. As Mai (0105): "The desk is
+   asking you". **No, thanks** adds no points (check her card); ask again and
+   **Accept**, then Finished: +1 as usual.
+4. **Split.** Ngoc Vo (Gel manicure + Spa pedicure) is called to whoever is
+   next for both. On that technician's phone: **Do all** or **Split**. Tap
+   Split, tick Gel manicure, "Do these, send the rest back". The desk now has
+   a new row "Spa pedicure, Rest of a split visit" with the same waiting time.
+   Call next on it goes to the next free technician. Each gets points for her
+   own part.
+5. **Set a level.** Staff → a technician → **Level and services**: pick a
+   level (the ticks fill in), untick one service, Save. As Hạnh (receptionist)
+   the same page shows the level as text with no form. `/admin/levels`
+   (linked from Staff): change who gets a service by turn, Save. As Hạnh the
+   page says only owners and managers change levels.
+6. **Log.** `/admin/log` has "Higher-level tech asked", "Offer declined (no
+   penalty)", "Desk picked a tech", "Visit split", "Technician level changed".
+   Open "queue at this second" on a call: the skipped technician shows the
+   level reason.
+
 ## 9. If something is off
 
 - **"Something went wrong on our side"** on sign-in: the local stack is probably

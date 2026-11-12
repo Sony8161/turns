@@ -14,6 +14,7 @@ export function ProfileForm({
   technicianId,
   categories,
   skillCategoryIds,
+  levelSet = false,
   tags,
   restrictions,
   t,
@@ -22,6 +23,9 @@ export function ProfileForm({
   categories: Category[];
   /** Empty = does every category. */
   skillCategoryIds: string[];
+  /** v0.14.0: with a level set, the service ticks above decide what the
+   *  technician does; the category choice here is not used and not shown. */
+  levelSet?: boolean;
   tags: string[];
   restrictions: Restriction[];
   t: Dictionary['profile'];
@@ -45,7 +49,8 @@ export function ProfileForm({
       ) : null}
       {state.saved ? <p className="font-semibold text-teal">{t.saved}</p> : null}
 
-      <section className="flex flex-col gap-3 bg-board p-5">
+      {levelSet ? <input type="hidden" name="skillsMode" value="all" /> : null}
+      <section className={`flex flex-col gap-3 bg-board p-5 ${levelSet ? 'hidden' : ''}`}>
         <h2 className="text-heading font-semibold">{t.skills}</h2>
         <label className="flex min-h-11 items-center gap-3">
           <input

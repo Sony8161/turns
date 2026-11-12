@@ -3,7 +3,13 @@ import { locations, serviceCategories, services, turnCalls } from '@turn/db';
 import { appointmentsBetween } from '@turn/db/appointments';
 import { nameParts, shortName } from '@turn/db/clients';
 import { techBoard } from '@turn/db/board';
-import { compareQueue, floorAttention, todayCounts, waitingVisits } from '@turn/db/engine';
+import {
+  compareQueue,
+  deskOptions,
+  floorAttention,
+  todayCounts,
+  waitingVisits,
+} from '@turn/db/engine';
 import { feedSummary, FEED_STALE_MIN } from '@turn/db/feeds';
 import { ensureDailySummary, localDate, previousDate } from '@turn/db/reports';
 import { activeRules } from '@turn/db/rules';
@@ -67,6 +73,8 @@ export default async function AdminPage() {
         techBoard(db(), membership.locationId, now),
       ])
     : [[], [], [], { visits: 0, denies: 0, overrides: 0 }, null, null, [], undefined, []];
+  // v0.14.0: who the desk may ask or pick outside the turn order, per waiting visit.
+  const options = membership ? await deskOptions(db(), membership.locationId) : new Map();
   const clock = new Intl.DateTimeFormat(lang === 'vi' ? 'vi-VN' : 'en-US', {
     timeZone: loc?.timezone ?? 'America/New_York',
     hour: 'numeric',
@@ -228,6 +236,26 @@ export default async function AdminPage() {
                 fromKiosk: v.fromKiosk,
                 kioskName: v.kioskName ? shortName(v.kioskName, v.kioskLastName) : null,
                 needsConfirm: v.needsConfirm,
+                deskPicks: v.deskPicks,
+                splitRest: v.splitFromVisitId !== null,
+                callKind: v.callKind ?? null,
+                options: (options.get(v.id)?.technicians ?? []).map(
+                  (o: {
+                    technicianId: string;
+                    displayName: string;
+                    level: string | null;
+                    turn: number;
+                    status: string;
+                    canCall: boolean;
+                  }) => ({
+                    technicianId: o.technicianId,
+                    name: o.displayName,
+                    level: o.level,
+                    turn: o.turn,
+                    status: o.status,
+                    canCall: o.canCall,
+                  }),
+                ),
               }))}
               technicians={rows.map((r) => ({ id: r.id, name: r.name }))}
               attention={{
@@ -251,6 +279,8 @@ export default async function AdminPage() {
                 outOverMin: attention.outOverMin,
               }}
               t={t.desk}
+              levelNames={t.levels.name}
+              statusNames={t.board.status}
             />
           ) : null}
           <TechCards

@@ -1,6 +1,7 @@
 import { and, eq, inArray, isNull } from 'drizzle-orm';
 import { locations, profiles, serviceCategories } from '@turn/db';
 import { ruleHistory } from '@turn/db/rules';
+import Link from 'next/link';
 import { redirect } from 'next/navigation';
 import { AdminNav } from '@/components/AdminNav';
 import { Button } from '@/components/ui';
@@ -108,6 +109,11 @@ export default async function RulesPage() {
       <section className="flex flex-col gap-2">
         <h1 className="text-heading font-semibold">{t.rules.title}</h1>
         <p className="max-w-[70ch] text-slate/80">{t.rules.lead}</p>
+        <p>
+          <Link href="/admin/levels" className="font-semibold underline">
+            {t.levels.link}
+          </Link>
+        </p>
         {current ? (
           <p className="text-slate/80">
             {fill(t.rules.version, { version: current.version })},{' '}
