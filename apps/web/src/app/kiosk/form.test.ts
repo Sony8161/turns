@@ -29,6 +29,7 @@ describe('kiosk form', () => {
       requestedTechnicianId: null,
       attributes: { gender: 'female', isKid: false, age: null },
       sameTime: false,
+      note: null,
     });
   });
 
@@ -99,5 +100,22 @@ describe('kiosk form', () => {
       ]),
     );
     expect(two.ok && two.sameTime).toBe(true);
+  });
+
+  it('reads the optional design or special request', () => {
+    const withNote = kioskFromForm(
+      fd([
+        ['service', A],
+        ['note', '  french tip, short  '],
+      ]),
+    );
+    expect(withNote.ok && withNote.note).toBe('french tip, short');
+    const blank = kioskFromForm(
+      fd([
+        ['service', A],
+        ['note', '   '],
+      ]),
+    );
+    expect(blank.ok && blank.note).toBe(null);
   });
 });

@@ -74,6 +74,17 @@ export function cleanKioskName(raw: unknown): string | null {
   return name || null;
 }
 
+export const KIOSK_NOTE_MAX = 200;
+
+/** The design or special request typed on the kiosk: one line, no control
+ *  characters, at most 200 characters. Empty means none. */
+export function cleanKioskNote(raw: unknown): string | null {
+  if (typeof raw !== 'string') return null;
+  const s = raw.replace(UNSAFE_CHARS, ' ');
+  const note = s.replace(/\s+/g, ' ').trim().slice(0, KIOSK_NOTE_MAX).trim();
+  return note || null;
+}
+
 // Staff side ----------------------------------------------------------------
 
 /** An owner or manager registers an iPad at their own location. The pairing
@@ -517,6 +528,8 @@ export async function kioskCheckIn(
     attributes?: ClientAttributes | null;
     sameTime?: boolean;
     requestedTechnicianId?: string | null;
+    /** v0.10.2: design or special request, free text, optional. */
+    note?: unknown;
   },
 ): Promise<{ ok: true; visitIds: string[] } | { ok: false; reason: KioskCheckInError }> {
   const name = cleanKioskName(input.name);
@@ -529,6 +542,7 @@ export async function kioskCheckIn(
     actor: { userId: null },
     source: 'self_checkin',
     requestedTechnicianId: input.requestedTechnicianId ?? null,
+    note: cleanKioskNote(input.note),
     // Nothing typed here edits or makes a client row: the phone waits on the
     // visit, and the desk's confirm links it (v0.9.1, review finding 1).
     client: null,

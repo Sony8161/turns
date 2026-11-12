@@ -1,6 +1,6 @@
 // The kiosk form to the check-in input. Pure: no database, no server. Only
 // what the engine needs, in plain choices; nothing free-text but the first
-// name and the phone (threat model T12).
+// name, the phone and the optional design or special request (threat model T12).
 import type { ClientGender } from '@turn/db/clients';
 import { isUuid } from '@/lib/ids';
 
@@ -15,6 +15,7 @@ export type KioskForm =
       requestedTechnicianId: string | null;
       attributes: { gender: ClientGender | null; isKid: boolean; age: number | null };
       sameTime: boolean;
+      note: string | null;
     }
   | { ok: false; reason: 'no_services' | 'unknown_service' | 'unknown_technician' | 'bad_age' };
 
@@ -50,5 +51,10 @@ export function kioskFromForm(fd: FormData): KioskForm {
       age,
     },
     sameTime: ids.length >= 2 && (fd.get('sameTime') === 'on' || fd.get('sameTime') === 'true'),
+    // Cleaned again in the database layer (cleanKioskNote): one line, 200 max.
+    note:
+      String(fd.get('note') ?? '')
+        .trim()
+        .slice(0, 400) || null,
   };
 }

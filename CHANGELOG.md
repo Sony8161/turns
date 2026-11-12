@@ -2,6 +2,26 @@
 
 One version per delivered part. Tags point at the commits.
 
+## v0.10.2, 2026-11-12: kiosk step fix, request notes
+
+From Duong's first kiosk test.
+
+- **The kiosk skipped the technician step.** Next and I'm here were one reused
+  button: the tap on Next turned it into a submit and sent the check-in from
+  step 3. Each button now has its own key, so every step waits for its Next.
+- **Design or special request on the kiosk.** A fifth, optional screen: "Any
+  design or special request?" (200 characters, one line, cleaned in
+  `cleanKioskNote`). Stored in `visits.note`; the audit row says `hasNote`,
+  never the text.
+- **Requests stand out on the desk.** A requested technician shows as an
+  "Asked for {name}" tag and the note as "Request: …", on every waiting,
+  called and in-service row, so the owner working the floor sees them. The
+  desk can add, edit or clear a note on any open visit (`setVisitNote`,
+  audited as `visit_note_changed` with `hasNote` only).
+- **The called technician sees it.** `/me`'s call card shows "The client asked
+  for you" and the request, for that technician's own call only.
+- Privacy draft mentions the request note.
+
 ## v0.10.1, 2026-11-11: Part 10 review fixes
 
 All eight findings from the independent review of v0.10.0.

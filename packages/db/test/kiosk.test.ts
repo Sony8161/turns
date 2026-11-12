@@ -10,12 +10,15 @@ import {
   callNext,
   createWalkIn,
   floorAttention,
+  openCallFor,
   reassignVisit,
+  setVisitNote,
   type ManagerActor,
 } from '../src/engine';
 import {
   checkKioskPin,
   cleanKioskName,
+  cleanKioskNote,
   closeKioskUnlock,
   createKioskDevice,
   kioskCheckIn,
@@ -700,5 +703,85 @@ describe('row-level security', () => {
       'select kiosk_name from visits where kiosk_name is not null',
     )) as unknown[];
     expect(Array.isArray(rows) ? rows.length : -1).toBe(0);
+  });
+});
+
+// v0.10.2: the design or special request (Duong, 2026-11-12).
+describe('request notes', () => {
+  it('cleans the kiosk note: one line, 200 at most, empty is none', () => {
+    expect(cleanKioskNote('  chrome\u0000 french\n tip ')).toBe('chrome french tip');
+    expect(cleanKioskNote('   ')).toBeNull();
+    expect(cleanKioskNote(7)).toBeNull();
+    expect(cleanKioskNote('a'.repeat(300))!.length).toBe(200);
+  });
+
+  it('keeps the note on the visit, audits only that there is one, shows it to the called tech', async () => {
+    const baoUser = await person('Bao', 'technician', LOC);
+    const [b] = await sql<
+      { id: string }[]
+    >`insert into technicians (user_id, organization_id, location_id, display_name) values (${baoUser}, ${ORG}, ${LOC}, 'Bao') returning id`;
+    const bao = b!.id;
+    await checkIn(db, { technicianId: bao, actor: { userId: baoUser }, position: null });
+    await transition(db, { technicianId: bao, to: 'available', actor: { userId: baoUser } });
+    const r = await kioskCheckIn(db, {
+      device,
+      name: 'Vy',
+      serviceIds: [manicure],
+      requestedTechnicianId: bao,
+      note: '  chrome french tip  ',
+    });
+    if (!r.ok) throw new Error(r.reason);
+    const visitId = r.visitIds[0]!;
+    const [v] = await sql<{ note: string | null }[]>`select note from visits where id = ${visitId}`;
+    expect(v!.note).toBe('chrome french tip');
+    const audit = await sql<
+      { after: Record<string, unknown> }[]
+    >`select after from audit_log where entity_id = ${visitId} and action = 'kiosk_check_in'`;
+    expect(audit[0]!.after).toMatchObject({ hasNote: true });
+    expect(JSON.stringify(audit)).not.toContain('chrome');
+    const desk: ManagerActor = { userId: deskId, organizationId: ORG, locationId: LOC };
+    expect((await reviewKioskVisit(db, { actor: desk, visitId, decision: 'confirm' })).ok).toBe(
+      true,
+    );
+    const called = await callNext(db, { visitId, actor: { userId: deskId }, locationId: LOC });
+    expect(called.ok).toBe(true);
+    const call = await openCallFor(db, bao);
+    expect(call).toMatchObject({ visitId, note: 'chrome french tip', requested: true });
+    expect(call).not.toHaveProperty('requestedTechnicianId');
+  });
+
+  it('the desk edits the note of an open visit, same location only, audited without the text', async () => {
+    const w = await createWalkIn(db, {
+      organizationId: ORG,
+      locationId: LOC,
+      serviceIds: [manicure],
+      actor: { userId: deskId },
+      note: 'gel',
+    });
+    if (!w.ok) throw new Error(w.reason);
+    const desk: ManagerActor = { userId: deskId, organizationId: ORG, locationId: LOC };
+    expect(await setVisitNote(db, { actor: manager2, visitId: w.visitId, note: 'x' })).toEqual({
+      ok: false,
+      reason: 'unknown_visit',
+    });
+    expect(
+      await setVisitNote(db, { actor: desk, visitId: w.visitId, note: '  long   almond ' }),
+    ).toEqual({ ok: true });
+    const [v] = await sql<
+      { note: string | null }[]
+    >`select note from visits where id = ${w.visitId}`;
+    expect(v!.note).toBe('long almond');
+    expect(await setVisitNote(db, { actor: desk, visitId: w.visitId, note: '' })).toEqual({
+      ok: true,
+    });
+    const rows = await sql<
+      { action: string; after: Record<string, unknown> }[]
+    >`select action, after from audit_log where entity_id = ${w.visitId} order by at, id`;
+    expect(rows.map((x) => [x.action, x.after.hasNote])).toEqual([
+      ['visit_created', true],
+      ['visit_note_changed', true],
+      ['visit_note_changed', false],
+    ]);
+    expect(JSON.stringify(rows)).not.toContain('almond');
   });
 });

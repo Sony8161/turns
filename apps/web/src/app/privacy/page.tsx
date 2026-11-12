@@ -41,6 +41,12 @@ export default function PrivacyPage() {
           man, child or adult and an age, so the right technician is called. [Attorney: use of
           gender and children&apos;s data for routing.]
         </li>
+        <li>
+          An optional design or special request, typed on the check-in iPad or by the desk (for
+          example a color or a design). It is kept with that visit, shown to the desk and to the
+          technician called for it, and never written to the activity log (only whether there was
+          one). [How long visits keep the request: owner and attorney to decide.]
+        </li>
         <li>Appointments imported from the salon&apos;s calendar link.</li>
       </ul>
       <h2>Who sees it</h2>

@@ -121,6 +121,7 @@ export const AUDIT_ACTIONS = [
   'deny_excused',
   'penalty_excused',
   'visit_created',
+  'visit_note_changed',
   'visit_reassigned',
   'visit_completed',
   'appointment_added',
@@ -172,6 +173,7 @@ export const OVERRIDE_ACTIONS = [
 /** Desk entries a receptionist makes that steer a call (T4: edits per receptionist). */
 export const DESK_ACTIONS = [
   'visit_created',
+  'visit_note_changed',
   'appointment_added',
   'appointment_changed',
   'appointment_cancelled',

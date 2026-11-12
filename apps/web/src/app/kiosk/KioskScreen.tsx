@@ -14,7 +14,7 @@ import { checkInAction, unlockAction, type KioskState } from './actions';
 export const IDLE_SECONDS = 60;
 const DONE_SECONDS = 12;
 const LOGO_TAPS = 5;
-const STEPS = 4;
+const STEPS = 5;
 const STEP_OF_ERROR: Record<string, number> = {
   bad_name: 1,
   bad_phone: 1,
@@ -277,6 +277,22 @@ function KioskRound({
             <TechChoice t={t} technicians={technicians} choice={choice} />
           </fieldset>
 
+          <fieldset data-step={5} tabIndex={-1} hidden={step !== 5} className="flex flex-col gap-4">
+            <legend className="mb-6 text-name font-semibold">{t.noteQuestion}</legend>
+            <label className="flex flex-col gap-2">
+              <span className="text-lead font-medium">{t.noteLabel}</span>
+              <textarea
+                name="note"
+                rows={3}
+                maxLength={200}
+                autoComplete="off"
+                autoCorrect="off"
+                className="min-h-32 w-full rounded-control border-4 border-slate/30 bg-board px-5 py-4 text-kiosk-button"
+              />
+              <span className="text-body text-slate/70">{t.noteHint}</span>
+            </label>
+          </fieldset>
+
           {error ? (
             <p role="alert" className="text-lead font-semibold text-polish">
               {error}
@@ -299,8 +315,11 @@ function KioskRound({
             ) : (
               <span />
             )}
+            {/* Distinct keys: one reused <button> flipped to type=submit during the
+                tap on Next and sent the form a step early (v0.10.2). */}
             {step < STEPS ? (
               <button
+                key="next"
                 type="button"
                 onClick={next}
                 className="min-h-20 rounded-control bg-navy px-10 text-kiosk-button font-semibold text-board"
@@ -309,6 +328,7 @@ function KioskRound({
               </button>
             ) : (
               <button
+                key="submit"
                 type="submit"
                 disabled={pending}
                 className="min-h-20 rounded-control bg-teal px-10 text-kiosk-button font-semibold text-board disabled:opacity-50"

@@ -1,6 +1,12 @@
 'use server';
 
-import { callNext, createWalkIn, expireCall, setLongWaitNotice } from '@turn/db/engine';
+import {
+  callNext,
+  createWalkIn,
+  expireCall,
+  setLongWaitNotice,
+  setVisitNote,
+} from '@turn/db/engine';
 import { reviewKioskVisit } from '@turn/db/kiosk';
 import { revalidatePath } from 'next/cache';
 import { membershipWith, requireActor, type Membership } from '@/lib/auth';
@@ -119,6 +125,29 @@ async function setNoticeRun(_prev: DeskState, formData: FormData): Promise<DeskS
   });
   revalidatePath('/admin');
   return {};
+}
+
+/** The desk adds, edits or clears the special request on an open visit (v0.10.2). */
+export async function setNoteFor(prev: DeskState, formData: FormData): Promise<DeskState> {
+  return guarded('setNoteFor', { error: 'server' } as DeskState, () =>
+    setNoteForRun(prev, formData),
+  );
+}
+
+async function setNoteForRun(_prev: DeskState, formData: FormData): Promise<DeskState> {
+  const actor = await requireActor();
+  const m = await deskMembership();
+  if (!m) return { error: 'not_allowed' };
+  const visitId = uuidOf(formData.get('visitId'));
+  if (!visitId) return { error: 'unknown_visit' };
+  const result = await setVisitNote(db(), {
+    actor: { userId: actor.userId, organizationId: m.organizationId, locationId: m.locationId },
+    visitId,
+    note: String(formData.get('note') ?? ''),
+  });
+  revalidatePath('/admin');
+  revalidatePath('/me');
+  return result.ok ? {} : { error: result.reason };
 }
 
 /** The desk confirms a kiosk check-in (then it can be called) or declines it

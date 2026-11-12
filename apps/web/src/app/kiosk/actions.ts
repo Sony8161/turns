@@ -90,6 +90,7 @@ async function checkInActionRun(_prev: KioskState, formData: FormData): Promise<
     requestedTechnicianId: form.requestedTechnicianId,
     attributes: form.attributes,
     sameTime: form.sameTime,
+    note: form.note,
   });
   if (!r.ok) return { error: r.reason };
   revalidatePath('/admin');

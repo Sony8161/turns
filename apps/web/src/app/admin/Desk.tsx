@@ -10,6 +10,7 @@ import {
   clearCallFor,
   enterWalkIn,
   reviewKioskFor,
+  setNoteFor,
   setNotice,
   type DeskState,
 } from './actions';
@@ -73,6 +74,7 @@ export function Desk({
   const [clearState, clear, clearing] = useActionState<DeskState, FormData>(clearCallFor, {});
   const [noticeState, notice, switching] = useActionState<DeskState, FormData>(setNotice, {});
   const [reviewState, review, reviewing] = useActionState<DeskState, FormData>(reviewKioskFor, {});
+  const [noteState, saveNote, savingNote] = useActionState<DeskState, FormData>(setNoteFor, {});
   const field = 'min-h-12 rounded-control border-2 border-slate/30 bg-board px-3 text-lead';
 
   const waitLine =
@@ -261,6 +263,12 @@ export function Desk({
               <ErrorRef refId={reviewState.ref} />
             </p>
           ) : null}
+          {noteState.error ? (
+            <p role="alert" className="text-polish">
+              {t.errors[noteState.error] ?? noteState.error}
+              <ErrorRef refId={noteState.ref} />
+            </p>
+          ) : null}
           {callState.error ? (
             <p role="alert" className="text-polish">
               {t.errors[callState.error] ?? callState.error}
@@ -302,12 +310,14 @@ export function Desk({
                         {v.kioskName ? `: ${v.kioskName}` : ''}
                       </span>
                     ) : null}
-                    <span className="font-semibold">
-                      {v.services.join(', ')}
-                      {v.requestedTechnician
-                        ? ` · ${fill(t.forTech, { name: v.requestedTechnician })}`
-                        : ''}
-                    </span>
+                    <span className="font-semibold">{v.services.join(', ')}</span>
+                    {v.requestedTechnician ? (
+                      // v0.10.2: the request stands out, so whoever works the
+                      // floor (the owner too) sees it before calling.
+                      <span className="w-fit rounded-control bg-navy px-2 py-0.5 text-small font-semibold text-board">
+                        {fill(t.askedFor, { name: v.requestedTechnician })}
+                      </span>
+                    ) : null}
                     {chips.length > 0 || v.clientName ? (
                       <span className="flex flex-wrap gap-2 text-small">
                         {v.clientName && v.clientName !== v.kioskName ? (
@@ -322,7 +332,31 @@ export function Desk({
                         ))}
                       </span>
                     ) : null}
-                    {v.note ? <span className="text-small text-slate/80">{v.note}</span> : null}
+                    {v.note ? (
+                      <span className="w-fit rounded-control border-2 border-amber bg-amber/10 px-2 py-0.5 font-medium">
+                        {fill(t.requestNote, { note: v.note })}
+                      </span>
+                    ) : null}
+                    {v.status !== 'in_service' ? (
+                      <details className="text-small">
+                        <summary className="min-h-11 cursor-pointer py-2 text-slate/80 underline">
+                          {v.note ? t.editNote : t.addNote}
+                        </summary>
+                        <form action={saveNote} className="flex flex-wrap items-center gap-2">
+                          <input type="hidden" name="visitId" value={v.id} />
+                          <input
+                            name="note"
+                            defaultValue={v.note ?? ''}
+                            maxLength={300}
+                            aria-label={`${t.note}: ${rowLabel(v)}`}
+                            className="min-h-11 flex-1 rounded-control border-2 border-slate/30 px-3"
+                          />
+                          <Button type="submit" tone="quiet" disabled={savingNote}>
+                            {t.saveNote}
+                          </Button>
+                        </form>
+                      </details>
+                    ) : null}
                     <span className="text-small text-slate/70">
                       {v.status === 'called' && v.calledTechnician
                         ? fill(t.calledLine, {

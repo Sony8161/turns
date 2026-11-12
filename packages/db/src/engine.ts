@@ -209,6 +209,8 @@ export async function createWalkIn(
           age,
           groupId,
           hasClient: client.clientId !== null,
+          // The note itself is free text: only whether there is one (T11).
+          hasNote: !!input.note?.trim(),
         },
       });
       visitIds.push(visit.id);
@@ -882,6 +884,8 @@ export async function openCallFor(db: Db, technicianId: string) {
       visitId: turnCalls.visitId,
       calledAt: turnCalls.calledAt,
       source: visits.source,
+      note: visits.note,
+      requestedTechnicianId: visits.requestedTechnicianId,
     })
     .from(turnCalls)
     .innerJoin(visits, eq(visits.id, turnCalls.visitId))
@@ -894,7 +898,69 @@ export async function openCallFor(db: Db, technicianId: string) {
     .from(visitServices)
     .innerJoin(services, eq(services.id, visitServices.serviceId))
     .where(eq(visitServices.visitId, call.visitId));
-  return { ...call, services: items.map((i) => i.name) };
+  const { requestedTechnicianId, ...rest } = call;
+  // The note goes only to the technician this visit is called to (v0.10.2).
+  return {
+    ...rest,
+    requested: requestedTechnicianId === technicianId,
+    services: items.map((i) => i.name),
+  };
+}
+
+export const VISIT_NOTE_MAX = 300;
+
+/**
+ * The desk adds, edits or clears the special request on an open visit
+ * (v0.10.2). Same location only. The audit row says whether there is a note,
+ * never the text (T11).
+ */
+export async function setVisitNote(
+  db: Db,
+  input: {
+    actor: ManagerActor;
+    visitId: string;
+    note: unknown;
+  },
+): Promise<{ ok: true } | { ok: false; reason: 'unknown_visit' | 'visit_closed' }> {
+  const raw = typeof input.note === 'string' ? input.note : '';
+  const note =
+    raw
+      // eslint-disable-next-line no-control-regex
+      .replace(/[\u0000-\u001f\u007f]/g, ' ')
+      .replace(/\s+/g, ' ')
+      .trim()
+      .slice(0, VISIT_NOTE_MAX)
+      .trim() || null;
+  return db.transaction(async (tx) => {
+    const [visit] = await tx
+      .select({ id: visits.id, status: visits.status, note: visits.note })
+      .from(visits)
+      .where(
+        and(
+          eq(visits.id, input.visitId),
+          eq(visits.locationId, input.actor.locationId),
+          eq(visits.organizationId, input.actor.organizationId),
+        ),
+      )
+      .for('update');
+    if (!visit) return { ok: false, reason: 'unknown_visit' } as const;
+    if (visit.status === 'completed' || visit.status === 'cancelled') {
+      return { ok: false, reason: 'visit_closed' } as const;
+    }
+    if ((visit.note ?? null) === note) return { ok: true } as const;
+    await tx.update(visits).set({ note }).where(eq(visits.id, visit.id));
+    await writeAudit(tx, {
+      organizationId: input.actor.organizationId,
+      locationId: input.actor.locationId,
+      actorUserId: input.actor.userId,
+      entityType: 'visits',
+      entityId: visit.id,
+      action: 'visit_note_changed',
+      before: { hasNote: visit.note !== null },
+      after: { hasNote: note !== null },
+    });
+    return { ok: true } as const;
+  });
 }
 
 /** The front desk's view: waiting, called and in-service visits with their services. */

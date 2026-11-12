@@ -421,11 +421,19 @@ Use two browser windows: a normal one signed in as staff, and a **private**
    `dev-codes.txt` (Sample kiosk). The check-in screen opens. Type the same
    code again in another private window: "That code did not work".
 2. **Check in.** First name "Lan", phone `813 555 0142`, Next; pick a manicure,
-   Next; "An adult", "A woman", Next; "Anyone is fine", **I'm here**. "Thank
-   you, Lan! Please take a seat." After about 12 seconds the screen is blank
-   again. Try it in Vietnamese with the language button.
-3. **Desk.** As Hạnh on `/admin`: the row says "Kiosk check-in, confirm before
-   calling: Lan" with **Confirm** and **Not here**, and no Call next. Confirm,
+   Next; "An adult", "A woman", Next; pick a technician (or "Anyone is fine"),
+   Next; the fifth screen asks "Any design or special request?": type "french
+   tip", **I'm here**. Every screen waits for its own Next: the technician
+   screen must never be skipped (v0.10.2). "Thank you, Lan! Please take a
+   seat." After about 12 seconds the screen is blank again. Try it in
+   Vietnamese with the language button.
+3. **Desk.** As Hạnh (or Phu) on `/admin`: the row says "Kiosk check-in,
+   confirm before calling: Lan" with **Confirm** and **Not here**, and no Call
+   next. A picked technician shows as a dark "Asked for An" tag and the note
+   as "Request: french tip". **Edit request** on any waiting row changes or
+   clears it (the Log shows "Special request changed", never the text). When
+   An is called, An's `/me` call card shows "The client asked for you" and
+   the request. Confirm,
    then Call next works as usual. The sample "Ngoc" row is there too: press
    **Not here** and it leaves the list.
 4. **Things that should fail.** Leave the name empty and press Next: "Please

@@ -99,6 +99,8 @@ export default async function MePage() {
             <CallPanel
               callId={call.callId}
               services={call.services}
+              requested={call.requested}
+              note={call.note}
               waitedSeconds={secondsSince(call.calledAt)}
               denyPenalty={rules.penalties.deny}
               t={t.me}

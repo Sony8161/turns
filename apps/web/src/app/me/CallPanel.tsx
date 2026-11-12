@@ -19,12 +19,18 @@ const DENY_REASONS = [
 export function CallPanel({
   callId,
   services,
+  requested = false,
+  note = null,
   waitedSeconds,
   denyPenalty,
   t,
 }: {
   callId: string;
   services: string[];
+  /** v0.10.2: the client asked for this technician. */
+  requested?: boolean;
+  /** v0.10.2: the design or special request, only for the call to this tech. */
+  note?: string | null;
   waitedSeconds: number;
   denyPenalty: number;
   t: Dictionary['me'];
@@ -40,6 +46,16 @@ export function CallPanel({
       <input type="hidden" name="callId" value={callId} />
       <h2 className="text-heading font-semibold">{t.call.title}</h2>
       <p className="text-name leading-tight font-semibold">{services.join(', ')}</p>
+      {requested ? (
+        <p className="w-fit rounded-control bg-navy px-3 py-1 font-semibold text-board">
+          {t.call.requested}
+        </p>
+      ) : null}
+      {note ? (
+        <p className="border-2 border-amber bg-amber/10 px-3 py-2 text-lead font-medium">
+          {fill(t.call.noteLine, { note })}
+        </p>
+      ) : null}
       <p className="text-slate/70">{fill(t.call.waitedLine, { seconds: waitedSeconds })}</p>
       {state.error ? (
         <p role="alert" className="text-polish">
