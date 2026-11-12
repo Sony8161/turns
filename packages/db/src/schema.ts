@@ -619,6 +619,9 @@ export const visits = pgTable(
     // v0.14.0: the called technician kept some services and sent the rest
     // back to the line: this visit is that rest, linked to the first one.
     splitFromVisitId: uuid('split_from_visit_id'),
+    // v0.15.0: the client asked for (or booked) a technician who is busy and
+    // the desk pressed "Keep waiting": the attention flag counts from here.
+    requestAckAt: timestamp('request_ack_at', { withTimezone: true }),
     confirmedBy: uuid('confirmed_by').references(() => profiles.id, { onDelete: 'restrict' }),
     confirmedAt: timestamp('confirmed_at', { withTimezone: true }),
     createdAt: createdAt(),
@@ -674,6 +677,10 @@ export const turnCalls = pgTable(
     // higher-level technician; 'desk_pick' = the desk picked for a service
     // that is never called by turn. Saying no to those two is never a penalty.
     kind: text('kind').notNull().default('turn'),
+    // v0.15.0: a deny for a reason the rules excuse on their own (break,
+    // personal): no points were posted, and this technician is not called
+    // again for this visit by turn.
+    autoExcused: boolean('auto_excused').notNull().default(false),
     // Who was ahead and why, at that second: the row that settles arguments.
     queueSnapshot: jsonb('queue_snapshot').notNull(),
     createdAt: createdAt(),

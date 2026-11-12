@@ -26,7 +26,8 @@
     "./demo": "./src/demo.ts",
     "./board": "./src/board.ts",
     "./tech-settings": "./src/tech-settings.ts",
-    "./levels": "./src/levels.ts"
+    "./levels": "./src/levels.ts",
+    "./requests": "./src/requests.ts"
   },
   "scripts": {
     "typecheck": "tsc --noEmit",

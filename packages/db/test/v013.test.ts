@@ -355,7 +355,8 @@ describe('rule templates and the preview', () => {
       callId: call.callId,
       technicianId: call.technicianId,
       response: 'denied',
-      denyReason: 'break_needed',
+      // A reason that costs the penalty (break and personal excuse themselves, v0.15.0).
+      denyReason: 'other',
       actor: { userId: null },
     });
     const [deny] = await sql<

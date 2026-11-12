@@ -601,7 +601,8 @@ describe('manager overrides', () => {
       callId: call.callId,
       technicianId: tech.id,
       response: 'denied',
-      denyReason: 'break_needed',
+      // Not a reason the rules excuse on their own (v0.15.0: break, personal).
+      denyReason: 'client_issue',
       actor: { userId: tech.userId },
     });
     expect(await shiftTotal(db, await shiftOf(tech))).toBe(before + 1);

@@ -188,12 +188,19 @@ export async function techBoard(db: Db, locationId: string, now = new Date()): P
   });
 }
 
-/** Why `a` is ahead of `b` in the line, as the rules decide it. */
+/**
+ * Why `a` is ahead of `b` in the line, as the rules decide it. `sort` is the
+ * rules' queue.sort: with 'double_zero_last' (v0.15.0) the appointment only
+ * counts at zero (0 before 00); with 'had_appointment_last' at every score.
+ */
 export function aheadBecause(
   a: Pick<TechCard, 'points' | 'hadAppointmentLast' | 'checkInRank'>,
   b: Pick<TechCard, 'points' | 'hadAppointmentLast' | 'checkInRank'>,
+  sort: readonly string[] = ['points_asc', 'double_zero_last', 'check_in_asc'],
 ): 'fewer_points' | 'appointment_last' | 'earlier_check_in' {
   if (a.points !== b.points) return 'fewer_points';
-  if (a.hadAppointmentLast !== b.hadAppointmentLast) return 'appointment_last';
+  const counts =
+    sort.includes('had_appointment_last') || (sort.includes('double_zero_last') && a.points === 0);
+  if (counts && a.hadAppointmentLast !== b.hadAppointmentLast) return 'appointment_last';
   return 'earlier_check_in';
 }

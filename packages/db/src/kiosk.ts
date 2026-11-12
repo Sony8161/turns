@@ -9,11 +9,21 @@
 // phone typed is already on file (no enumeration).
 import { createHash, randomBytes, scrypt as scryptCb, timingSafeEqual } from 'node:crypto';
 import { promisify } from 'node:util';
-import { and, asc, desc, eq, gt, inArray, isNull, lt, or, sql } from 'drizzle-orm';
+import { and, asc, desc, eq, gt, inArray, isNull, lt, ne, or, sql } from 'drizzle-orm';
 import { upsertClient } from './clients';
 import { createWalkIn, floorAttention, type ClientAttributes, type ManagerActor } from './engine';
 import { generateCode, hashCode } from './invites';
-import { kioskDevices, serviceCategories, services, technicians, visits } from './schema';
+import { loadLevels } from './levels';
+import { doesEverything, loadProfiles } from './profile';
+import { activeRules } from './rules';
+import {
+  kioskDevices,
+  serviceCategories,
+  services,
+  technicianStatus,
+  technicians,
+  visits,
+} from './schema';
 import type { Db } from './server';
 import { writeAudit } from './status';
 
@@ -480,21 +490,76 @@ export async function closeKioskUnlock(db: Db, device: KioskDevice): Promise<voi
 
 /** What the kiosk offers: the menu and the technicians a customer may ask for.
  *  No points, no status, no other customer (design doc). */
+export type KioskTechnician = {
+  id: string;
+  name: string;
+  /** The services she does; null = every service. Used to narrow the list to
+   *  the chosen services, never shown. */
+  serviceIds: string[] | null;
+};
+
+/**
+ * v0.15.0: the technicians a customer may ask for: on shift today and able to
+ * do every chosen service. Nobody when no service is chosen yet. Pure; the
+ * screen and the check-in both use it, so a changed form cannot ask for more.
+ */
+export function techniciansFor(
+  technicians: KioskTechnician[],
+  serviceIds: string[],
+): KioskTechnician[] {
+  if (serviceIds.length === 0) return [];
+  return technicians.filter(
+    (t) => t.serviceIds === null || serviceIds.every((id) => t.serviceIds!.includes(id)),
+  );
+}
+
 export async function kioskMenu(db: Db, device: KioskDevice) {
-  const [menu, techs] = await Promise.all([
+  const [menu, techs, levels, profiles, rules] = await Promise.all([
     db
-      .select({ id: services.id, name: services.name, category: serviceCategories.name })
+      .select({
+        id: services.id,
+        name: services.name,
+        category: serviceCategories.name,
+        categoryId: services.categoryId,
+      })
       .from(services)
       .innerJoin(serviceCategories, eq(serviceCategories.id, services.categoryId))
       .where(and(eq(services.locationId, device.locationId), isNull(services.archivedAt)))
       .orderBy(serviceCategories.name, services.name),
+    // v0.15.0: only who is checked in today (any status but off). Names only:
+    // no status and no points ever reach the kiosk.
     db
       .select({ id: technicians.id, name: technicians.displayName })
       .from(technicians)
-      .where(and(eq(technicians.locationId, device.locationId), eq(technicians.active, true)))
+      .innerJoin(technicianStatus, eq(technicianStatus.technicianId, technicians.id))
+      .where(
+        and(
+          eq(technicians.locationId, device.locationId),
+          eq(technicians.active, true),
+          ne(technicianStatus.status, 'off'),
+        ),
+      )
       .orderBy(technicians.displayName),
+    loadLevels(db, device.locationId),
+    loadProfiles(db, device.locationId),
+    activeRules(db, device.locationId),
   ]);
-  return { services: menu, technicians: techs };
+  const required = rules.eligibility.skill_match === 'required';
+  return {
+    services: menu.map((m) => ({ id: m.id, name: m.name, category: m.category })),
+    technicians: techs.map((t): KioskTechnician => {
+      const lv = levels.get(t.id);
+      const profile = profiles.get(t.id);
+      const serviceIds = !required
+        ? null
+        : lv
+          ? menu.filter((m) => lv.serviceIds.has(m.id)).map((m) => m.id)
+          : !profile || doesEverything(profile)
+            ? null
+            : menu.filter((m) => profile.skillCategoryIds.includes(m.categoryId)).map((m) => m.id);
+      return { id: t.id, name: t.name, serviceIds };
+    }),
+  };
 }
 
 /** The long-wait notice, when the desk has switched it on (Part 5). */
@@ -538,6 +603,15 @@ export async function kioskCheckIn(
   const name = cleanKioskName(input.name);
   if (!name) return { ok: false, reason: 'bad_name' };
   const phone = input.phone?.trim() || null;
+  // v0.15.0: only a technician the screen would have listed: on shift today
+  // and able to do every chosen service.
+  if (input.requestedTechnicianId) {
+    const menu = await kioskMenu(db, input.device);
+    const listed = techniciansFor(menu.technicians, [...new Set(input.serviceIds)]);
+    if (!listed.some((t) => t.id === input.requestedTechnicianId)) {
+      return { ok: false, reason: 'unknown_technician' };
+    }
+  }
   const r = await createWalkIn(db, {
     organizationId: input.device.organizationId,
     locationId: input.device.locationId,

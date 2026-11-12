@@ -77,7 +77,7 @@ afterAll(async () => {
 
 describe('visitPointsUnder (pure, from rule_config)', () => {
   const rules = HEAVENLY_RULE_CONFIG_V1;
-  it('standard 1, fill or full set ½, combined capped at 1, appointment −½', () => {
+  it('standard 1, fill or full set ½, combined services add up, appointment −½', () => {
     expect(visitPointsUnder(rules, [{ isFillOrFullSet: false, categoryId: '' }], 'walk_in')).toBe(
       1,
     );
@@ -103,7 +103,7 @@ describe('visitPointsUnder (pure, from rule_config)', () => {
         ],
         'walk_in',
       ),
-    ).toBe(1);
+    ).toBe(1.5); // v0.15.0: no cap; the cap stays a setting (v015.test.ts)
     expect(
       visitPointsUnder(rules, [{ isFillOrFullSet: true, categoryId: '' }], 'appointment'),
     ).toBe(0);

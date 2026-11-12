@@ -242,10 +242,16 @@ describe('check-in', () => {
   });
 
   it('the menu has services and names only, from its own location', async () => {
+    // v0.15.0: only technicians checked in today are listed.
+    expect((await kioskMenu(db, device)).technicians).toEqual([]);
+    await checkIn(db, { technicianId: techId, actor: { userId: techUser }, position: null });
+    await transition(db, { technicianId: techId, to: 'available', actor: { userId: techUser } });
     const m = await kioskMenu(db, device);
     expect(m.services.length).toBeGreaterThan(0);
     expect(m.technicians.map((t) => t.name)).toEqual(['An']);
-    expect(Object.keys(m.technicians[0]!).sort()).toEqual(['id', 'name']);
+    // serviceIds narrows the list to the chosen services; no status, no points.
+    expect(Object.keys(m.technicians[0]!).sort()).toEqual(['id', 'name', 'serviceIds']);
+    expect(Object.keys(m.services[0]!).sort()).toEqual(['category', 'id', 'name']);
   });
 
   it('makes a waiting visit that needs the desk, audited without name or phone', async () => {
@@ -358,8 +364,6 @@ describe('check-in', () => {
 
 describe('desk confirm', () => {
   it('nobody is called until the desk confirms; then the engine calls', async () => {
-    await checkIn(db, { technicianId: techId, actor: { userId: techUser }, position: null });
-    await transition(db, { technicianId: techId, to: 'available', actor: { userId: techUser } });
     const r = await kioskCheckIn(db, { device, name: 'Hoa', serviceIds: [manicure] });
     if (!r.ok) throw new Error(r.reason);
     const visitId = r.visitIds[0]!;

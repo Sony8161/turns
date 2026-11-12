@@ -183,6 +183,13 @@
       "when": 1794465373692,
       "tag": "0025_v014_skill_levels",
       "breakpoints": true
+    },
+    {
+      "idx": 26,
+      "version": "7",
+      "when": 1794467565749,
+      "tag": "0026_v015_rule_answers",
+      "breakpoints": true
     }
   ]
 }

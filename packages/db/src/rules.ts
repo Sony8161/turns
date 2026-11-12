@@ -21,6 +21,18 @@ type Tx = Parameters<Parameters<Db['transaction']>[0]>[0];
 
 export type LateTier = { after_minutes: number; start_points: number | null };
 
+/** Why a technician says no to a call. Lives here (not in the engine) so the
+ *  rules can name the reasons that excuse themselves (v0.15.0). */
+export const DENY_REASONS = [
+  'not_my_service',
+  'with_another_client',
+  'break_needed',
+  'personal',
+  'client_issue',
+  'other',
+] as const;
+export type DenyReason = (typeof DENY_REASONS)[number];
+
 export type RuleConfig = {
   points: {
     default_service: number;
@@ -35,6 +47,9 @@ export type RuleConfig = {
   };
   penalties: {
     deny: number;
+    /** v0.15.0: deny reasons that excuse themselves: no points, no manager
+     *  needed. Every other reason costs `deny` unless a manager excuses it. */
+    deny_excused_reasons: DenyReason[];
     out_over_minutes: number;
     out_over_penalty: number;
     /** start_points null = unset: still to confirm with the owner. */
@@ -65,11 +80,48 @@ export type RuleConfig = {
     long_wait_min: number;
     /** Used for the wait estimate when a service has no duration of its own. */
     default_service_min: number;
+    /** v0.15.0: a client waiting this long for the technician they asked for
+     *  or booked is flagged to the desk (keep waiting, book for later, or
+     *  send by turn). Missing in an older config = long_wait_min. */
+    request_wait_min: number;
   };
 };
 
 export const SKILL_MATCH = ['required', 'preferred', 'off'] as const;
-export const QUEUE_SORT = ['points_asc', 'had_appointment_last', 'check_in_asc'] as const;
+// 'double_zero_last' (v0.15.0, Duong 2026-11-12): at zero points only, a
+// technician whose last visit was an appointment (shown 00) goes after a true
+// 0; above zero the appointment makes no difference. 'had_appointment_last'
+// is the same idea at every score, kept for a salon that wants it.
+export const QUEUE_SORT = [
+  'points_asc',
+  'double_zero_last',
+  'had_appointment_last',
+  'check_in_asc',
+] as const;
+
+/** Queue order from the rules' `queue.sort` keys, in their order; check-in breaks a last tie. Pure. */
+export function compareQueue(
+  rules: Pick<RuleConfig, 'queue'>,
+  a: { points: number; hadAppointmentLast: boolean; checkedInAt: Date | null },
+  b: { points: number; hadAppointmentLast: boolean; checkedInAt: Date | null },
+): number {
+  const checkIn = (a.checkedInAt?.getTime() ?? 0) - (b.checkedInAt?.getTime() ?? 0);
+  const appointment = Number(a.hadAppointmentLast) - Number(b.hadAppointmentLast);
+  for (const key of rules.queue.sort) {
+    const d =
+      key === 'points_asc'
+        ? a.points - b.points
+        : key === 'had_appointment_last'
+          ? appointment
+          : key === 'double_zero_last'
+            ? a.points === 0 && b.points === 0
+              ? appointment
+              : 0
+            : checkIn;
+    if (d !== 0) return d;
+  }
+  return checkIn;
+}
 
 export type RuleProblem =
   | 'missing'
@@ -183,6 +235,7 @@ export function validateRuleConfig(input: unknown): ValidationResult {
     },
     penalties: {
       deny: c.points(penalties, 'penalties.deny')!,
+      deny_excused_reasons: [],
       out_over_minutes: c.minutes(penalties, 'penalties.out_over_minutes')!,
       out_over_penalty: c.points(penalties, 'penalties.out_over_penalty')!,
       late_tiers: [],
@@ -211,8 +264,33 @@ export function validateRuleConfig(input: unknown): ValidationResult {
       unanswered_call_min: c.minutes(attention, 'attention.unanswered_call_min')!,
       long_wait_min: c.minutes(attention, 'attention.long_wait_min')!,
       default_service_min: c.minutes(attention, 'attention.default_service_min')!,
+      // Filled in below: optional, so configs saved before v0.15.0 still validate.
+      request_wait_min: 0,
     },
   };
+
+  const requestWait =
+    attention['request_wait_min'] === undefined
+      ? out.attention.long_wait_min
+      : c.minutes(attention, 'attention.request_wait_min');
+  if (requestWait !== undefined) out.attention.request_wait_min = requestWait;
+  if (requestWait === 0) c.fail('attention.request_wait_min', 'not_allowed');
+
+  // Deny reasons that excuse themselves: known reasons, each at most once.
+  // Missing (a config saved before v0.15.0) = none, as it behaved then.
+  const excused = penalties['deny_excused_reasons'];
+  if (excused !== undefined) {
+    if (!Array.isArray(excused)) c.fail('penalties.deny_excused_reasons', 'not_allowed');
+    else {
+      for (const r of excused) {
+        if (typeof r !== 'string' || !(DENY_REASONS as readonly string[]).includes(r)) {
+          c.fail('penalties.deny_excused_reasons', 'not_allowed');
+        } else if (!out.penalties.deny_excused_reasons.includes(r as DenyReason)) {
+          out.penalties.deny_excused_reasons.push(r as DenyReason);
+        }
+      }
+    }
+  }
 
   // Penalties for a deny or an overlong out are added to the total, never subtracted.
   if (out.penalties.deny < 0) c.fail('penalties.deny', 'negative');
@@ -486,6 +564,7 @@ export async function previewBoard(
       shiftId: turnLedger.shiftId,
       delta: turnLedger.delta,
       reasonType: turnLedger.reasonType,
+      note: turnLedger.note,
       visitId: turnLedger.visitId,
       id: turnLedger.id,
       reversesId: turnLedger.reversesId,
@@ -517,7 +596,10 @@ export async function previewBoard(
         return visitPointsUnder(candidate, own, own[0]!.source);
       }
       case 'deny':
-        return candidate.penalties.deny;
+        // The row's note is the deny reason: one the candidate excuses costs nothing.
+        return (candidate.penalties.deny_excused_reasons as string[]).includes(row.note ?? '')
+          ? 0
+          : candidate.penalties.deny;
       case 'out_over':
         return candidate.penalties.out_over_penalty;
       case 'excuse': {
@@ -546,10 +628,9 @@ export async function previewBoard(
         previewPoints,
       };
     })
-    .sort(
-      (a, b) =>
-        a.previewPoints - b.previewPoints ||
-        (a.checkedInAt?.getTime() ?? 0) - (b.checkedInAt?.getTime() ?? 0),
+    .sort((a, b) =>
+      // The candidate's own order (0 before 00 and the rest of queue.sort).
+      compareQueue(candidate, { ...a, points: a.previewPoints }, { ...b, points: b.previewPoints }),
     );
 }
 
@@ -568,11 +649,13 @@ const STANDARD: Omit<RuleConfig, 'attention'> = {
     fill_or_full_set: 0.5,
     appointment_discount: -0.5,
     combined_services: 'sum',
-    combined_fill_full_cap: 1,
+    // v0.15.0 (Duong): services in one visit add up, no cap.
+    combined_fill_full_cap: null,
     post_on: 'completion',
   },
   penalties: {
     deny: 1,
+    deny_excused_reasons: ['break_needed', 'personal'],
     out_over_minutes: 60,
     out_over_penalty: 1,
     late_tiers: [
@@ -583,7 +666,7 @@ const STANDARD: Omit<RuleConfig, 'attention'> = {
   },
   queue: {
     reset: 'daily_at_open',
-    sort: ['points_asc', 'had_appointment_last', 'check_in_asc'],
+    sort: ['points_asc', 'double_zero_last', 'check_in_asc'],
     auto_pass: false,
   },
   eligibility: {
@@ -612,6 +695,8 @@ export function templateConfig(template: RuleTemplate, base: RuleConfig): RuleCo
       combined_fill_full_cap: null,
       by_category: undefined,
     },
+    // Every deny costs the same; a manager can still excuse one.
+    penalties: { ...standard.penalties, deny_excused_reasons: [] },
     queue: { ...standard.queue, sort: ['points_asc', 'check_in_asc'] },
   };
 }

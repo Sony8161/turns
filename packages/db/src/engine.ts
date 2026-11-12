@@ -7,7 +7,14 @@ import { and, asc, desc, eq, gt, inArray, isNull, lt, sql } from 'drizzle-orm';
 import { normalizePhone, upsertClient, type ClientGender, type ClientInput } from './clients';
 import { byTurn, loadLevels, type SkillLevel } from './levels';
 import { doesEverything, loadProfiles, restrictionOf, type TechnicianProfile } from './profile';
-import { activeRules, visitPointsUnder, type RuleConfig } from './rules';
+import {
+  activeRules,
+  compareQueue,
+  DENY_REASONS,
+  visitPointsUnder,
+  type DenyReason,
+  type RuleConfig,
+} from './rules';
 import {
   appointments,
   auditLog,
@@ -38,16 +45,10 @@ type Tx = Parameters<Parameters<Db['transaction']>[0]>[0];
 /** A manager or owner acting at their own location (threat model T10). */
 export type ManagerActor = { userId: string | null; organizationId: string; locationId: string };
 
-export const DENY_REASONS = [
-  'not_my_service',
-  'with_another_client',
-  'break_needed',
-  'client_issue',
-  'other',
-] as const;
-export type DenyReason = (typeof DENY_REASONS)[number];
-
-export type { RuleConfig };
+// The deny reasons and the queue order live with the rules (v0.15.0); they
+// are re-exported here because the engine is where callers look for them.
+export { compareQueue, DENY_REASONS };
+export type { DenyReason, RuleConfig };
 
 export type EngineError = {
   ok: false;
@@ -247,7 +248,8 @@ export type SkipReason =
   | 'min_client_age'
   | 'no_same_time'
   | 'appointment_soon'
-  | 'not_by_turn';
+  | 'not_by_turn'
+  | 'said_no';
 
 /** Reasons a manager may override with reassign (force); status reasons never. */
 export const SOFT_SKIPS: readonly SkipReason[] = [
@@ -258,6 +260,7 @@ export const SOFT_SKIPS: readonly SkipReason[] = [
   'no_same_time',
   'appointment_soon',
   'not_by_turn',
+  'said_no',
 ];
 
 export type Candidate = {
@@ -273,6 +276,9 @@ export type Candidate = {
   detail?: string;
   /** v0.14.0: the technician's level, when one is set. */
   level?: SkillLevel;
+  /** v0.15.0, a visit of several services: the ones she does, when that is
+   *  not all of them. She is called for those; the rest go on after her. */
+  takes?: string[];
   /** A custom restriction's text: shown to the desk, never applied by the engine. */
   note?: string;
   /** With skill_match "preferred": does the technician have every skill? */
@@ -290,6 +296,9 @@ export type VisitContext = {
   /** The technician the client asked for: the by-turn level rule never holds
    *  a technician out of a visit that asked for her. */
   requestedTechnicianId?: string | null;
+  /** v0.15.0: the visit itself, so a technician who said no to it for a
+   *  reason the rules excuse is not called for it again. */
+  visitId?: string;
   gender: ClientGender | null;
   isKid: boolean | null;
   age: number | null;
@@ -341,7 +350,7 @@ export async function queueFor(
   // free again even when the row cannot be cancelled (a calendar row).
   const noShowBefore = new Date(now.getTime() - bufferMs);
   const serviceIds = [...new Set(ctx.serviceIds ?? [])];
-  const [rows, profiles, categories, upcoming, levels, menu] = await Promise.all([
+  const [rows, profiles, categories, upcoming, levels, menu, saidNo] = await Promise.all([
     tx
       .select({
         technicianId: technicians.id,
@@ -384,11 +393,33 @@ export async function queueFor(
     loadLevels(tx, locationId),
     serviceIds.length
       ? tx
-          .select({ id: services.id, name: services.name, turnLevels: services.turnLevels })
+          .select({
+            id: services.id,
+            name: services.name,
+            turnLevels: services.turnLevels,
+            categoryId: services.categoryId,
+          })
           .from(services)
           .where(inArray(services.id, serviceIds))
-      : Promise.resolve([] as { id: string; name: string; turnLevels: SkillLevel[] | null }[]),
+          .orderBy(asc(services.name))
+      : Promise.resolve(
+          [] as {
+            id: string;
+            name: string;
+            turnLevels: SkillLevel[] | null;
+            categoryId: string;
+          }[],
+        ),
+    // v0.15.0: who already said no to this visit for a reason the rules excuse.
+    ctx.visitId
+      ? tx
+          .select({ technicianId: turnCalls.technicianId })
+          .from(turnCalls)
+          .where(and(eq(turnCalls.visitId, ctx.visitId), eq(turnCalls.autoExcused, true)))
+      : Promise.resolve([] as { technicianId: string }[]),
   ]);
+  const declined = new Set(saidNo.map((r) => r.technicianId));
+  const required = rules.eligibility.skill_match === 'required';
   const nextAppointment = new Map<string, Date>();
   for (const a of upcoming) {
     if (!nextAppointment.has(a.technicianId)) nextAppointment.set(a.technicianId, a.startAt);
@@ -416,6 +447,19 @@ export async function queueFor(
         ctx.requestedTechnicianId === r.technicianId || ctx.bookedTechnicianId === r.technicianId;
       const notHers =
         lv && !asked ? menu.filter((m) => !byTurn(lv.level, m.turnLevels)).map((m) => m.name) : [];
+      // v0.15.0 (Duong: "called first by turn; if need be they just do one
+      // service and the other is called after they are done"): on a visit of
+      // several services she is called when at least one of them is hers. What
+      // she does (her ticks, or her categories without a level), and of that,
+      // what her level gets by turn.
+      const does = !required
+        ? menu
+        : lv
+          ? menu.filter((m) => lv.serviceIds.has(m.id))
+          : !profile || doesEverything(profile)
+            ? menu
+            : menu.filter((m) => skills!.has(m.categoryId));
+      const hers = does.filter((m) => !lv || asked || byTurn(lv.level, m.turnLevels));
       const custom = profile ? (restrictionOf(profile, 'custom')?.note ?? undefined) : undefined;
       const base = {
         technicianId: r.technicianId,
@@ -427,6 +471,9 @@ export async function queueFor(
         hadAppointmentLast: r.hadAppointmentLast === true,
         ...(custom ? { note: custom } : {}),
         ...(lv ? { level: lv.level } : {}),
+        ...(menu.length > 1 && does.length > 0 && does.length < menu.length
+          ? { takes: does.map((m) => m.name) }
+          : {}),
       };
       const skip = (why: SkipReason, detail?: string): Candidate => ({
         ...base,
@@ -437,7 +484,10 @@ export async function queueFor(
       if (r.status !== 'available') return skip(r.status as SkipReason);
       if (Number(r.openCall) > 0) return skip('already_called');
       if (Number(r.openVisit) > 0) return skip('busy');
-      if (!skilled && rules.eligibility.skill_match === 'required') {
+      // She said no to this client (break, personal): no points, and no second call for it.
+      if (declined.has(r.technicianId)) return skip('said_no');
+      // With the services known: skipped only when she does none of them.
+      if (required && (menu.length ? does.length === 0 : !skilled)) {
         return skip('no_skill', missing.join(', '));
       }
       if (profile && rules.eligibility.honor_restrictions) {
@@ -454,7 +504,9 @@ export async function queueFor(
       // Last on purpose: a technician skipped as not_by_turn is held out by
       // the level rule alone, so the desk may ask her (offerToHigherLevel).
       // No penalty and no change to her place: a skip never posts points.
-      if (notHers.length) return skip('not_by_turn', notHers.join(', '));
+      if (menu.length ? hers.length === 0 : notHers.length > 0) {
+        return skip('not_by_turn', notHers.join(', '));
+      }
       return { ...base, eligible: true, why: 'available' };
     })
     .sort((a, b) => {
@@ -466,27 +518,8 @@ export async function queueFor(
     });
 }
 
-/** Queue order from the rules' `queue.sort` keys, in their order; check-in breaks a last tie. */
-export function compareQueue(
-  rules: RuleConfig,
-  a: { points: number; hadAppointmentLast: boolean; checkedInAt: Date | null },
-  b: { points: number; hadAppointmentLast: boolean; checkedInAt: Date | null },
-): number {
-  const checkIn = (a.checkedInAt?.getTime() ?? 0) - (b.checkedInAt?.getTime() ?? 0);
-  for (const key of rules.queue.sort) {
-    const d =
-      key === 'points_asc'
-        ? a.points - b.points
-        : key === 'had_appointment_last'
-          ? Number(a.hadAppointmentLast) - Number(b.hadAppointmentLast)
-          : checkIn;
-    if (d !== 0) return d;
-  }
-  return checkIn;
-}
-
 /** The engine's view of a visit: its categories and the client attributes. */
-async function contextOf(tx: Tx, visit: typeof visits.$inferSelect): Promise<VisitContext> {
+export async function contextOf(tx: Tx, visit: typeof visits.$inferSelect): Promise<VisitContext> {
   const items = await tx
     .select({ categoryId: services.categoryId, serviceId: services.id })
     .from(visitServices)
@@ -496,6 +529,7 @@ async function contextOf(tx: Tx, visit: typeof visits.$inferSelect): Promise<Vis
     categoryIds: items.map((i) => i.categoryId),
     serviceIds: items.map((i) => i.serviceId),
     requestedTechnicianId: visit.requestedTechnicianId,
+    visitId: visit.id,
     gender: visit.clientGender,
     isKid: visit.clientIsKid,
     age: visit.clientAge,
@@ -523,6 +557,53 @@ function skippedOf(queue: Candidate[]): Skipped[] {
       ...(c.detail ? { detail: c.detail } : {}),
       ...(c.note ? { note: c.note } : {}),
     }));
+}
+
+const OPEN_VISIT = ['waiting', 'called', 'in_service'];
+
+/**
+ * v0.15.0: the rest of a split visit waits until the first part is finished
+ * (the client is in that chair). Returns the visit it waits behind, or null
+ * when it may be called. A same-time visit never waits: two technicians work
+ * at once.
+ */
+async function waitsBehind(
+  tx: Tx | Db,
+  visit: { splitFromVisitId: string | null },
+): Promise<{ id: string; assignedTechnicianId: string | null } | null> {
+  if (!visit.splitFromVisitId) return null;
+  const [first] = await tx
+    .select({
+      id: visits.id,
+      status: visits.status,
+      groupId: visits.groupId,
+      assignedTechnicianId: visits.assignedTechnicianId,
+    })
+    .from(visits)
+    .where(eq(visits.id, visit.splitFromVisitId));
+  if (!first || first.groupId !== null || !OPEN_VISIT.includes(first.status)) return null;
+  return { id: first.id, assignedTechnicianId: first.assignedTechnicianId };
+}
+
+/**
+ * The services of a visit this technician does (her ticks, or her category
+ * skills without a level). Everything when the rules do not require skills.
+ */
+async function doableServices(
+  tx: Tx | Db,
+  locationId: string,
+  technicianId: string,
+  items: { serviceId: string; categoryId: string }[],
+  rules: RuleConfig,
+): Promise<string[]> {
+  const all = items.map((i) => i.serviceId);
+  if (rules.eligibility.skill_match !== 'required') return all;
+  const lv = (await loadLevels(tx, locationId)).get(technicianId);
+  if (lv) return all.filter((id) => lv.serviceIds.has(id));
+  const profile = (await loadProfiles(tx, locationId)).get(technicianId);
+  if (!profile || doesEverything(profile)) return all;
+  const skills = new Set(profile.skillCategoryIds);
+  return items.filter((i) => skills.has(i.categoryId)).map((i) => i.serviceId);
 }
 
 /** Does this visit hold a service the desk picks the technician for? */
@@ -561,6 +642,8 @@ export async function callNext(
     if (visit.needsConfirm) return { ok: false, reason: 'needs_confirm' };
     // v0.14.0: a service the desk picks the technician for is never called by turn.
     if (await hasDeskPick(tx, visit.id)) return { ok: false, reason: 'desk_picks' };
+    // v0.15.0: the rest of a split visit waits for the first part to finish.
+    if (await waitsBehind(tx, visit)) return { ok: false, reason: 'waits_for_first_part' };
 
     const rules = await activeRules(tx, visit.locationId);
     const queue = await queueFor(tx, visit.locationId, await contextOf(tx, visit));
@@ -596,6 +679,21 @@ export async function callNext(
         ok: false,
         reason: 'nobody_eligible',
         detail: `${pick.displayName}: ${held?.status ?? 'off'}`,
+      };
+    }
+    // Two desks pressing Call next at the same second both pick her; the one
+    // that waited for the row above now sees the other's call and loses
+    // cleanly (v0.15.0: it used to reach the unique index and throw).
+    const [taken] = await tx
+      .select({ id: turnCalls.id })
+      .from(turnCalls)
+      .where(and(eq(turnCalls.technicianId, pick.technicianId), isNull(turnCalls.respondedAt)))
+      .limit(1);
+    if (taken) {
+      return {
+        ok: false,
+        reason: 'nobody_eligible',
+        detail: `${pick.displayName}: already_called`,
       };
     }
     // The partial unique indexes refuse a second open call for the technician
@@ -665,12 +763,29 @@ export async function respondToCall(
     if (input.response === 'accepted') {
       // Decide the split before anything is written.
       const items = await tx
-        .select({ serviceId: visitServices.serviceId })
+        .select({ serviceId: visitServices.serviceId, categoryId: services.categoryId })
         .from(visitServices)
+        .innerJoin(services, eq(services.id, visitServices.serviceId))
         .where(eq(visitServices.visitId, call.visitId));
       const all = items.map((i) => i.serviceId);
-      const keep = input.keepServiceIds ? [...new Set(input.keepServiceIds)] : all;
-      if (keep.length === 0 || keep.some((k) => !all.includes(k))) {
+      // v0.15.0: she keeps only services she does. "Do all" is all of those.
+      // A manager who sent her a visit she does none of overrode that (force).
+      const snapshot = Array.isArray(call.queueSnapshot)
+        ? (call.queueSnapshot as Candidate[]).find((c) => c.technicianId === call.technicianId)
+        : undefined;
+      const forced = !!snapshot && !snapshot.eligible && snapshot.why === 'no_skill';
+      const does = forced
+        ? all
+        : await doableServices(
+            tx,
+            call.locationId,
+            call.technicianId,
+            items,
+            await activeRules(tx, call.locationId),
+          );
+      const able = does.length ? does : all;
+      const keep = input.keepServiceIds ? [...new Set(input.keepServiceIds)] : able;
+      if (keep.length === 0 || keep.some((k) => !able.includes(k))) {
         return { ok: false, reason: 'bad_split' };
       }
       const sendBack = all.filter((a) => !keep.includes(a));
@@ -709,6 +824,8 @@ export async function respondToCall(
           ...(call.kind !== 'turn' ? { kind: call.kind } : {}),
           // The technician's choice on a visit with more than one service.
           ...(all.length > 1 ? { choice: sendBack.length ? 'split' : 'all' } : {}),
+          // She does only part of it: the rest was never hers to choose.
+          ...(able.length < all.length ? { takesOnly: able } : {}),
         },
       });
       return { ok: true, ...(splitVisitId ? { splitVisitId } : {}) };
@@ -739,20 +856,28 @@ export async function respondToCall(
 
     const reason = input.denyReason ?? 'other';
     if (!DENY_REASONS.includes(reason)) return { ok: false, reason: 'bad_deny_reason' };
+    const rules = await activeRules(tx, call.locationId);
+    // v0.15.0: a reason the rules excuse (Heavenly: break, personal) costs
+    // nothing and needs no manager. She is not called for this visit again.
+    const excused = rules.penalties.deny_excused_reasons.includes(reason);
     await tx
       .update(turnCalls)
-      .set({ respondedAt: now, response: 'denied', denyReason: reason })
+      .set({
+        respondedAt: now,
+        response: 'denied',
+        denyReason: reason,
+        ...(excused ? { autoExcused: true, excusedAt: now } : {}),
+      })
       .where(eq(turnCalls.id, call.id));
     await tx
       .update(visits)
       .set({ status: 'waiting', updatedAt: now })
       .where(eq(visits.id, call.visitId));
-    const rules = await activeRules(tx, call.locationId);
     const [st] = await tx
       .select({ shiftId: technicianStatus.shiftId })
       .from(technicianStatus)
       .where(eq(technicianStatus.technicianId, call.technicianId));
-    if (st?.shiftId) {
+    if (st?.shiftId && !excused) {
       await postPoints(tx, {
         organizationId: call.organizationId,
         locationId: call.locationId,
@@ -772,7 +897,11 @@ export async function respondToCall(
       entityType: 'turn_calls',
       entityId: call.id,
       action: 'call_denied',
-      after: { visitId: call.visitId, denyReason: reason },
+      after: {
+        visitId: call.visitId,
+        denyReason: reason,
+        ...(excused ? { excused: 'by_rule' } : {}),
+      },
       reason,
     });
     return { ok: true };
@@ -783,7 +912,8 @@ export async function respondToCall(
  * v0.14.0: the called technician keeps some services of a visit and sends
  * the rest back to the line. The rest become a linked visit that keeps the
  * client and their arrival time (so their wait and their place on the desk's
- * list stay), for the next technician who can take them. Each technician is
+ * list stay), for the next technician who can take them. v0.15.0: that visit
+ * waits until this one is finished (waitsBehind): the client is in her chair. Each technician is
  * paid points only for the services on the visit she finishes. A request or
  * an appointment stays with the first visit; the rest go by turn.
  */
@@ -862,6 +992,7 @@ export async function deskCall(
     if (visit.locationId !== input.locationId) return { ok: false, reason: 'wrong_location' };
     if (visit.status !== 'waiting') return { ok: false, reason: 'visit_not_waiting' };
     if (visit.needsConfirm) return { ok: false, reason: 'needs_confirm' };
+    if (await waitsBehind(tx, visit)) return { ok: false, reason: 'waits_for_first_part' };
     const picks = await hasDeskPick(tx, visit.id);
     if (input.kind === 'desk_pick' && !picks) return { ok: false, reason: 'not_desk_pick' };
     if (input.kind === 'offer' && picks) return { ok: false, reason: 'desk_picks' };
@@ -888,6 +1019,12 @@ export async function deskCall(
     if (held?.status !== 'available') {
       return { ok: false, reason: 'target_not_eligible', detail: held?.status ?? 'off' };
     }
+    const [taken] = await tx
+      .select({ id: turnCalls.id })
+      .from(turnCalls)
+      .where(and(eq(turnCalls.technicianId, target.technicianId), isNull(turnCalls.respondedAt)))
+      .limit(1);
+    if (taken) return { ok: false, reason: 'target_not_eligible', detail: 'already_called' };
     const [call] = await tx
       .insert(turnCalls)
       .values({
@@ -954,6 +1091,8 @@ export async function deskOptions(
       );
     const out = new Map<string, { deskPicks: boolean; technicians: DeskOption[] }>();
     for (const visit of waiting) {
+      // The rest of a split visit cannot be called yet: nothing to offer.
+      if (await waitsBehind(tx, visit)) continue;
       const picks = await hasDeskPick(tx, visit.id);
       const queue = await queueFor(tx, locationId, await contextOf(tx, visit));
       const option = (c: Candidate, i: number): DeskOption => ({
@@ -1195,6 +1334,47 @@ export async function reassignVisit(
   });
 }
 
+export type SlipPart = {
+  /** Who did (or is doing) this part; null while nobody has it. */
+  technician: string | null;
+  services: string[];
+};
+
+/**
+ * v0.15.0, the on-screen slip (Heavenly hands the next technician a paper
+ * one): the earlier parts of a split visit, first part first. null for a
+ * visit that is not the rest of another.
+ */
+async function slipFor(
+  db: Db | Tx,
+  visit: { splitFromVisitId: string | null },
+): Promise<SlipPart[] | null> {
+  const parts: SlipPart[] = [];
+  let parentId = visit.splitFromVisitId;
+  // A visit has at most a handful of services, so the chain is short.
+  for (let i = 0; parentId && i < 12; i++) {
+    const [p] = await db
+      .select({
+        id: visits.id,
+        splitFromVisitId: visits.splitFromVisitId,
+        technician: technicians.displayName,
+      })
+      .from(visits)
+      .leftJoin(technicians, eq(technicians.id, visits.assignedTechnicianId))
+      .where(eq(visits.id, parentId));
+    if (!p) break;
+    const items = await db
+      .select({ name: services.name })
+      .from(visitServices)
+      .innerJoin(services, eq(services.id, visitServices.serviceId))
+      .where(eq(visitServices.visitId, p.id))
+      .orderBy(asc(services.name));
+    parts.unshift({ technician: p.technician, services: items.map((i) => i.name) });
+    parentId = p.splitFromVisitId;
+  }
+  return parts.length ? parts : null;
+}
+
 /** What the technician's phone needs: their open call with its services. */
 export async function openCallFor(db: Db, technicianId: string) {
   const [call] = await db
@@ -1206,6 +1386,9 @@ export async function openCallFor(db: Db, technicianId: string) {
       note: visits.note,
       requestedTechnicianId: visits.requestedTechnicianId,
       kind: turnCalls.kind,
+      locationId: turnCalls.locationId,
+      queueSnapshot: turnCalls.queueSnapshot,
+      splitFromVisitId: visits.splitFromVisitId,
     })
     .from(turnCalls)
     .innerJoin(visits, eq(visits.id, turnCalls.visitId))
@@ -1214,19 +1397,45 @@ export async function openCallFor(db: Db, technicianId: string) {
     .limit(1);
   if (!call) return null;
   const items = await db
-    .select({ id: services.id, name: services.name })
+    .select({ id: services.id, name: services.name, categoryId: services.categoryId })
     .from(visitServices)
     .innerJoin(services, eq(services.id, visitServices.serviceId))
     .where(eq(visitServices.visitId, call.visitId))
     .orderBy(asc(services.name));
-  const { requestedTechnicianId, ...rest } = call;
+  // v0.15.0: which of them she does (respondToCall holds the same line).
+  const snapshot = Array.isArray(call.queueSnapshot)
+    ? (call.queueSnapshot as Candidate[]).find((c) => c.technicianId === technicianId)
+    : undefined;
+  const forced = !!snapshot && !snapshot.eligible && snapshot.why === 'no_skill';
+  const does = forced
+    ? []
+    : await doableServices(
+        db,
+        call.locationId,
+        technicianId,
+        items.map((i) => ({ serviceId: i.id, categoryId: i.categoryId })),
+        await activeRules(db, call.locationId),
+      );
+  const able = new Set(does.length ? does : items.map((i) => i.id));
+  const {
+    requestedTechnicianId,
+    locationId: _locationId,
+    queueSnapshot: _queueSnapshot,
+    splitFromVisitId,
+    ...rest
+  } = call;
+  void _locationId;
+  void _queueSnapshot;
   // The note goes only to the technician this visit is called to (v0.10.2).
   return {
     ...rest,
     requested: requestedTechnicianId === technicianId,
     services: items.map((i) => i.name),
-    /** v0.14.0: with ids, so the technician can keep some and send the rest back. */
-    serviceItems: items,
+    /** v0.14.0: with ids, so the technician can keep some and send the rest back.
+     *  v0.15.0: canDo false = not hers to keep; it goes on to the next technician. */
+    serviceItems: items.map((i) => ({ id: i.id, name: i.name, canDo: able.has(i.id) })),
+    /** v0.15.0: the earlier parts of this client's visit, when this is the rest of one. */
+    slip: await slipFor(db, { splitFromVisitId }),
   };
 }
 
@@ -1315,6 +1524,7 @@ export async function waitingVisits(db: Db, locationId: string) {
       kioskName: visits.kioskName,
       needsConfirm: visits.needsConfirm,
       splitFromVisitId: visits.splitFromVisitId,
+      requestedTechnicianId: visits.requestedTechnicianId,
       callKind: turnCalls.kind,
     })
     .from(visits)
@@ -1340,11 +1550,30 @@ export async function waitingVisits(db: Db, locationId: string) {
         .innerJoin(services, eq(services.id, visitServices.serviceId))
         .where(inArray(visitServices.visitId, ids))
     : [];
+  // v0.15.0: the rest of a split visit: the slip, and whether it still waits
+  // for the first part to finish.
+  const split = new Map<
+    string,
+    { slip: SlipPart[] | null; held: { technician: string | null } | null }
+  >();
+  for (const r of rows) {
+    if (!r.splitFromVisitId) continue;
+    const slip = await slipFor(db, r);
+    const behind = r.status === 'waiting' ? await waitsBehind(db, r) : null;
+    split.set(r.id, {
+      slip,
+      held: behind ? { technician: slip?.at(-1)?.technician ?? null } : null,
+    });
+  }
   return rows.map((r) => ({
     ...r,
     services: items.filter((i) => i.visitId === r.id).map((i) => i.name),
     /** v0.14.0: the desk picks the technician for this visit (never by turn). */
     deskPicks: items.some((i) => i.visitId === r.id && i.deskPicks),
+    /** v0.15.0: who did the earlier parts (the on-screen slip). */
+    slip: split.get(r.id)?.slip ?? null,
+    /** v0.15.0: not callable yet: it waits until this technician finishes her part. */
+    held: split.get(r.id)?.held ?? null,
   }));
 }
 

@@ -111,6 +111,7 @@ describe('validateRuleConfig', () => {
       unanswered_call_min: 15,
       long_wait_min: 30,
       default_service_min: 45,
+      request_wait_min: 10,
     });
   });
 

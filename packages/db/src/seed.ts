@@ -27,11 +27,17 @@ export const HEAVENLY_RULE_CONFIG_V1: RuleConfig = {
     fill_or_full_set: 0.5,
     appointment_discount: -0.5,
     combined_services: 'sum',
-    combined_fill_full_cap: 1.0,
+    // v0.15.0 (Duong, 2026-11-12): services in one visit add up, each at its
+    // own points; no cap when a fill or full set is among them. Same-time
+    // visits are one visit per service, as before (open with Phu).
+    combined_fill_full_cap: null,
     post_on: 'completion',
   },
   penalties: {
     deny: 1.0,
+    // v0.15.0 (Duong): "break" and "personal" excuse themselves; limited use,
+    // the technicians like to work. Every other reason is +1 unless a manager excuses it.
+    deny_excused_reasons: ['break_needed', 'personal'],
     out_over_minutes: 60,
     out_over_penalty: 1.0,
     late_tiers: [
@@ -42,7 +48,9 @@ export const HEAVENLY_RULE_CONFIG_V1: RuleConfig = {
   },
   queue: {
     reset: 'daily_at_open',
-    sort: ['points_asc', 'had_appointment_last', 'check_in_asc'],
+    // v0.15.0 (Duong): 0, then 00, then everyone else by points; above zero
+    // an appointment makes no difference to the order.
+    sort: ['points_asc', 'double_zero_last', 'check_in_asc'],
     auto_pass: false,
   },
   eligibility: {
@@ -63,6 +71,9 @@ export const HEAVENLY_RULE_CONFIG_V1: RuleConfig = {
     unanswered_call_min: 15,
     long_wait_min: 30,
     default_service_min: 45,
+    // v0.15.0: a client waiting this long for the technician they asked for
+    // is flagged to the desk (value not confirmed with Phu; the owner edits it).
+    request_wait_min: 10,
   },
 };
 
