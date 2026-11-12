@@ -15,7 +15,7 @@ import {
   visits,
 } from './schema';
 import type { Db } from './server';
-import { writeAudit, type Actor } from './status';
+import { HAD_APPOINTMENT_LAST, writeAudit, type Actor } from './status';
 
 type Tx = Parameters<Parameters<Db['transaction']>[0]>[0];
 
@@ -446,6 +446,8 @@ export type PreviewRow = {
   displayName: string;
   status: string;
   checkedInAt: Date | null;
+  /** The last visit was an appointment (0 before 00), as posted. */
+  hadAppointmentLast: boolean;
   /** Today's total as posted. */
   points: number;
   /** Today's total if every row had been posted under the candidate config. */
@@ -469,6 +471,7 @@ export async function previewBoard(
       status: technicianStatus.status,
       shiftId: technicianStatus.shiftId,
       checkedInAt: shifts.checkedInAt,
+      hadAppointmentLast: HAD_APPOINTMENT_LAST,
     })
     .from(technicians)
     .innerJoin(technicianStatus, eq(technicianStatus.technicianId, technicians.id))
@@ -484,6 +487,8 @@ export async function previewBoard(
       delta: turnLedger.delta,
       reasonType: turnLedger.reasonType,
       visitId: turnLedger.visitId,
+      id: turnLedger.id,
+      reversesId: turnLedger.reversesId,
     })
     .from(turnLedger)
     .where(inArray(turnLedger.shiftId, shiftIds));
@@ -515,6 +520,12 @@ export async function previewBoard(
         return candidate.penalties.deny;
       case 'out_over':
         return candidate.penalties.out_over_penalty;
+      case 'excuse': {
+        // An excuse cancels its penalty under any config (v0.13.0: it used to
+        // keep the posted amount, so a new deny value left a remainder).
+        const reversed = ledger.find((l) => l.id === row.reversesId);
+        return reversed ? -rescore(reversed) : posted;
+      }
       default:
         return posted;
     }
@@ -530,6 +541,7 @@ export async function previewBoard(
         displayName: t.displayName,
         status: t.status,
         checkedInAt: t.checkedInAt,
+        hadAppointmentLast: t.hadAppointmentLast === true,
         points,
         previewPoints,
       };
@@ -539,4 +551,67 @@ export async function previewBoard(
         a.previewPoints - b.previewPoints ||
         (a.checkedInAt?.getTime() ?? 0) - (b.checkedInAt?.getTime() ?? 0),
     );
+}
+
+// Starting templates (v0.13.0, Duong 2026-11-12: "how the owner can make the
+// turn system their own"). A template fills the rule builder; nothing is saved
+// until the owner presses Save, after the preview. The salon's own attention
+// timers and per-category points are kept.
+
+export const RULE_TEMPLATES = ['standard', 'simple_rotation'] as const;
+export type RuleTemplate = (typeof RULE_TEMPLATES)[number];
+
+/** The standard rules: Heavenly Nails' (design doc). */
+const STANDARD: Omit<RuleConfig, 'attention'> = {
+  points: {
+    default_service: 1,
+    fill_or_full_set: 0.5,
+    appointment_discount: -0.5,
+    combined_services: 'sum',
+    combined_fill_full_cap: 1,
+    post_on: 'completion',
+  },
+  penalties: {
+    deny: 1,
+    out_over_minutes: 60,
+    out_over_penalty: 1,
+    late_tiers: [
+      { after_minutes: 15, start_points: 0.5 },
+      { after_minutes: 30, start_points: 1 },
+      { after_minutes: 60, start_points: null },
+    ],
+  },
+  queue: {
+    reset: 'daily_at_open',
+    sort: ['points_asc', 'had_appointment_last', 'check_in_asc'],
+    auto_pass: false,
+  },
+  eligibility: {
+    require_on_site: true,
+    require_ready_checklist: true,
+    upcoming_appointment_buffer_min: 30,
+    honor_restrictions: true,
+    skill_match: 'required',
+  },
+  requests: { requested_tech_bypasses_queue: true, requested_counts_points: null },
+};
+
+/** A template's config on top of the salon's current one. Pure. */
+export function templateConfig(template: RuleTemplate, base: RuleConfig): RuleConfig {
+  const standard: RuleConfig = structuredClone({ ...STANDARD, attention: base.attention });
+  if (base.points.by_category) standard.points.by_category = { ...base.points.by_category };
+  if (template === 'standard') return standard;
+  // Simple rotation: every service is one turn, appointments count like any
+  // other visit, no cap; the line is points then check-in.
+  return {
+    ...standard,
+    points: {
+      ...standard.points,
+      fill_or_full_set: 1,
+      appointment_discount: 0,
+      combined_fill_full_cap: null,
+      by_category: undefined,
+    },
+    queue: { ...standard.queue, sort: ['points_asc', 'check_in_asc'] },
+  };
 }

@@ -1,11 +1,13 @@
 import { and, eq, isNull } from 'drizzle-orm';
 import { locations, serviceCategories, services, turnCalls } from '@turn/db';
 import { appointmentsBetween } from '@turn/db/appointments';
+import { nameParts, shortName } from '@turn/db/clients';
 import { techBoard } from '@turn/db/board';
 import { compareQueue, floorAttention, todayCounts, waitingVisits } from '@turn/db/engine';
 import { feedSummary, FEED_STALE_MIN } from '@turn/db/feeds';
 import { ensureDailySummary, localDate, previousDate } from '@turn/db/reports';
 import { activeRules } from '@turn/db/rules';
+import { mayEditTechnicians } from '@turn/db/tech-settings';
 import { locationStatus, sweepFloor } from '@turn/db/status';
 import Link from 'next/link';
 import { redirect } from 'next/navigation';
@@ -209,13 +211,22 @@ export default async function AdminPage() {
                 assignedTechnician: v.assignedTechnician,
                 requestedTechnician: v.requestedTechnician,
                 note: v.note,
-                clientName: v.clientName,
+                // "First L." on the board (v0.13.0); the full name is on the client's page.
+                clientName:
+                  v.clientFirstName || v.clientLastName
+                    ? shortName(v.clientFirstName, v.clientLastName)
+                    : v.clientName
+                      ? shortName(
+                          nameParts({ name: v.clientName }).firstName,
+                          nameParts({ name: v.clientName }).lastName,
+                        )
+                      : null,
                 clientGender: v.clientGender,
                 clientIsKid: v.clientIsKid,
                 clientAge: v.clientAge,
                 groupId: v.groupId,
                 fromKiosk: v.fromKiosk,
-                kioskName: v.kioskName,
+                kioskName: v.kioskName ? shortName(v.kioskName, v.kioskLastName) : null,
                 needsConfirm: v.needsConfirm,
               }))}
               technicians={rows.map((r) => ({ id: r.id, name: r.name }))}
@@ -247,7 +258,7 @@ export default async function AdminPage() {
             t={t}
             lang={lang}
             timezone={loc?.timezone ?? 'America/New_York'}
-            canEdit={can(membership.role, 'edit_technicians')}
+            canEdit={await mayEditTechnicians(db(), membership)}
           />
         </>
       ) : (

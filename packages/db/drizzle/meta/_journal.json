@@ -169,6 +169,13 @@
       "when": 1794429826919,
       "tag": "0023_part10_review_fixes",
       "breakpoints": true
+    },
+    {
+      "idx": 24,
+      "version": "7",
+      "when": 1794463133174,
+      "tag": "0024_v013_names_search_permissions",
+      "breakpoints": true
     }
   ]
 }

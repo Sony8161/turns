@@ -73,6 +73,10 @@ export const locations = pgTable(
     // Part 5 (Duong, 2026-11-04): the receptionist or manager switches on a
     // long-wait notice for customers (the kiosk shows it, Part 9).
     longWaitNotice: boolean('long_wait_notice').notNull().default(false),
+    // v0.13.0 (Duong, 2026-11-12): receptionists may change a technician's
+    // status, points, skills and restrictions. On by default; the owner turns
+    // it off on Staff.
+    receptionistEditsTechnicians: boolean('receptionist_edits_technicians').notNull().default(true),
     createdAt: createdAt(),
     updatedAt: updatedAt(),
   },
@@ -478,7 +482,13 @@ export const clients = pgTable(
     id: id(),
     organizationId: uuid('organization_id').notNull(),
     locationId: uuid('location_id').notNull(),
+    // The full name as shown ("First Last"); kept for older readers.
     name: text('name'),
+    // v0.13.0: first and last name (Fresha keeps both), and a lower-case,
+    // accent-free copy of both for search ("ngoc" finds "Ngọc").
+    firstName: text('first_name'),
+    lastName: text('last_name'),
+    searchName: text('search_name'),
     phone: text('phone'),
     gender: clientGenderEnum('gender'),
     notes: text('notes'),
@@ -491,6 +501,7 @@ export const clients = pgTable(
     uniqueIndex('clients_location_phone')
       .on(t.locationId, t.phone)
       .where(sql`${t.phone} is not null`),
+    index('clients_location_search').on(t.locationId, t.searchName.op('text_pattern_ops')),
   ],
 ).enableRLS();
 
@@ -557,6 +568,8 @@ export const visits = pgTable(
       onDelete: 'restrict',
     }),
     kioskName: text('kiosk_name'),
+    // v0.13.0: the kiosk asks first name (kiosk_name) and last name (optional).
+    kioskLastName: text('kiosk_last_name'),
     // v0.9.1: the phone the customer typed (E.164), held on the visit until the
     // desk confirms; only then is it matched to a client row, and it is cleared
     // either way. Kiosk input never edits a stored client (review finding 1).

@@ -85,6 +85,7 @@ async function checkInActionRun(_prev: KioskState, formData: FormData): Promise<
   const r = await kioskCheckIn(db(), {
     device,
     name: form.name,
+    lastName: form.lastName,
     phone,
     serviceIds: form.serviceIds,
     requestedTechnicianId: form.requestedTechnicianId,

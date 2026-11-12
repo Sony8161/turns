@@ -7,7 +7,10 @@ export type WalkInForm = {
   serviceIds: string[];
   requestedTechnicianId: string | null;
   note: string;
-  client: { name: string | null; phone: string | null };
+  /** v0.13.0: first and last name when the desk typed them separately, else a full name. */
+  client:
+    | { name: string | null; phone: string | null }
+    | { firstName: string | null; lastName: string | null; phone: string | null };
   attributes: { gender: ClientGender | null; isKid: boolean; age: number | null };
   sameTime: boolean;
 };
@@ -27,7 +30,14 @@ export function walkInFromForm(fd: FormData): WalkInForm {
     serviceIds: fd.getAll('service').map(String).filter(Boolean),
     requestedTechnicianId: text(fd.get('requestedTechnician'), 64),
     note: String(fd.get('note') ?? ''),
-    client: { name: text(fd.get('clientName'), 120), phone: text(fd.get('clientPhone'), 32) },
+    client:
+      fd.has('clientFirstName') || fd.has('clientLastName')
+        ? {
+            firstName: text(fd.get('clientFirstName'), 60),
+            lastName: text(fd.get('clientLastName'), 60),
+            phone: text(fd.get('clientPhone'), 32),
+          }
+        : { name: text(fd.get('clientName'), 120), phone: text(fd.get('clientPhone'), 32) },
     attributes: {
       gender: gender === 'female' || gender === 'male' ? gender : null,
       isKid: fd.get('kid') === 'on' || fd.get('kid') === 'true',

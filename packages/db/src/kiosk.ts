@@ -522,7 +522,10 @@ export async function kioskCheckIn(
   db: Db,
   input: {
     device: KioskDevice;
+    /** First name (required). */
     name: unknown;
+    /** v0.13.0: last name, optional. */
+    lastName?: unknown;
     phone?: string | null;
     serviceIds: string[];
     attributes?: ClientAttributes | null;
@@ -548,7 +551,12 @@ export async function kioskCheckIn(
     client: null,
     attributes: input.attributes ?? null,
     sameTime: input.sameTime,
-    kiosk: { deviceId: input.device.deviceId, name, phone },
+    kiosk: {
+      deviceId: input.device.deviceId,
+      name,
+      lastName: cleanKioskName(input.lastName),
+      phone,
+    },
   });
   if (!r.ok) {
     const known: KioskCheckInError[] = [
@@ -606,6 +614,7 @@ export async function reviewKioskVisit(
         source: visits.source,
         requestedTechnicianId: visits.requestedTechnicianId,
         kioskName: visits.kioskName,
+        kioskLastName: visits.kioskLastName,
         kioskPhone: visits.kioskPhone,
       })
       .from(visits)
@@ -662,7 +671,8 @@ export async function reviewKioskVisit(
       const c = await upsertClient(tx, {
         organizationId: visit.organizationId,
         locationId: visit.locationId,
-        name: group.find((g) => g.kioskName)?.kioskName ?? null,
+        firstName: group.find((g) => g.kioskName)?.kioskName ?? null,
+        lastName: group.find((g) => g.kioskLastName)?.kioskLastName ?? null,
         phone,
         gender: null,
         fillBlanks: false,

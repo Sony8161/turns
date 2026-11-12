@@ -148,6 +148,8 @@ export const AUDIT_ACTIONS = [
   'kiosk_pair_failed',
   'rule_config_changed',
   'technician_profile_changed',
+  'technician_edits_setting',
+  'client_updated',
   'role_changed',
   'member_archived',
   'member_restored',
@@ -169,6 +171,7 @@ export const OVERRIDE_ACTIONS = [
   'member_archived',
   'member_restored',
   'technician_profile_changed',
+  'technician_edits_setting',
 ] as const;
 
 /** Desk entries a receptionist makes that steer a call (T4: edits per receptionist). */
@@ -182,6 +185,7 @@ export const DESK_ACTIONS = [
   'long_wait_notice',
   'kiosk_confirmed',
   'kiosk_declined',
+  'client_updated',
 ] as const;
 
 export type QueueEntry = {

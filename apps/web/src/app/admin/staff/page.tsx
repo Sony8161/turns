@@ -2,6 +2,7 @@ import { and, eq, isNull } from 'drizzle-orm';
 import { serviceCategories } from '@turn/db';
 import { loadProfiles, type TechnicianProfile } from '@turn/db/profile';
 import { listStaff } from '@turn/db/staff';
+import { receptionistMayEdit } from '@turn/db/tech-settings';
 import { redirect } from 'next/navigation';
 import { AdminNav } from '@/components/AdminNav';
 import { Button } from '@/components/ui';
@@ -13,6 +14,7 @@ import { maskContact } from '@/lib/contact';
 import { db } from '@/lib/db';
 import { can } from '@/lib/permissions';
 import { signOut } from '../../login/actions';
+import { ReceptionistToggle } from './ReceptionistToggle';
 import { StaffPanel } from './StaffPanel';
 
 /** One line per technician: what they do and who they do not take (Part 6). */
@@ -94,6 +96,8 @@ export default async function StaffPage() {
       ),
   ]);
   const categoryNames = new Map(categories.map((c) => [c.id, c.name]));
+  const owner = can(m.role, 'manage_rules');
+  const deskEdits = owner ? await receptionistMayEdit(db(), m.locationId) : false;
   return (
     <main className="mx-auto flex w-full max-w-5xl flex-1 flex-col gap-8 px-4 py-6 sm:px-8">
       {header}
@@ -111,6 +115,7 @@ export default async function StaffPage() {
         </h1>
         <p className="max-w-[70ch] text-slate/80">{t.staff.lead}</p>
       </section>
+      {owner ? <ReceptionistToggle on={deskEdits} t={t.techSettings} /> : null}
       <StaffPanel
         rows={rows.map((r) => ({
           membershipId: r.membershipId,

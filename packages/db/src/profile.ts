@@ -11,6 +11,7 @@ import {
   technicianTags,
   technicians,
 } from './schema';
+import { mayEditTechnicians } from './tech-settings';
 import type { Db } from './server';
 import type { StaffActor } from './staff';
 import { writeAudit } from './status';
@@ -188,7 +189,8 @@ export async function saveProfile(
   db: Db,
   input: { actor: StaffActor; technicianId: string; profile: ProfileInput },
 ): Promise<{ ok: true } | { ok: false; reason: ProfileError }> {
-  if (input.actor.role !== 'owner' && input.actor.role !== 'manager') {
+  // v0.13.0: receptionists too, unless the owner turned it off (tech-settings.ts).
+  if (!(await mayEditTechnicians(db, input.actor))) {
     return { ok: false, reason: 'not_allowed' };
   }
   const checked = validateProfile(input.profile);

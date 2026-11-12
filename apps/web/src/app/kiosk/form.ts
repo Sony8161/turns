@@ -10,6 +10,8 @@ export type KioskForm =
   | {
       ok: true;
       name: string;
+      /** v0.13.0: optional. */
+      lastName: string | null;
       phone: string | null;
       serviceIds: string[];
       requestedTechnicianId: string | null;
@@ -39,6 +41,10 @@ export function kioskFromForm(fd: FormData): KioskForm {
   return {
     ok: true,
     name: String(fd.get('name') ?? '').slice(0, 200),
+    lastName:
+      String(fd.get('lastName') ?? '')
+        .trim()
+        .slice(0, 200) || null,
     phone:
       String(fd.get('phone') ?? '')
         .trim()

@@ -27,7 +27,9 @@ async function saveProfileActionRun(
   formData: FormData,
 ): Promise<ProfileState> {
   const actor = await requireActor();
-  const m = membershipWith(actor, 'edit_technicians');
+  // Who may save is decided in saveProfile (receptionists too, unless the
+  // owner turned it off; v0.13.0).
+  const m = membershipWith(actor, 'view_board');
   if (!m) return { error: 'not_allowed' };
   const me: StaffActor = {
     userId: actor.userId,

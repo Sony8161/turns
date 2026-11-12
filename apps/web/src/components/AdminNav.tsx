@@ -16,9 +16,19 @@ export function AdminNav({
   canAppointments = true,
   canLog = false,
   canKiosk,
+  canClients,
 }: {
   t: Dictionary['nav'];
-  current: 'board' | 'staff' | 'rules' | 'manage' | 'appointments' | 'log' | 'reports' | 'kiosk';
+  current:
+    | 'board'
+    | 'staff'
+    | 'rules'
+    | 'manage'
+    | 'appointments'
+    | 'clients'
+    | 'log'
+    | 'reports'
+    | 'kiosk';
   canStaff: boolean;
   canRules: boolean;
   canManage?: boolean;
@@ -28,9 +38,12 @@ export function AdminNav({
   canLog?: boolean;
   /** Owners and managers: the check-in iPads (Part 9). Same roles as staff by default. */
   canKiosk?: boolean;
+  /** Owner, managers, the front desk: client search (v0.13.0). Same as appointments by default. */
+  canClients?: boolean;
 }) {
   const items: Item[] = [{ href: '/admin', label: t.board }];
   if (canAppointments) items.push({ href: '/admin/appointments', label: t.appointments });
+  if (canClients ?? canAppointments) items.push({ href: '/admin/clients', label: t.clients });
   if (canManage) items.push({ href: '/admin/manage', label: t.manage });
   if (canStaff) items.push({ href: '/admin/staff', label: t.staff });
   if (canRules) items.push({ href: '/admin/rules', label: t.rules });
@@ -45,6 +58,7 @@ export function AdminNav({
     rules: '/admin/rules',
     manage: '/admin/manage',
     appointments: '/admin/appointments',
+    clients: '/admin/clients',
     log: '/admin/log',
     reports: '/admin/reports',
     kiosk: '/admin/kiosk',

@@ -204,6 +204,16 @@ function KioskRound({
               />
             </label>
             <label className="flex flex-col gap-2">
+              <span className="text-lead font-medium">{t.lastNameLabel}</span>
+              <input
+                name="lastName"
+                autoComplete="off"
+                autoCorrect="off"
+                maxLength={40}
+                className={input}
+              />
+            </label>
+            <label className="flex flex-col gap-2">
               <span className="text-lead font-medium">{t.phoneLabel}</span>
               <input
                 name="phone"

@@ -2,17 +2,22 @@
 
 import { eq } from 'drizzle-orm';
 import { serviceCategories } from '@turn/db';
+import { compareQueue } from '@turn/db/engine';
 import {
   activeRules,
   previewBoard,
+  RULE_TEMPLATES,
   saveRuleConfig,
+  templateConfig,
   validateRuleConfig,
+  type RuleConfig,
   type RuleError,
+  type RuleTemplate,
 } from '@turn/db/rules';
 import { revalidatePath } from 'next/cache';
 import { membershipWith, requireActor } from '@/lib/auth';
 import { db } from '@/lib/db';
-import { configFromForm, fieldFor } from './form';
+import { configFromForm, fieldFor, formValues } from './form';
 import { guarded } from '@/lib/action';
 
 export type RulesState = {
@@ -25,9 +30,39 @@ export type RulesState = {
   errors?: Record<string, RuleError['problem']>;
   /** What was typed, so an error does not wipe the form. */
   typed?: Record<string, string>;
-  preview?: { name: string; points: number; previewPoints: number }[];
+  /** Today's line now and under the typed rules, side by side (v0.13.0). */
+  preview?: { before: PreviewLine[]; after: PreviewLine[] };
+  /** The template the form was just filled from. */
+  template?: RuleTemplate;
   saved?: number;
 };
+
+export type PreviewLine = {
+  name: string;
+  points: number;
+  hadAppointmentLast: boolean;
+  status: string;
+};
+
+async function previewOf(locationId: string, base: RuleConfig, candidate: RuleConfig) {
+  const rows = await previewBoard(db(), locationId, candidate);
+  const line = (key: 'points' | 'previewPoints', rules: RuleConfig): PreviewLine[] =>
+    [...rows]
+      .sort((a, b) =>
+        compareQueue(
+          rules,
+          { points: a[key], hadAppointmentLast: a.hadAppointmentLast, checkedInAt: a.checkedInAt },
+          { points: b[key], hadAppointmentLast: b.hadAppointmentLast, checkedInAt: b.checkedInAt },
+        ),
+      )
+      .map((r) => ({
+        name: r.displayName,
+        points: r[key],
+        hadAppointmentLast: r.hadAppointmentLast,
+        status: r.status,
+      }));
+  return { before: line('points', base), after: line('previewPoints', candidate) };
+}
 
 function byField(errors: RuleError[], tierSlots: number[]): Record<string, RuleError['problem']> {
   const out: Record<string, RuleError['problem']> = {};
@@ -40,7 +75,8 @@ function byField(errors: RuleError[], tierSlots: number[]): Record<string, RuleE
 
 function typedOf(fd: FormData): Record<string, string> {
   const out: Record<string, string> = {};
-  for (const [k, v] of fd.entries()) if (typeof v === 'string' && k !== 'intent') out[k] = v;
+  for (const [k, v] of fd.entries())
+    if (typeof v === 'string' && k !== 'intent' && k !== 'template') out[k] = v;
   return out;
 }
 
@@ -71,18 +107,23 @@ async function rulesActionRun(_prev: RulesState, formData: FormData): Promise<Ru
     categories.map((c) => c.id),
   );
 
+  // A template fills the form and shows its preview; nothing is saved.
+  // The template buttons submit `template=<id>` (and no intent).
+  if (formData.get('template') !== null) {
+    const id = String(formData.get('template')) as RuleTemplate;
+    if (!RULE_TEMPLATES.includes(id)) return { error: 'invalid', typed };
+    const config = templateConfig(id, base);
+    return {
+      typed: { ...formValues(config), note: typed.note ?? '' },
+      template: id,
+      preview: await previewOf(m.locationId, base, config),
+    };
+  }
+
   if (formData.get('intent') === 'preview') {
     const checked = validateRuleConfig(candidate);
     if (!checked.ok) return { error: 'invalid', errors: byField(checked.errors, tierSlots), typed };
-    const rows = await previewBoard(db(), m.locationId, checked.config);
-    return {
-      typed,
-      preview: rows.map((r) => ({
-        name: r.displayName,
-        points: r.points,
-        previewPoints: r.previewPoints,
-      })),
-    };
+    return { typed, preview: await previewOf(m.locationId, base, checked.config) };
   }
 
   // The version the form was loaded from: a save on top of someone else's

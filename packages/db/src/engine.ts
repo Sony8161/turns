@@ -89,7 +89,12 @@ export async function createWalkIn(
     /** Part 9: a kiosk check-in waits for the desk to confirm (kiosk.ts). The
      *  phone stays on the visit; no client row is touched until the desk
      *  confirms (v0.9.1). */
-    kiosk?: { deviceId: string; name: string; phone?: string | null } | null;
+    kiosk?: {
+      deviceId: string;
+      name: string;
+      lastName?: string | null;
+      phone?: string | null;
+    } | null;
   },
 ): Promise<{ ok: true; visitId: string; visitIds: string[] } | EngineError> {
   if (input.serviceIds.length === 0) return { ok: false, reason: 'no_services' };
@@ -178,6 +183,7 @@ export async function createWalkIn(
           groupId,
           kioskDeviceId: input.kiosk?.deviceId ?? null,
           kioskName: input.kiosk?.name ?? null,
+          kioskLastName: input.kiosk?.lastName ?? null,
           kioskPhone,
           needsConfirm: !!input.kiosk,
         })
@@ -985,6 +991,9 @@ export async function waitingVisits(db: Db, locationId: string) {
       clientAge: visits.clientAge,
       groupId: visits.groupId,
       clientName: clients.name,
+      clientFirstName: clients.firstName,
+      clientLastName: clients.lastName,
+      kioskLastName: visits.kioskLastName,
       fromKiosk: sql<boolean>`${visits.kioskDeviceId} is not null`,
       kioskName: visits.kioskName,
       needsConfirm: visits.needsConfirm,

@@ -104,6 +104,22 @@ export function RulesForm({
         </p>
       ) : null}
 
+      <section className="flex flex-col gap-3 bg-board p-5">
+        <h2 className="text-heading font-semibold">{t.templatesTitle}</h2>
+        <p className="max-w-[70ch] text-slate/80">{t.templatesLead}</p>
+        <div className="grid gap-3 sm:grid-cols-2">
+          {(['standard', 'simple_rotation'] as const).map((id) => (
+            <div key={id} className="flex flex-col gap-2 border-2 border-pumice p-4">
+              <span className="font-semibold">{t.templates[id].name}</span>
+              <span className="text-slate/80">{t.templates[id].description}</span>
+              <Button type="submit" name="template" value={id} tone="quiet" disabled={pending}>
+                {t.useTemplate}
+              </Button>
+            </div>
+          ))}
+        </div>
+      </section>
+
       {section(
         t.sections.points,
         <div className="flex flex-wrap gap-5">
@@ -206,23 +222,47 @@ export function RulesForm({
       )}
 
       {state.preview ? (
-        <section className="flex flex-col gap-3 bg-board p-5">
+        <section aria-live="polite" className="flex flex-col gap-3 bg-board p-5">
           <h2 className="text-heading font-semibold">{t.previewTitle}</h2>
-          {state.preview.length === 0 ? (
+          {state.template ? (
+            <p className="font-semibold text-teal">
+              {fill(t.templateLoaded, { name: t.templates[state.template].name })}
+            </p>
+          ) : null}
+          {state.preview.before.length === 0 ? (
             <p className="text-slate/70">{t.previewEmpty}</p>
           ) : (
-            <ol className="flex flex-col gap-1">
-              {state.preview.map((r, i) => (
-                <li key={`${i}-${r.name}`} className="text-lead">
-                  {fill(t.previewRow, {
-                    name: r.name,
-                    now: formatPoints(r.points),
-                    then: formatPoints(r.previewPoints),
-                  })}
-                </li>
+            <div className="grid gap-4 sm:grid-cols-2">
+              {(['before', 'after'] as const).map((side) => (
+                <div key={side} className="flex flex-col gap-2">
+                  <h3 className="font-semibold">
+                    {side === 'before' ? t.previewNow : t.previewThen}
+                  </h3>
+                  <ol className="flex flex-col gap-1">
+                    {state.preview![side].map((r, i) => {
+                      const moved =
+                        side === 'after' &&
+                        state.preview!.before.findIndex((b) => b.name === r.name) !== i;
+                      return (
+                        <li
+                          key={`${side}-${r.name}`}
+                          className={`flex min-h-11 items-center justify-between gap-3 border-b border-pumice text-lead ${moved ? 'font-semibold text-navy' : ''}`}
+                        >
+                          <span>
+                            {i + 1}. {r.name}
+                          </span>
+                          <span className="tabular-nums">
+                            {formatPoints(r.points, r.hadAppointmentLast)}
+                          </span>
+                        </li>
+                      );
+                    })}
+                  </ol>
+                </div>
               ))}
-            </ol>
+            </div>
           )}
+          <p className="text-small text-slate/70">{t.previewNote}</p>
         </section>
       ) : null}
 

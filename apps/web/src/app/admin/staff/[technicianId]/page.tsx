@@ -1,6 +1,8 @@
 import { and, asc, eq, isNull } from 'drizzle-orm';
 import { serviceCategories, technicians } from '@turn/db';
+import { locationStatus } from '@turn/db/status';
 import { loadProfile } from '@turn/db/profile';
+import { mayEditTechnicians } from '@turn/db/tech-settings';
 import Link from 'next/link';
 import { notFound, redirect } from 'next/navigation';
 import { AdminNav } from '@/components/AdminNav';
@@ -14,9 +16,11 @@ import { isUuid } from '@/lib/ids';
 import { can } from '@/lib/permissions';
 import { signOut } from '../../../login/actions';
 import { ProfileForm } from './ProfileForm';
+import { TodayPanel } from './TodayPanel';
 
-// One technician's skills, tags and restrictions (Part 6). Owners and
-// managers, for a technician at their own location.
+// One technician's settings (Part 6; v0.13.0 adds today's status and points):
+// owners, managers and, unless the owner turned it off, receptionists, for a
+// technician at their own location. Technicians are sent to /me.
 export default async function TechnicianProfilePage({
   params,
 }: {
@@ -28,7 +32,8 @@ export default async function TechnicianProfilePage({
   const onlyTechnician =
     actor.memberships.length > 0 && actor.memberships.every((m) => m.role === 'technician');
   if (onlyTechnician) redirect('/me');
-  const m = membershipWith(actor, 'edit_technicians');
+  const board = membershipWith(actor, 'view_board');
+  const m = board && (await mayEditTechnicians(db(), board)) ? board : null;
 
   const header = (
     <header className="flex flex-wrap items-center justify-between gap-3">
@@ -53,7 +58,12 @@ export default async function TechnicianProfilePage({
     return (
       <main className="mx-auto flex w-full max-w-5xl flex-1 flex-col gap-8 px-4 py-6 sm:px-8">
         {header}
-        <AdminNav t={t.nav} current="staff" canStaff={false} canRules={false} />
+        <AdminNav
+          t={t.nav}
+          current="staff"
+          canStaff={!!board && can(board.role, 'invite_staff')}
+          canRules={false}
+        />
         <p className="max-w-[60ch] text-lead">{t.profile.notAllowed}</p>
       </main>
     );
@@ -72,7 +82,7 @@ export default async function TechnicianProfilePage({
     );
   if (!tech) notFound();
 
-  const [categories, profile] = await Promise.all([
+  const [categories, profile, floor] = await Promise.all([
     db()
       .select({ id: serviceCategories.id, name: serviceCategories.name })
       .from(serviceCategories)
@@ -81,7 +91,9 @@ export default async function TechnicianProfilePage({
       )
       .orderBy(asc(serviceCategories.name)),
     loadProfile(db(), tech.id),
+    locationStatus(db(), m.locationId),
   ]);
+  const today = floor.find((r) => r.technicianId === tech.id);
 
   return (
     <main className="mx-auto flex w-full max-w-5xl flex-1 flex-col gap-8 px-4 py-6 sm:px-8">
@@ -89,18 +101,32 @@ export default async function TechnicianProfilePage({
       <AdminNav
         t={t.nav}
         current="staff"
-        canStaff
+        canStaff={can(m.role, 'invite_staff')}
         canRules={can(m.role, 'manage_rules')}
         canManage={can(m.role, 'override_queue')}
         canLog={can(m.role, 'view_audit')}
       />
       <section className="flex flex-col gap-2">
-        <Link href="/admin/staff" className="text-small underline">
-          {t.nav.staff}
+        <Link
+          href={can(m.role, 'invite_staff') ? '/admin/staff' : '/admin'}
+          className="text-small underline"
+        >
+          {can(m.role, 'invite_staff') ? t.nav.staff : t.nav.board}
         </Link>
-        <h1 className="text-heading font-semibold">
-          {tech.displayName}: {t.profile.title}
-        </h1>
+        <h1 className="text-heading font-semibold">{tech.displayName}</h1>
+        <p className="max-w-[70ch] text-slate/80">{t.techSettings.lead}</p>
+      </section>
+      <TodayPanel
+        technicianId={tech.id}
+        name={tech.displayName}
+        status={today?.status ?? 'off'}
+        points={today?.points ?? 0}
+        hadAppointmentLast={today?.hadAppointmentLast ?? false}
+        t={t.techSettings}
+        board={t.board}
+      />
+      <section className="flex flex-col gap-2">
+        <h2 className="text-heading font-semibold">{t.profile.title}</h2>
         <p className="max-w-[70ch] text-slate/80">{t.profile.lead}</p>
       </section>
       <ProfileForm

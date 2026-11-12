@@ -207,8 +207,12 @@ export function Desk({
             </div>
             <div className="flex flex-wrap gap-4">
               <label className="flex flex-col gap-1">
-                <span className="text-small font-medium">{t.clientName}</span>
-                <input name="clientName" maxLength={120} className={`${field} w-48`} />
+                <span className="text-small font-medium">{t.clientFirstName}</span>
+                <input name="clientFirstName" maxLength={60} className={`${field} w-40`} />
+              </label>
+              <label className="flex flex-col gap-1">
+                <span className="text-small font-medium">{t.clientLastName}</span>
+                <input name="clientLastName" maxLength={60} className={`${field} w-40`} />
               </label>
               <label className="flex flex-col gap-1">
                 <span className="text-small font-medium">{t.clientPhone}</span>

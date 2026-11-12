@@ -49,4 +49,16 @@ describe('walkInFromForm', () => {
     expect(w.sameTime).toBe(false);
     expect(walkInFromForm(form([['age', '']])).attributes.age).toBeNull();
   });
+
+  it('reads first and last name separately (v0.13.0)', () => {
+    const w = walkInFromForm(
+      form([
+        ['service', 'a'],
+        ['clientFirstName', ' Lan '],
+        ['clientLastName', 'Nguyen'],
+        ['clientPhone', ''],
+      ]),
+    );
+    expect(w.client).toEqual({ firstName: 'Lan', lastName: 'Nguyen', phone: null });
+  });
 });
