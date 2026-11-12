@@ -46,6 +46,13 @@ export const SECOND_ACCOUNTS: { name: string; email: string; phone: string; role
   { name: 'Kim', email: 'kim@example.test', phone: '+18135550106', role: 'receptionist' },
   { name: 'Châu', email: 'chau@example.test', phone: '+18135550107', role: 'technician' },
 ];
+// v0.12.0: three more technicians for the demo day (seed-demo.ts), so the
+// board has six people to order.
+export const DEMO_ACCOUNTS: { name: string; email: string; phone: string; role: Role }[] = [
+  { name: 'Hoa', email: 'hoa@example.test', phone: '+18135550110', role: 'technician' },
+  { name: 'Tâm', email: 'tam@example.test', phone: '+18135550111', role: 'technician' },
+  { name: 'Vân', email: 'van@example.test', phone: '+18135550112', role: 'technician' },
+];
 export const SPARE_TEST_PHONE = '+18135550109';
 export const TEST_CODE = '123456';
 
@@ -287,16 +294,25 @@ async function ensureAccount(
   return userId;
 }
 
-export async function seedDev(
-  url: string,
-): Promise<{ technicianCode: string; receptionistCode: string; setupCode: string; notes: string }> {
+export type SeedDevResult = {
+  technicianCode: string;
+  receptionistCode: string;
+  setupCode: string;
+  notes: string;
+  ownerId: string;
+  receptionistId: string;
+};
+
+/** `demo`: also make the demo day's technicians, and leave the canned
+ *  walk-ins, appointments and kiosk check-in out (seed-demo.ts builds its own). */
+export async function seedDev(url: string, opts: { demo?: boolean } = {}): Promise<SeedDevResult> {
   assertLocal(url);
   await seedHeavenly(url);
   const db = createDb(url);
   try {
     let ownerId = '';
     let receptionistId = '';
-    for (const a of SAMPLE_ACCOUNTS) {
+    for (const a of opts.demo ? [...SAMPLE_ACCOUNTS, ...DEMO_ACCOUNTS] : SAMPLE_ACCOUNTS) {
       const id = await ensureAccount(db, a);
       if (a.role === 'owner') ownerId = id;
       if (a.role === 'receptionist') receptionistId = id;
@@ -327,17 +343,19 @@ export async function seedDev(
     const tech = await createInvite(db, { ...base, role: 'technician' });
     const reception = await createInvite(db, { ...base, role: 'receptionist' });
     const setup = await createSetupCode(db, { note: 'dev seed' });
-    await seedProfiles(db, ownerId);
-    await seedWalkIns(db, ownerId);
-    await seedAppointments(db, receptionistId);
-    const kiosk = await seedKiosk(db, ownerId);
+    if (!opts.demo) {
+      await seedProfiles(db, ownerId);
+      await seedWalkIns(db, ownerId);
+      await seedAppointments(db, receptionistId);
+    }
+    const kiosk = await seedKiosk(db, ownerId, !opts.demo);
 
     const lines = [
       `Local sample data, written ${new Date().toISOString()} by npm run db:seed:dev`,
       `Every sign-in code is ${TEST_CODE}. Emails also work: the code arrives in Mailpit, http://127.0.0.1:54324`,
       '',
       'Accounts at Heavenly Nails main:',
-      ...SAMPLE_ACCOUNTS.map(
+      ...(opts.demo ? [...SAMPLE_ACCOUNTS, ...DEMO_ACCOUNTS] : SAMPLE_ACCOUNTS).map(
         (a) => `  ${a.role.padEnd(13)} ${a.name.padEnd(6)} phone ${a.phone}   email ${a.email}`,
       ),
       '',
@@ -354,18 +372,30 @@ export async function seedDev(
       'Screens: owner/manager/receptionist -> http://localhost:3000/admin   technician -> http://localhost:3000/me',
       'Join with a code: /join   New salon: /setup   (sign out first; a code is for a new account)',
       '',
-      'Sample technicians (Part 6): Thảo takes no male clients; Linh takes no kids and nobody under 12;',
-      'Mai does everything but full sets and no both-at-once visits. Staff -> Skills and restrictions to change.',
-      'Sample walk-ins (added once, when the salon had no visits): a man, a kid of 8, a both-at-once pair, a full set.',
-      'Check the three technicians in and press Call next on each to watch who is skipped and why.',
-      'Sample appointments (Part 7, added once): Thảo in 25 min (she is skipped until the client arrives), Linh in 2 h.',
-      'Appointments -> pick services -> Client arrived. A calendar sync from a local file:',
-      '  npm run -w @turn/db feed:local -- "Mai" --sample',
-      '',
+      ...(opts.demo
+        ? [
+            'DEMO DAY (npm run up -- -Demo): six technicians on the floor with points, a break, an out-over,',
+            'appointments (Fresha calendar and desk) and six clients waiting. What the engine should do',
+            'next, and why, is in docs/DEMO-EXPECTED.md. Press Call next on the waiting rows top to bottom.',
+            '',
+          ]
+        : [
+            'Sample technicians (Part 6): Thảo takes no male clients; Linh takes no kids and nobody under 12;',
+            'Mai does everything but full sets and no both-at-once visits. Staff -> Skills and restrictions to change.',
+            'Sample walk-ins (added once, when the salon had no visits): a man, a kid of 8, a both-at-once pair, a full set.',
+            'Check the three technicians in and press Call next on each to watch who is skipped and why.',
+            'Sample appointments (Part 7, added once): Thảo in 25 min (she is skipped until the client arrives), Linh in 2 h.',
+            'Appointments -> pick services -> Client arrived. A calendar sync from a local file:',
+            '  npm run -w @turn/db feed:local -- "Mai" --sample',
+            'For a full demo day with everyone on the floor: npm run up -- -Demo',
+            '',
+          ]),
       `Customer kiosk (Part 9): open http://localhost:3000/kiosk in a private window (signed out) and type`,
       `  the pairing code ${kiosk.pairingCode} (works once, for 24 hours). Kiosk PIN: ${KIOSK_PIN}`,
       '  (tap the salon name 5 times, then the PIN, to get to staff sign-in). Admin -> Kiosk to revoke or pair again.',
-      '  A sample kiosk check-in "Ngoc" waits on the desk for Confirm (added once).',
+      opts.demo
+        ? '  A kiosk check-in "Bích" (with a design note) waits on the desk for Confirm.'
+        : '  A sample kiosk check-in "Ngoc" waits on the desk for Confirm (added once).',
     ];
     const notes = lines.join('\n');
     const root = join(dirname(fileURLToPath(import.meta.url)), '..', '..', '..');
@@ -375,6 +405,8 @@ export async function seedDev(
       receptionistCode: reception.code,
       setupCode: setup.code,
       notes,
+      ownerId,
+      receptionistId,
     };
   } finally {
     await db.$client.end();
@@ -385,7 +417,11 @@ export const KIOSK_PIN = '1234';
 
 /** A kiosk iPad for each run (pairing code printed), and one sample kiosk
  *  check-in waiting for the desk's confirm (added once). */
-async function seedKiosk(db: Db, ownerId: string): Promise<{ pairingCode: string }> {
+async function seedKiosk(
+  db: Db,
+  ownerId: string,
+  withCheckIn = true,
+): Promise<{ pairingCode: string }> {
   const actor = {
     userId: ownerId,
     organizationId: HEAVENLY.organizationId,
@@ -401,7 +437,7 @@ async function seedKiosk(db: Db, ownerId: string): Promise<{ pairingCode: string
   const pending = await db.execute(
     sql`select 1 from visits where location_id = ${HEAVENLY.locationId} and kiosk_device_id is not null limit 1`,
   );
-  if (pending.length === 0) {
+  if (withCheckIn && pending.length === 0) {
     // A separate seed device, so the printed code stays unused for the tester.
     const seedDevice = await createKioskDevice(db, { actor, name: 'Seed kiosk', pin: KIOSK_PIN });
     if (seedDevice.ok) {

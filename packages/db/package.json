@@ -22,7 +22,9 @@
     "./locations": "./src/locations.ts",
     "./reports": "./src/reports.ts",
     "./kiosk": "./src/kiosk.ts",
-    "./fresha": "./src/fresha.ts"
+    "./fresha": "./src/fresha.ts",
+    "./demo": "./src/demo.ts",
+    "./board": "./src/board.ts"
   },
   "scripts": {
     "typecheck": "tsc --noEmit",
@@ -31,6 +33,7 @@
     "db:migrate": "tsx src/migrate.ts",
     "db:seed": "tsx src/seed.ts",
     "db:seed:dev": "tsx src/seed-dev.ts",
+    "db:seed:demo": "tsx src/seed-demo.ts",
     "db:setup-code": "tsx src/setup-code.ts",
     "db:add-location": "tsx src/locations.ts",
     "feed:local": "tsx src/feed-local.ts"

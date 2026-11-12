@@ -1,6 +1,7 @@
 import { and, eq, isNull } from 'drizzle-orm';
 import { locations, serviceCategories, services, turnCalls } from '@turn/db';
 import { appointmentsBetween } from '@turn/db/appointments';
+import { techBoard } from '@turn/db/board';
 import { compareQueue, floorAttention, todayCounts, waitingVisits } from '@turn/db/engine';
 import { feedSummary, FEED_STALE_MIN } from '@turn/db/feeds';
 import { ensureDailySummary, localDate, previousDate } from '@turn/db/reports';
@@ -11,6 +12,7 @@ import { redirect } from 'next/navigation';
 import { AdminNav } from '@/components/AdminNav';
 import { AutoRefresh } from '@/components/AutoRefresh';
 import { Board, secondsSince, type BoardRow } from '@/components/Board';
+import { TechCards } from '@/components/TechCards';
 import { Button } from '@/components/ui';
 import { fill } from '@/i18n/dictionary';
 import { LanguageToggle } from '@/i18n/LanguageToggle';
@@ -35,7 +37,7 @@ export default async function AdminPage() {
   // settled before the board is read. Idempotent.
   if (membership) await sweepFloor(db(), membership.locationId);
   const now = new Date();
-  const [rows, menu, waiting, counts, attention, calendar, upcoming, loc] = membership
+  const [rows, menu, waiting, counts, attention, calendar, upcoming, loc, cards] = membership
     ? await Promise.all([
         boardRows(membership.locationId),
         db()
@@ -60,8 +62,9 @@ export default async function AdminPage() {
           .from(locations)
           .where(eq(locations.id, membership.locationId))
           .then((r) => r[0]),
+        techBoard(db(), membership.locationId, now),
       ])
-    : [[], [], [], { visits: 0, denies: 0, overrides: 0 }, null, null, [], undefined];
+    : [[], [], [], { visits: 0, denies: 0, overrides: 0 }, null, null, [], undefined, []];
   const clock = new Intl.DateTimeFormat(lang === 'vi' ? 'vi-VN' : 'en-US', {
     timeZone: loc?.timezone ?? 'America/New_York',
     hour: 'numeric',
@@ -239,6 +242,13 @@ export default async function AdminPage() {
               t={t.desk}
             />
           ) : null}
+          <TechCards
+            cards={cards}
+            t={t}
+            lang={lang}
+            timezone={loc?.timezone ?? 'America/New_York'}
+            canEdit={can(membership.role, 'edit_technicians')}
+          />
         </>
       ) : (
         <p className="max-w-[60ch] text-lead">{t.admin.noSalon}</p>

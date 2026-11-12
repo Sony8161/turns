@@ -713,6 +713,16 @@ export async function removeFeed(
 
 // Sync ---------------------------------------------------------------------------
 
+/** A link under the reserved .invalid top-level name (RFC 2606): the demo
+ *  seed's placeholder. No request is ever made for one. */
+export function isPlaceholderFeedUrl(url: string): boolean {
+  try {
+    return new URL(url).hostname.toLowerCase().endsWith('.invalid');
+  } catch {
+    return false;
+  }
+}
+
 export type SyncResult =
   | { ok: true; added: number; changed: number; cancelled: number; events: number }
   | { ok: false; error: string };
@@ -756,6 +766,20 @@ export async function syncFeed(
   const [feed] = await db.select().from(calendarFeeds).where(eq(calendarFeeds.id, input.feedId));
   if (!feed || feed.archivedAt || !feed.url) return { ok: false, error: 'no_feed' };
   const zone = await locationZone(db, feed.locationId);
+
+  // The demo seed's calendar rows (v0.12.0) carry a reserved .invalid name:
+  // never fetched, in any environment. Locally they read as synced so the
+  // demo board stays green; anywhere else such a row is a broken link.
+  if (isPlaceholderFeedUrl(feed.url)) {
+    if (process.env.NODE_ENV === 'production') {
+      return recordFailure(db, feed, 'not_allowed', actorUserId, now);
+    }
+    await db
+      .update(calendarFeeds)
+      .set({ lastAttemptAt: now, lastSyncedAt: now, lastError: null, updatedAt: now })
+      .where(eq(calendarFeeds.id, feed.id));
+    return { ok: true, added: 0, changed: 0, cancelled: 0, events: feed.lastEventCount ?? 0 };
+  }
 
   const fetched = await (input.fetchText ?? safeFetchText())(feed.url);
   if (!fetched.ok) return recordFailure(db, feed, fetched.error, actorUserId, now);

@@ -5,6 +5,11 @@
 # starts the web app, and opens the browser. Safe to run again any time.
 # Local machine only: every key it handles is the local stack's demo key.
 
+#   npm run up -- -Demo
+# Same, but first resets the local database and loads the demo day: six
+# technicians on the floor, appointments and clients waiting (docs/DEMO-EXPECTED.md).
+param([switch]$Demo)
+
 $ErrorActionPreference = 'Stop'
 $root = Split-Path -Parent $PSScriptRoot
 Set-Location $root
@@ -57,8 +62,18 @@ Write-Host 'written'
 Step 'Migrations and seed'
 $env:DATABASE_URL = $dbUrl
 $env:SUPABASE_SERVICE_ROLE_KEY = $serviceKey
+if ($Demo) {
+  Write-Host 'Demo: resetting the local database (local only)'
+  npx supabase db reset | Out-Null
+}
 npm run -s -w @turn/db db:migrate
-npm run -s -w @turn/db db:seed:dev | Out-Null
+if ($Demo) {
+  npm run -s -w @turn/db db:seed:demo | Out-Null
+  if ($LASTEXITCODE -ne 0) { throw 'demo seed failed (see the message above)' }
+  Write-Host 'demo day loaded: docs/DEMO-EXPECTED.md'
+} else {
+  npm run -s -w @turn/db db:seed:dev | Out-Null
+}
 Write-Host 'sample accounts and codes written to dev-codes.txt'
 
 # 5. Web app ---------------------------------------------------------------------
