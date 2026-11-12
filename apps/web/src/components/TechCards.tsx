@@ -29,8 +29,11 @@ export function TechCards({
   timezone,
   lang,
   canEdit,
+  sort,
 }: {
   cards: TechCard[];
+  /** The rules' queue.sort: whether an appointment counts at zero only (v0.15.0). */
+  sort?: readonly string[];
   t: Dictionary;
   timezone: string;
   lang: 'en' | 'vi';
@@ -43,6 +46,8 @@ export function TechCards({
     hour: 'numeric',
     minute: '2-digit',
   });
+  const everyScore = !!sort?.includes('had_appointment_last');
+  const zeroOnly = !everyScore && (!sort || sort.includes('double_zero_last'));
   // "Next up": the first one the engine would call for a plain walk-in.
   const firstFree = cards.find((c) => c.status === 'available' && !c.heldForAppointment);
   return (
@@ -174,12 +179,14 @@ export function TechCards({
                         })
                       : null}
                   </p>
-                  {c.hadAppointmentLast ? (
+                  {c.hadAppointmentLast && everyScore ? (
                     <p className="text-slate/80">{tb.appointmentLast}</p>
+                  ) : c.hadAppointmentLast && zeroOnly && c.points === 0 ? (
+                    <p className="text-slate/80">{tb.appointmentLastZero}</p>
                   ) : null}
                   {ahead ? (
                     <p className="text-slate/80">
-                      {fill(tb.ahead[aheadBecause(c, ahead)], { name: ahead.displayName })}
+                      {fill(tb.ahead[aheadBecause(c, ahead, sort)], { name: ahead.displayName })}
                     </p>
                   ) : null}
                   {canEdit ? (

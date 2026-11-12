@@ -10,6 +10,7 @@ const DENY_REASONS = [
   'not_my_service',
   'with_another_client',
   'break_needed',
+  'personal',
   'client_issue',
   'other',
 ] as const;
@@ -23,14 +24,21 @@ export function CallPanel({
   kind = 'turn',
   requested = false,
   note = null,
+  slip = null,
+  excusedReasons = [],
   waitedSeconds,
   denyPenalty,
   t,
 }: {
+  /** v0.15.0: the earlier parts of this client's visit, when another
+   *  technician did some of it first (the on-screen slip). */
+  slip?: { technician: string | null; services: string[] }[] | null;
+  /** v0.15.0: deny reasons the rules excuse on their own (no points). */
+  excusedReasons?: readonly string[];
   callId: string;
   services: string[];
   /** v0.14.0: with ids, so a visit of two or more services can be split. */
-  serviceItems?: { id: string; name: string }[];
+  serviceItems?: { id: string; name: string; canDo?: boolean }[];
   /** 'turn' = called by the line; 'offer' / 'desk_pick' = the desk asked:
    *  saying no is never a penalty. */
   kind?: string;
@@ -46,7 +54,11 @@ export function CallPanel({
   const [denying, setDenying] = useState(false);
   const [splitting, setSplitting] = useState(false);
   const asked = kind !== 'turn';
-  const canSplit = serviceItems.length > 1;
+  // v0.15.0: on a visit of several services she keeps only what she does;
+  // the rest goes on to the next technician after she finishes.
+  const mine = serviceItems.filter((i) => i.canDo !== false);
+  const notMine = serviceItems.filter((i) => i.canDo === false);
+  const canSplit = mine.length > 1;
 
   return (
     <form
@@ -72,6 +84,27 @@ export function CallPanel({
           {fill(t.call.noteLine, { note })}
         </p>
       ) : null}
+      {slip ? (
+        <div className="flex flex-col gap-1 border-2 border-slate/30 px-3 py-2">
+          <span className="font-semibold">{t.call.slipTitle}</span>
+          {slip.map((p, i) => (
+            <span key={i}>
+              {p.technician
+                ? fill(t.call.slipDone, { name: p.technician, services: p.services.join(' + ') })
+                : fill(t.call.slipNobody, { services: p.services.join(' + ') })}
+            </span>
+          ))}
+          <span className="font-medium">
+            {fill(t.call.slipLeft, { services: services.join(' + ') })}
+          </span>
+        </div>
+      ) : null}
+      {notMine.length > 0 && mine.length > 0 ? (
+        <p className="border-l-[12px] border-navy bg-pumice/40 px-3 py-2 font-medium">
+          {fill(t.call.partLead, { services: mine.map((i) => i.name).join(' + ') })}{' '}
+          {fill(t.call.partRest, { services: notMine.map((i) => i.name).join(' + ') })}
+        </p>
+      ) : null}
       {asked ? <p className="font-medium text-slate">{t.call.offerNote}</p> : null}
       <p className="text-slate/70">{fill(t.call.waitedLine, { seconds: waitedSeconds })}</p>
       {state.error ? (
@@ -83,7 +116,7 @@ export function CallPanel({
       {splitting ? (
         <fieldset className="flex flex-col gap-3">
           <legend className="mb-2 font-medium">{t.call.splitLead}</legend>
-          {serviceItems.map((item) => (
+          {mine.map((item) => (
             <label key={item.id} className="flex min-h-12 items-center gap-3 text-lead">
               <input type="checkbox" name="keep" value={item.id} className="h-7 w-7" />
               <span>{item.name}</span>
@@ -115,7 +148,11 @@ export function CallPanel({
             disabled={pending}
             className="min-h-14 text-kiosk-button"
           >
-            {canSplit ? t.call.doAll : t.call.accept}
+            {notMine.length > 0 && mine.length > 0
+              ? t.call.acceptPart
+              : canSplit
+                ? t.call.doAll
+                : t.call.accept}
           </Button>
           {canSplit ? (
             <Button
@@ -152,7 +189,9 @@ export function CallPanel({
       ) : (
         <div className="flex flex-col gap-3">
           <p className="font-semibold text-polish">
-            {fill(t.call.penaltyNote, { points: denyPenalty })}
+            {fill(excusedReasons.length ? t.call.penaltyNoteFree : t.call.penaltyNote, {
+              points: denyPenalty,
+            })}
           </p>
           {DENY_REASONS.map((r) => (
             <Button
@@ -163,7 +202,9 @@ export function CallPanel({
               tone="quiet"
               disabled={pending}
             >
-              {t.call.reasons[r]}
+              {excusedReasons.includes(r)
+                ? fill(t.call.freeReason, { reason: t.call.reasons[r] })
+                : t.call.reasons[r]}
             </Button>
           ))}
           <button

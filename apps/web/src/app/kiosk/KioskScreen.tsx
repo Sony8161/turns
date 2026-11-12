@@ -10,6 +10,7 @@ import { useRouter } from 'next/navigation';
 import { useActionState, useCallback, useEffect, useRef, useState, type ReactNode } from 'react';
 import { fill, type Dictionary } from '@/i18n/dictionary';
 import { checkInAction, unlockAction, type KioskState } from './actions';
+import { techsFor, type KioskTech } from './form';
 
 export const IDLE_SECONDS = 60;
 const DONE_SECONDS = 12;
@@ -30,7 +31,8 @@ export function KioskScreen(props: {
   t: Dictionary['kiosk'];
   locationName: string;
   services: Service[];
-  technicians: { id: string; name: string }[];
+  /** v0.15.0: only who is in today; serviceIds narrows it to the chosen services. */
+  technicians: KioskTech[];
   notice: { show: false } | { show: true; minutes: number | null };
   languageToggle: ReactNode;
 }) {
@@ -284,7 +286,15 @@ function KioskRound({
 
           <fieldset data-step={4} tabIndex={-1} hidden={step !== 4} className="flex flex-col gap-4">
             <legend className="mb-6 text-name font-semibold">{t.techQuestion}</legend>
-            <TechChoice t={t} technicians={technicians} choice={choice} />
+            <p className="text-lead text-slate/70">{t.techHint}</p>
+            <TechChoice
+              // The list depends on the services: a new choice of services
+              // starts again from "Anyone".
+              key={[...picked].sort().join(',')}
+              t={t}
+              technicians={techsFor(technicians, [...picked])}
+              choice={choice}
+            />
           </fieldset>
 
           <fieldset data-step={5} tabIndex={-1} hidden={step !== 5} className="flex flex-col gap-4">

@@ -2,6 +2,82 @@
 
 One version per delivered part. Tags point at the commits.
 
+## v0.15.0, 2026-11-12: Rule answers
+
+From Duong's answers (2026-11-12, 02:00 and 02:05). Every one is a setting in
+the rule builder; the values below are Heavenly's defaults.
+
+- **Services in one visit add up.** A gel manicure with an acrylic fill is
+  1 + ½ = 1½. The cap that held a visit with a fill or full set to 1 is off for
+  Heavenly (Rules → "Cap for a visit with a fill or full set", blank = no cap;
+  a salon that wants one types it). Same-time visits are unchanged: still one
+  visit per service, each at its own points (how they should count is a
+  question for Phu).
+- **0, then 00, then everyone else.** The appointment rule now applies only at
+  zero: a technician whose last visit was an appointment shows 00 and goes
+  after a true 0, a 00 is still ahead of everyone above zero, and above zero
+  an appointment makes no difference (the earlier check-in goes first). Rules →
+  Queue → "A technician whose last client was an appointment": at zero only /
+  at every score (the old rule) / no difference. The rule preview now uses the
+  same order as the board.
+- **Deny reasons that cost nothing.** "Need a break" and the new "Personal
+  reason" excuse themselves: no points, no manager. Every other reason is +1
+  unless a manager excuses it. Rules → "Deny reasons that cost nothing" has a
+  tick per reason. The technician's phone marks the free reasons "(no points)".
+  A technician who said no that way is **not called for that same client
+  again** (skip reason `said_no`, in the skipped list and the Log's queue
+  snapshot); she keeps her place for everyone else. Audited as `call_denied`
+  with `excused: by_rule`; nothing is posted to the ledger, and her tech card
+  lists it ("Said no: Need a break (excused by the rules, no points)").
+- **The requested or booked technician is busy.** Never a fallback on its own:
+  the visit waits for her (as before). New: the desk row shows her status and
+  for how long, and her next appointment; after the rules' minutes (Rules →
+  Attention → "Flag a client waiting for a requested technician after", 10 for
+  Heavenly) the row turns red. Three desk actions, receptionist or manager,
+  all in the Log: **Keep waiting** (`request_keep_waiting`; the flag comes
+  back after the same minutes), **Book for later** (`request_booked_later`:
+  an appointment with her at the time the desk picks, as long as the services
+  take; the visit leaves the line), **Send by turn** (`request_sent_by_turn`:
+  the request is dropped and the visit goes by turn as a walk-in).
+- **A visit of several services goes by turn to the first technician who gets
+  at least one of them.** She no longer has to do all of them. If she does
+  all: Do all or Split, as before. If she does only some, her phone says "You
+  do: … Not yours: …" and she takes her part (she ticks which, if she has time
+  for only one). **The rest waits until her part is finished**, then goes by
+  turn with the client's original arrival time; the desk row says "Waits until
+  Linh finishes her part". This now also holds for a Split by a technician who
+  does everything (in v0.14.0 the rest went back at once). The next
+  technician's call card and the desk row show an **on-screen slip**: who did
+  what before, what is left, and the client's request note. No paper printing
+  yet.
+- **Kiosk technician step.** Lists only technicians checked in today who do
+  every chosen service, with **Anyone** first and chosen by default; only
+  "Anyone" when nobody qualifies. Names only. The check-in enforces the same
+  list on the server. The woman / man / skip question stays.
+- **Fix:** two desks pressing Call next for the same technician at the same
+  second: the loser now gets "nobody can be called" instead of a server error
+  (it used to reach the database's one-open-call index and throw).
+- **Demo day** shows each of these: Hoa's 1½ visit (acrylic fill + spa
+  pedicure), Thảo at 0 ahead of Linh at 00, Thảo's "need a break" deny with no
+  points, Thu Pham waiting for Hoa with the flag up, Ngoc Vo's dip powder +
+  pedicure (Linh takes the pedicure, the dip waits for her), and the kiosk's
+  technician list. `docs/DEMO-EXPECTED.md` regenerated; its drift test passes.
+- Database: migration 0026 (`turn_calls.auto_excused`,
+  `visits.request_ack_at`). New module `packages/db/src/requests.ts`. 24 new
+  database tests (`v015.test.ts`), 5 new web tests.
+
+Readings taken where the answers left room (say if any is wrong):
+
+- A technician who said no for an excused reason is not called again for
+  that same client by turn; a manager can still reassign the visit to her.
+- On a visit of several services she may keep any service she does, including
+  one that is not her level's by turn (her choice; it costs her the points).
+- "Send by turn" makes the visit a walk-in: no appointment discount and no
+  request multiplier for whoever takes it.
+- "Book for later" takes the client out of the line (the visit is cancelled);
+  when they come back the desk presses "Client arrived" on the appointment.
+- The 10 minutes before the flag is a guess; it is in the rule builder.
+
 ## v0.14.0, 2026-11-12: Skill levels, offer to a higher level, split visits
 
 From Duong's answers (2026-11-12, 01:33).

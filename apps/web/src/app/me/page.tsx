@@ -107,6 +107,8 @@ export default async function MePage() {
               kind={call.kind}
               requested={call.requested}
               note={call.note}
+              slip={call.slip}
+              excusedReasons={rules.penalties.deny_excused_reasons}
               waitedSeconds={secondsSince(call.calledAt)}
               denyPenalty={rules.penalties.deny}
               t={t.me}

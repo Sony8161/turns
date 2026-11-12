@@ -9,12 +9,16 @@ import {
   setVisitNote,
 } from '@turn/db/engine';
 import { reviewKioskVisit } from '@turn/db/kiosk';
+import { bookForLater, keepWaiting, sendByTurn } from '@turn/db/requests';
+import { locations } from '@turn/db';
+import { eq } from 'drizzle-orm';
 import { revalidatePath } from 'next/cache';
 import { membershipWith, requireActor, type Membership } from '@/lib/auth';
 import { db } from '@/lib/db';
 import { uuidOf } from '@/lib/ids';
 import { can } from '@/lib/permissions';
 import { toSkippedLines, type SkippedLine } from './chips';
+import { salonTime } from './appointments/form';
 import { walkInFromForm } from './form';
 import { guarded } from '@/lib/action';
 
@@ -209,4 +213,49 @@ async function reviewKioskForRun(_prev: DeskState, formData: FormData): Promise<
   });
   revalidatePath('/admin');
   return result.ok ? {} : { error: result.reason };
+}
+
+/**
+ * v0.15.0: the client asked for (or booked) a technician who is busy. The
+ * desk keeps them waiting, books them for later with her, or drops the request
+ * so the visit goes by turn. Receptionists and managers (call_technician);
+ * every decision is in the log. The engine never falls back on its own.
+ */
+export async function requestHoldFor(prev: DeskState, formData: FormData): Promise<DeskState> {
+  return guarded('requestHoldFor', { error: 'server' } as DeskState, () =>
+    requestHoldForRun(prev, formData),
+  );
+}
+
+async function requestHoldForRun(_prev: DeskState, formData: FormData): Promise<DeskState> {
+  const actor = await requireActor();
+  const m = await deskMembership();
+  if (!m || !can(m.role, 'call_technician')) return { error: 'not_allowed' };
+  const visitId = uuidOf(formData.get('visitId'));
+  if (!visitId) return { error: 'unknown_visit' };
+  const who = { userId: actor.userId, organizationId: m.organizationId, locationId: m.locationId };
+  const decision = String(formData.get('decision') ?? '');
+  let result: { ok: true } | { ok: false; reason: string };
+  if (decision === 'keep') {
+    result = await keepWaiting(db(), { actor: who, visitId });
+  } else if (decision === 'by_turn') {
+    result = await sendByTurn(db(), { actor: who, visitId });
+  } else if (decision === 'book') {
+    // The desk types a wall-clock time at the salon, not the iPad's zone.
+    const [loc] = await db()
+      .select({ timezone: locations.timezone })
+      .from(locations)
+      .where(eq(locations.id, m.locationId));
+    const startAt = salonTime(formData.get('start'), loc?.timezone ?? 'America/New_York');
+    if (!startAt) return { error: 'bad_time' };
+    result = await bookForLater(db(), { actor: who, visitId, startAt });
+  } else {
+    return { error: 'unknown_visit' };
+  }
+  revalidatePath('/admin');
+  revalidatePath('/admin/appointments');
+  if (result.ok) return {};
+  // Every time problem reads the same to the desk: pick another time.
+  const time = ['end_before_start', 'too_long', 'too_far_back', 'too_far_ahead'];
+  return { error: time.includes(result.reason) ? 'bad_time' : result.reason };
 }

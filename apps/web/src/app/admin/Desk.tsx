@@ -10,6 +10,7 @@ import {
   clearCallFor,
   deskCallFor,
   enterWalkIn,
+  requestHoldFor,
   reviewKioskFor,
   setNoteFor,
   setNotice,
@@ -43,6 +44,25 @@ export type Waiting = {
   splitRest: boolean;
   /** The open call's kind: by turn, an offer to a higher level, or a desk pick. */
   callKind: string | null;
+  /** v0.15.0: the earlier parts of this client's visit (the on-screen slip). */
+  slip: { technician: string | null; services: string[] }[] | null;
+  /** Not callable yet: it waits until this technician finishes her part. */
+  held: { technician: string | null } | null;
+  /** The requested technician was booked (an appointment), not asked for at the desk. */
+  booked: boolean;
+  /** The requested or booked technician is busy: what the desk needs to decide. */
+  hold: {
+    technicianName: string;
+    /** The engine's reason she cannot be called (in_service, break, ...). */
+    why: string;
+    detail?: string;
+    /** Minutes she has been in that status; null when not on shift. */
+    forMinutes: number | null;
+    /** Her next appointment, as a clock time at the salon; null = none. */
+    nextAppointment: string | null;
+    waitedMin: number;
+    attention: boolean;
+  } | null;
   /** Who the desk may ask (higher level) or pick (desk-pick service). */
   options: {
     technicianId: string;
@@ -80,7 +100,10 @@ export function Desk({
   t,
   levelNames,
   statusNames,
+  bookDefault,
 }: {
+  /** v0.15.0: the start offered for "Book for later" (datetime-local, salon time). */
+  bookDefault: string;
   services: Service[];
   technicians: { id: string; name: string }[];
   waiting: Waiting[];
@@ -96,6 +119,7 @@ export function Desk({
   const [reviewState, review, reviewing] = useActionState<DeskState, FormData>(reviewKioskFor, {});
   const [noteState, saveNote, savingNote] = useActionState<DeskState, FormData>(setNoteFor, {});
   const [askState, ask, asking] = useActionState<DeskState, FormData>(deskCallFor, {});
+  const [holdState, decide, deciding] = useActionState<DeskState, FormData>(requestHoldFor, {});
   const optionLine = (o: Waiting['options'][number]) =>
     fill(t.optionLine, {
       level: o.level ? (levelNames[o.level] ?? o.level) : '–',
@@ -306,6 +330,12 @@ export function Desk({
               <ErrorRef refId={askState.ref} />
             </p>
           ) : null}
+          {holdState.error ? (
+            <p role="alert" className="text-polish">
+              {t.errors[holdState.error] ?? holdState.error}
+              <ErrorRef refId={holdState.ref} />
+            </p>
+          ) : null}
           {callState.error ? (
             <p role="alert" className="text-polish">
               {t.errors[callState.error] ?? callState.error}
@@ -353,11 +383,30 @@ export function Desk({
                         {t.splitRest}
                       </span>
                     ) : null}
+                    {v.slip ? (
+                      // v0.15.0: the on-screen slip: who did what before this part.
+                      <span className="w-fit rounded-control border-2 border-slate/30 px-2 py-0.5 text-small">
+                        {fill(t.slipLine, {
+                          parts: v.slip
+                            .map((p) =>
+                              p.technician
+                                ? fill(t.slipPart, {
+                                    name: p.technician,
+                                    services: p.services.join(' + '),
+                                  })
+                                : fill(t.slipNobody, { services: p.services.join(' + ') }),
+                            )
+                            .join('; '),
+                        })}
+                      </span>
+                    ) : null}
                     {v.requestedTechnician ? (
                       // v0.10.2: the request stands out, so whoever works the
                       // floor (the owner too) sees it before calling.
                       <span className="w-fit rounded-control bg-navy px-2 py-0.5 text-small font-semibold text-board">
-                        {fill(t.askedFor, { name: v.requestedTechnician })}
+                        {fill(v.booked ? t.bookedWith : t.askedFor, {
+                          name: v.requestedTechnician,
+                        })}
                       </span>
                     ) : null}
                     {chips.length > 0 || v.clientName ? (
@@ -488,6 +537,100 @@ export function Desk({
                           </li>
                         ))}
                       </ul>
+                    </div>
+                  ) : v.status === 'waiting' && v.held ? (
+                    // v0.15.0: the client is still in the first technician's chair.
+                    <span className="max-w-[26ch] text-right font-medium text-slate/80">
+                      {v.held.technician
+                        ? fill(t.heldLine, { name: v.held.technician })
+                        : t.heldNobody}
+                    </span>
+                  ) : v.status === 'waiting' && v.hold ? (
+                    // v0.15.0: the technician the client asked for (or booked) is
+                    // busy. Never a fallback on its own: the desk decides.
+                    <div
+                      className={`flex w-full flex-col gap-2 border-l-[12px] p-3 ${v.hold.attention ? 'border-polish bg-polish/5' : 'border-navy bg-pumice/40'}`}
+                    >
+                      <span className={`font-semibold ${v.hold.attention ? 'text-polish' : ''}`}>
+                        {v.hold.attention
+                          ? fill(t.holdFlag, {
+                              name: v.hold.technicianName,
+                              minutes: v.hold.waitedMin,
+                            })
+                          : fill(t.holdTitle, { name: v.hold.technicianName })}
+                      </span>
+                      <span className="text-small text-slate/80">
+                        {fill(v.hold.forMinutes === null ? t.holdStatusPlain : t.holdStatus, {
+                          name: v.hold.technicianName,
+                          why: fill(t.skip[v.hold.why] ?? v.hold.why, {
+                            detail: v.hold.detail ?? '',
+                          }),
+                          minutes: v.hold.forMinutes ?? 0,
+                        })}
+                        {' · '}
+                        {v.hold.nextAppointment
+                          ? fill(t.holdNext, { time: v.hold.nextAppointment })
+                          : t.holdNoNext}
+                      </span>
+                      <div className="flex flex-wrap items-start gap-3">
+                        <form action={decide}>
+                          <input type="hidden" name="visitId" value={v.id} />
+                          <input type="hidden" name="decision" value="keep" />
+                          <Button
+                            type="submit"
+                            tone="quiet"
+                            disabled={deciding}
+                            aria-label={`${t.keepWaiting}: ${rowLabel(v)}`}
+                          >
+                            {t.keepWaiting}
+                          </Button>
+                        </form>
+                        <details className="text-small">
+                          <summary className="flex min-h-12 cursor-pointer items-center font-semibold underline">
+                            {t.bookLater}
+                          </summary>
+                          <form action={decide} className="flex flex-col gap-2 pt-2">
+                            <input type="hidden" name="visitId" value={v.id} />
+                            <input type="hidden" name="decision" value="book" />
+                            <span className="max-w-[40ch] text-slate/80">{t.bookLead}</span>
+                            <label className="flex flex-col gap-1">
+                              <span className="font-medium">{t.bookTime}</span>
+                              <input
+                                type="datetime-local"
+                                name="start"
+                                defaultValue={bookDefault}
+                                required
+                                className={field}
+                              />
+                            </label>
+                            <Button
+                              type="submit"
+                              disabled={deciding}
+                              aria-label={`${fill(t.bookConfirm, { name: v.hold.technicianName })}: ${rowLabel(v)}`}
+                            >
+                              {fill(t.bookConfirm, { name: v.hold.technicianName })}
+                            </Button>
+                          </form>
+                        </details>
+                        <details className="text-small">
+                          <summary className="flex min-h-12 cursor-pointer items-center font-semibold underline">
+                            {t.sendByTurn}
+                          </summary>
+                          <form action={decide} className="flex flex-col gap-2 pt-2">
+                            <input type="hidden" name="visitId" value={v.id} />
+                            <input type="hidden" name="decision" value="by_turn" />
+                            <span className="max-w-[40ch] text-slate/80">{t.sendByTurnLead}</span>
+                            <Button
+                              type="submit"
+                              tone="quiet"
+                              disabled={deciding}
+                              aria-label={`${t.sendByTurn}: ${rowLabel(v)}`}
+                            >
+                              {t.sendByTurn}
+                            </Button>
+                          </form>
+                        </details>
+                      </div>
                     </div>
                   ) : v.status === 'waiting' ? (
                     <span className="flex flex-col items-end gap-2">

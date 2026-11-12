@@ -2,10 +2,21 @@
 // config back, text in a number field survives to the validator, blank
 // means unset where unset is allowed, and every validator path maps to the
 // field that caused it.
-import { validateRuleConfig, type RuleConfig } from '@turn/db/rules';
+import {
+  DENY_REASONS as ENGINE_REASONS,
+  validateRuleConfig,
+  type RuleConfig,
+} from '@turn/db/rules';
 import { HEAVENLY_RULE_CONFIG_V1 } from '@turn/db/seed';
 import { describe, expect, it } from 'vitest';
-import { configFromForm, fieldFor, formValues } from './form';
+import {
+  appointmentOrderFor,
+  configFromForm,
+  DENY_REASONS,
+  fieldFor,
+  formValues,
+  sortWith,
+} from './form';
 
 const base: RuleConfig = HEAVENLY_RULE_CONFIG_V1;
 
@@ -86,6 +97,50 @@ describe('rule builder form', () => {
     const path = checked.errors.find((e) => e.problem === 'missing')?.path;
     expect(path).toBe('penalties.late_tiers.3.after_minutes');
     expect(fieldFor(path!, parsed2.tierSlots)).toBe('tier.4.after');
+  });
+
+  // v0.15.0 -------------------------------------------------------------------
+  it("lists the engine's deny reasons, and ticks the ones a config excuses", () => {
+    expect([...DENY_REASONS]).toEqual([...ENGINE_REASONS]);
+    const values = formValues(base);
+    expect(values['deny_excused.break_needed']).toBe('on');
+    expect(values['deny_excused.personal']).toBe('on');
+    expect(values['deny_excused.other']).toBe('');
+    // Untick "personal", tick "client_issue".
+    const changed = { ...values, 'deny_excused.personal': '', 'deny_excused.client_issue': 'on' };
+    const checked = validateRuleConfig(configFromForm(form(changed), base, []).candidate);
+    expect(checked.ok && checked.config.penalties.deny_excused_reasons).toEqual([
+      'break_needed',
+      'client_issue',
+    ]);
+  });
+
+  it('turns the appointment choice into the queue sort, keeping the other keys', () => {
+    expect(appointmentOrderFor(base.queue.sort)).toBe('zero');
+    expect(formValues(base)['queue.appointment_order']).toBe('zero');
+    expect(sortWith(base.queue.sort, 'every')).toEqual([
+      'points_asc',
+      'had_appointment_last',
+      'check_in_asc',
+    ]);
+    expect(sortWith(base.queue.sort, 'off')).toEqual(['points_asc', 'check_in_asc']);
+    expect(sortWith(['points_asc', 'check_in_asc'], 'zero')).toEqual(base.queue.sort);
+    const every = { ...formValues(base), 'queue.appointment_order': 'every' };
+    const checked = validateRuleConfig(configFromForm(form(every), base, []).candidate);
+    expect(checked.ok && checked.config.queue.sort).toEqual([
+      'points_asc',
+      'had_appointment_last',
+      'check_in_asc',
+    ]);
+  });
+
+  it('reads the request wait; blank falls back to the long wait', () => {
+    const typed = { ...formValues(base), 'attention.request_wait_min': '5' };
+    const a = validateRuleConfig(configFromForm(form(typed), base, []).candidate);
+    expect(a.ok && a.config.attention.request_wait_min).toBe(5);
+    const blank = { ...formValues(base), 'attention.request_wait_min': '' };
+    const b = validateRuleConfig(configFromForm(form(blank), base, []).candidate);
+    expect(b.ok && b.config.attention.request_wait_min).toBe(base.attention.long_wait_min);
   });
 
   it('maps validator paths to form fields', () => {

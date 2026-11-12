@@ -64,3 +64,18 @@ export function kioskFromForm(fd: FormData): KioskForm {
         .slice(0, 400) || null,
   };
 }
+
+export type KioskTech = { id: string; name: string; serviceIds: string[] | null };
+
+/**
+ * v0.15.0: the technicians the kiosk offers for the chosen services: those on
+ * shift (the server sends only them) who do every one. The same rule as
+ * techniciansFor in the database package, which the check-in enforces; it is
+ * repeated here because the browser must not load that package.
+ */
+export function techsFor(technicians: KioskTech[], serviceIds: string[]): KioskTech[] {
+  if (serviceIds.length === 0) return [];
+  return technicians.filter(
+    (t) => t.serviceIds === null || serviceIds.every((id) => t.serviceIds!.includes(id)),
+  );
+}

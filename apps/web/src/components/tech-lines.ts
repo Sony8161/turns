@@ -28,6 +28,10 @@ export function lineText(
       );
     case 'deny':
       return fill(t.line.deny, { reason: reasons[line.note ?? 'other'] ?? line.note ?? '' });
+    case 'deny_excused':
+      return fill(t.line.deny_excused, {
+        reason: reasons[line.note ?? 'other'] ?? line.note ?? '',
+      });
     case 'excuse':
       return t.line.excuse;
     case 'late':

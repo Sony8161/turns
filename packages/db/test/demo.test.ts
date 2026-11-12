@@ -239,7 +239,10 @@ describe('demo day', () => {
     expect(card('Tâm').services).not.toContain('Gel manicure');
     expect(card('Linh').skills).toBeNull();
     expect(card('Linh').restrictions.map((r) => r.type)).toEqual(['no_kids']);
-    expect(card('Thảo').lines).toEqual([]); // her deny excused itself: nothing posted
+    // Her deny excused itself: nothing posted, and the card says why.
+    expect(card('Thảo').lines.map((l) => [l.kind, l.delta, l.note])).toEqual([
+      ['deny_excused', 0, 'break_needed'],
+    ]);
     expect(card('Mai').lines.map((l) => [l.kind, l.delta])).toEqual([
       ['deny', 1],
       ['visit', 1],

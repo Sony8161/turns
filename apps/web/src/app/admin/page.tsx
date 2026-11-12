@@ -11,6 +11,7 @@ import {
   waitingVisits,
 } from '@turn/db/engine';
 import { feedSummary, FEED_STALE_MIN } from '@turn/db/feeds';
+import { requestHolds } from '@turn/db/requests';
 import { ensureDailySummary, localDate, previousDate } from '@turn/db/reports';
 import { activeRules } from '@turn/db/rules';
 import { mayEditTechnicians } from '@turn/db/tech-settings';
@@ -30,6 +31,7 @@ import { db } from '@/lib/db';
 import { can } from '@/lib/permissions';
 import { currentKiosk } from '@/lib/kiosk';
 import { signOut } from '../login/actions';
+import { salonInput } from './appointments/form';
 import { enterKioskMode } from './kiosk/actions';
 import { Desk } from './Desk';
 
@@ -75,6 +77,14 @@ export default async function AdminPage() {
     : [[], [], [], { visits: 0, denies: 0, overrides: 0 }, null, null, [], undefined, []];
   // v0.14.0: who the desk may ask or pick outside the turn order, per waiting visit.
   const options = membership ? await deskOptions(db(), membership.locationId) : new Map();
+  // v0.15.0: visits waiting for a requested or booked technician who is busy,
+  // and the rules' queue order for the "why this order" lines.
+  const [holds, rules] = membership
+    ? await Promise.all([
+        requestHolds(db(), membership.locationId, now),
+        activeRules(db(), membership.locationId),
+      ])
+    : [new Map(), null];
   const clock = new Intl.DateTimeFormat(lang === 'vi' ? 'vi-VN' : 'en-US', {
     timeZone: loc?.timezone ?? 'America/New_York',
     hour: 'numeric',
@@ -239,6 +249,10 @@ export default async function AdminPage() {
                 deskPicks: v.deskPicks,
                 splitRest: v.splitFromVisitId !== null,
                 callKind: v.callKind ?? null,
+                slip: v.slip,
+                held: v.held,
+                booked: v.source === 'appointment',
+                hold: holdOf(holds.get(v.id), now, clock),
                 options: (options.get(v.id)?.technicians ?? []).map(
                   (o: {
                     technicianId: string;
@@ -281,6 +295,10 @@ export default async function AdminPage() {
               t={t.desk}
               levelNames={t.levels.name}
               statusNames={t.board.status}
+              bookDefault={salonInput(
+                new Date(Math.ceil((now.getTime() + 60 * 60_000) / 900_000) * 900_000),
+                loc?.timezone ?? 'America/New_York',
+              )}
             />
           ) : null}
           <TechCards
@@ -289,6 +307,7 @@ export default async function AdminPage() {
             lang={lang}
             timezone={loc?.timezone ?? 'America/New_York'}
             canEdit={await mayEditTechnicians(db(), membership)}
+            sort={rules?.queue.sort}
           />
         </>
       ) : (
@@ -296,6 +315,36 @@ export default async function AdminPage() {
       )}
     </main>
   );
+}
+
+/** A request hold in the desk's shape: minutes and a clock time, no ids. */
+function holdOf(
+  h:
+    | {
+        technicianName: string;
+        status: string;
+        detail?: string;
+        since: Date | null;
+        nextAppointmentAt: Date | null;
+        waitedMin: number;
+        attention: boolean;
+      }
+    | undefined,
+  now: Date,
+  clock: Intl.DateTimeFormat,
+) {
+  if (!h) return null;
+  return {
+    technicianName: h.technicianName,
+    why: h.status,
+    ...(h.detail ? { detail: h.detail } : {}),
+    forMinutes: h.since
+      ? Math.max(0, Math.floor((now.getTime() - h.since.getTime()) / 60_000))
+      : null,
+    nextAppointment: h.nextAppointmentAt ? clock.format(h.nextAppointmentAt) : null,
+    waitedMin: h.waitedMin,
+    attention: h.attention,
+  };
 }
 
 // Queue order (design doc, rules' queue.sort): lowest points first, 0 before 00, then earlier check-in. A

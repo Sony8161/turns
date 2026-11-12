@@ -6,7 +6,7 @@ import { formatPoints } from '@/components/Board';
 import { Button } from '@/components/ui';
 import { fill, type Dictionary } from '@/i18n/dictionary';
 import { rulesAction, type RulesState } from './actions';
-import { TIER_SLOTS } from './form';
+import { DENY_REASONS, TIER_SLOTS } from './form';
 
 type Category = { id: string; name: string; isFillOrFullSet: boolean };
 
@@ -159,6 +159,17 @@ export function RulesForm({
       )}
 
       {section(
+        t.sections.denyReasons,
+        <div className="flex flex-col gap-3">
+          <p className="max-w-[70ch] text-slate/80">{t.denyReasonsLead}</p>
+          {DENY_REASONS.map((r) => toggle(`deny_excused.${r}`, t.denyReasons[r] ?? r))}
+          {err('penalties.deny_excused_reasons') ? (
+            <span className="text-polish">{err('penalties.deny_excused_reasons')}</span>
+          ) : null}
+        </div>,
+      )}
+
+      {section(
         t.sections.late,
         <div className="flex flex-col gap-3">
           <p className="text-slate/80">{t.lateLead}</p>
@@ -174,7 +185,20 @@ export function RulesForm({
         </div>,
       )}
 
-      {section(t.sections.queue, toggle('queue.auto_pass', t.fields.auto_pass))}
+      {section(
+        t.sections.queue,
+        <div className="flex flex-col gap-3">
+          {toggle('queue.auto_pass', t.fields.auto_pass)}
+          {select(
+            'queue.appointment_order',
+            t.fields.appointment_order,
+            (['zero', 'every', 'off'] as const).map((k) => ({
+              value: k,
+              label: t.fields.appointment[k],
+            })),
+          )}
+        </div>,
+      )}
 
       {section(
         t.sections.eligibility,
@@ -218,6 +242,7 @@ export function RulesForm({
           {number('attention.unanswered_call_min', t.fields.unanswered_call_min)}
           {number('attention.long_wait_min', t.fields.long_wait_min)}
           {number('attention.default_service_min', t.fields.default_service_min)}
+          {number('attention.request_wait_min', t.fields.request_wait_min)}
         </div>,
       )}
 

@@ -2,7 +2,42 @@
 // no server. Values stay as typed when they are not numbers, so the
 // validator (packages/db rules.ts) reports them field by field instead of
 // this file guessing.
-import type { RuleConfig } from '@turn/db/rules';
+import type { DenyReason, RuleConfig } from '@turn/db/rules';
+
+// The engine's deny reasons, repeated here as plain text: this file is also
+// loaded by the browser, which must not pull in the database package
+// (form.test.ts checks the two lists stay the same).
+export const DENY_REASONS = [
+  'not_my_service',
+  'with_another_client',
+  'break_needed',
+  'personal',
+  'client_issue',
+  'other',
+] as const satisfies readonly DenyReason[];
+
+/** v0.15.0: where a technician whose last client was an appointment goes. */
+export const APPOINTMENT_ORDER = {
+  zero: 'double_zero_last',
+  every: 'had_appointment_last',
+  off: null,
+} as const;
+export type AppointmentOrder = keyof typeof APPOINTMENT_ORDER;
+
+export function appointmentOrderFor(sort: readonly string[]): AppointmentOrder {
+  if (sort.includes('had_appointment_last')) return 'every';
+  if (sort.includes('double_zero_last')) return 'zero';
+  return 'off';
+}
+
+/** queue.sort with the chosen appointment key right after the points. */
+export function sortWith(base: readonly string[], order: AppointmentOrder): string[] {
+  const rest = base.filter((k) => k !== 'double_zero_last' && k !== 'had_appointment_last');
+  const key = APPOINTMENT_ORDER[order];
+  if (!key) return rest;
+  const at = rest.indexOf('points_asc') + 1;
+  return [...rest.slice(0, at), key, ...rest.slice(at)];
+}
 
 /** Empty late-tier rows shown beyond the stored ones. */
 export const TIER_SLOTS = 5;
@@ -46,7 +81,7 @@ export type FormParse = {
 
 /**
  * Builds the candidate from the form. Fields the form does not edit
- * (combined_services, post_on, queue.reset, queue.sort) and category
+ * (combined_services, post_on, queue.reset, the rest of queue.sort) and category
  * overrides for categories the form did not show (archived ones) are copied
  * from the base config so a save never silently drops them.
  */
@@ -71,6 +106,8 @@ export function configFromForm(fd: FormData, base: RuleConfig, categoryIds: stri
     tierSlots.push(i);
   }
   const counts = String(fd.get('requests.requested_counts_points') ?? 'unset');
+  const order = String(fd.get('queue.appointment_order') ?? '');
+  const requestWait = num(fd.get('attention.request_wait_min'));
   const cap = num(fd.get('points.combined_fill_full_cap'));
   const candidate = {
     points: {
@@ -84,13 +121,17 @@ export function configFromForm(fd: FormData, base: RuleConfig, categoryIds: stri
     },
     penalties: {
       deny: num(fd.get('penalties.deny')),
+      deny_excused_reasons: DENY_REASONS.filter((r) => bool(fd.get(`deny_excused.${r}`))),
       out_over_minutes: num(fd.get('penalties.out_over_minutes')),
       out_over_penalty: num(fd.get('penalties.out_over_penalty')),
       late_tiers: tiers,
     },
     queue: {
       reset: base.queue.reset,
-      sort: base.queue.sort,
+      sort:
+        order in APPOINTMENT_ORDER
+          ? sortWith(base.queue.sort, order as AppointmentOrder)
+          : base.queue.sort,
       auto_pass: bool(fd.get('queue.auto_pass')),
     },
     eligibility: {
@@ -109,6 +150,8 @@ export function configFromForm(fd: FormData, base: RuleConfig, categoryIds: stri
       unanswered_call_min: num(fd.get('attention.unanswered_call_min')),
       long_wait_min: num(fd.get('attention.long_wait_min')),
       default_service_min: num(fd.get('attention.default_service_min')),
+      // Blank = as long as a long wait (the validator's fallback).
+      ...(requestWait === undefined ? {} : { request_wait_min: requestWait }),
     },
   };
   return { candidate, tierSlots };
@@ -154,7 +197,12 @@ export function formValues(config: RuleConfig): Record<string, string> {
     'attention.unanswered_call_min': String(config.attention.unanswered_call_min),
     'attention.long_wait_min': String(config.attention.long_wait_min),
     'attention.default_service_min': String(config.attention.default_service_min),
+    'attention.request_wait_min': String(config.attention.request_wait_min),
+    'queue.appointment_order': appointmentOrderFor(config.queue.sort),
   };
+  for (const r of DENY_REASONS) {
+    v[`deny_excused.${r}`] = config.penalties.deny_excused_reasons.includes(r) ? 'on' : '';
+  }
   for (const [id, points] of Object.entries(config.points.by_category ?? {})) {
     v[`category.${id}`] = String(points);
   }

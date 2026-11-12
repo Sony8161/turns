@@ -605,6 +605,47 @@ service by turn.
    Open "queue at this second" on a call: the skipped technician shows the
    level reason.
 
+## 8n. Rule answers (v0.15.0)
+
+Load the demo (`npm run up -- -Demo`) and keep `docs/DEMO-EXPECTED.md` open.
+
+1. **Points add up.** On the board, Hoa's card → "Why this order?": one line,
+   "+1½ Spa pedicure + Acrylic fill". Rules → Points: "Cap for a visit with a
+   fill or full set" is blank.
+2. **0 before 00.** Thảo (0) is turn 1 and Linh (00) turn 2, though Linh
+   checked in first. Linh's card says why. Rules → Queue: switch "A technician
+   whose last client was an appointment" to "no difference", press **Preview**:
+   Linh moves above Thảo. Do not save.
+3. **Free deny reasons.** Thảo's card lists "Said no: Need a break (excused by
+   the rules, no points)" and her total is 0. Rules → "Deny reasons that cost
+   nothing": Need a break and Personal reason are ticked. To try it live: call
+   a visit to a technician, sign in as her, **Deny** → the two free reasons say
+   "(no points)". Pick one: her points do not move, and **Call next** on the
+   same row goes to the next technician and lists her as "said no to this
+   client".
+4. **Requested technician busy.** The top waiting row is Thu Pham, "Asked for
+   Hoa". It is red: "Waiting 12 min for Hoa. What now?", with "Hoa: in service,
+   for N min" and her next appointment. **Keep waiting** turns it grey for 10
+   minutes. **Book for later** → pick a time → "Book with Hoa": the row is gone
+   and Appointments has Hoa's new appointment. Load the demo again and try
+   **Send by turn**: the "Asked for Hoa" tag goes and **Call next** calls
+   whoever is next.
+5. **A visit of several services.** Ngoc Vo, Dip powder + Basic pedicure:
+   **Call next** goes to Linh (Thảo has an appointment in 20 min). As Linh
+   (0104): "You do: Basic pedicure. Not yours: Dip powder…", button **Accept my
+   part**. On the desk there is now a row "Dip powder, Rest of a split visit,
+   Slip: Linh did Basic pedicure" that says "Waits until Linh finishes her
+   part" and has no Call next. Linh taps **Finished** (+1). Now Call next on
+   the dip row works; that technician's phone shows the slip and the request
+   "Ombre on the dip".
+6. **Kiosk.** Pair the kiosk (code in `dev-codes.txt`). Pick Gel manicure: the
+   technician step offers Anyone, Hoa, Linh, Mai, Thảo (not Tâm, not Vân). Go
+   back, pick Basic pedicure instead: all six. "Anyone is fine" is chosen
+   until you tap a name.
+7. **Log.** `/admin/log`: "Request: keep waiting", "Request booked for later",
+   "Request dropped, sent by turn", and "Call denied" rows whose detail says
+   `excused: by_rule`.
+
 ## 9. If something is off
 
 - **"Something went wrong on our side"** on sign-in: the local stack is probably

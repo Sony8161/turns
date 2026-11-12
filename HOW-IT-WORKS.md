@@ -345,6 +345,34 @@ move to a new visit linked by `split_from_visit_id` with the same arrival
 time. Nothing here changes how points are worked out: a visit still posts
 the points of its own services when it is finished.
 
+### Rule answers (v0.15.0)
+
+Five answers from Duong, each a setting in `rule_config` (rules.ts):
+
+- `points.combined_fill_full_cap` is `null` for Heavenly: a visit's services
+  simply add up (`visitPointsUnder`).
+- `queue.sort` has a new key, `double_zero_last`: at zero points only, a
+  technician whose last visit was an appointment sorts after a true 0
+  (`compareQueue`, now in rules.ts so the board, the engine and the rule
+  preview share it). `had_appointment_last` (every score) still exists.
+- `penalties.deny_excused_reasons` lists the deny reasons that post nothing.
+  `respondToCall` marks such a call `auto_excused`; `queueFor` then skips that
+  technician for that visit (`said_no`).
+- `attention.request_wait_min`: `requestHolds` (requests.ts) lists the waiting
+  visits whose requested or booked technician cannot be called, with her
+  status and next appointment. `keepWaiting`, `bookForLater` and `sendByTurn`
+  are the desk's three answers. The engine itself never falls back.
+- A visit of several services: `queueFor` calls a technician eligible when she
+  does at least one of them that is hers by turn, and records what she takes.
+  On accept she keeps only services she does; the rest becomes a linked visit
+  (`split_from_visit_id`) that `callNext` refuses (`waits_for_first_part`)
+  until the first part is finished. `openCallFor` and `waitingVisits` return
+  the slip: the earlier parts and who did them.
+
+The kiosk's technician list (`kioskMenu`, `techniciansFor` in kiosk.ts) is the
+technicians on shift with the services each one does; the screen narrows it to
+the chosen services and `kioskCheckIn` refuses anyone outside it.
+
 ## How the pieces talk to each other
 
 ```

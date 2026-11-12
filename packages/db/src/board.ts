@@ -19,7 +19,10 @@ import {
 import type { Db } from './server';
 import { locationStatus, type TechnicianState } from './status';
 
-export type LedgerKind = 'visit' | 'deny' | 'excuse' | 'late' | 'out_over' | 'manual';
+/** 'deny_excused' (v0.15.0) is not a ledger row: a deny for a reason the
+ *  rules excuse on their own. It posts nothing; it is listed so the card says why. */
+export type LedgerKind =
+  'visit' | 'deny' | 'deny_excused' | 'excuse' | 'late' | 'out_over' | 'manual';
 
 export type LedgerLine = {
   delta: number;
@@ -77,7 +80,7 @@ export async function techBoard(db: Db, locationId: string, now = new Date()): P
   const shiftIds = onShift.map((r) => r.shiftId).filter((s): s is string => !!s);
   const bufferMs = rules.eligibility.upcoming_appointment_buffer_min * 60_000;
 
-  const [ledger, upcoming, open, current] = await Promise.all([
+  const [ledger, upcoming, open, current, saidNo] = await Promise.all([
     shiftIds.length
       ? db
           .select({
@@ -120,6 +123,21 @@ export async function techBoard(db: Db, locationId: string, now = new Date()): P
           eq(visits.locationId, locationId),
           eq(visits.status, 'in_service'),
           inArray(visits.assignedTechnicianId, ids),
+        ),
+      ),
+    // v0.15.0: denies the rules excused on their own (no ledger row).
+    db
+      .select({
+        technicianId: turnCalls.technicianId,
+        reason: turnCalls.denyReason,
+        at: turnCalls.respondedAt,
+      })
+      .from(turnCalls)
+      .where(
+        and(
+          eq(turnCalls.locationId, locationId),
+          eq(turnCalls.autoExcused, true),
+          inArray(turnCalls.technicianId, ids),
         ),
       ),
   ]);
@@ -174,16 +192,34 @@ export async function techBoard(db: Db, locationId: string, now = new Date()): P
       heldForAppointment:
         (next.get(r.technicianId)?.getTime() ?? Infinity) <= now.getTime() + bufferMs,
       currentServices: namesOf(chairVisit.get(r.technicianId)),
-      lines: ledger
-        .filter((l) => l.shiftId === r.shiftId)
-        .map((l) => ({
-          delta: Number(l.delta),
-          kind: l.kind as LedgerKind,
-          services: namesOf(l.visitId),
-          source: l.kind === 'visit' ? (l.source ?? null) : null,
-          note: l.note,
-          at: l.at,
-        })),
+      lines: [
+        ...ledger
+          .filter((l) => l.shiftId === r.shiftId)
+          .map((l): LedgerLine => ({
+            delta: Number(l.delta),
+            kind: l.kind as LedgerKind,
+            services: namesOf(l.visitId),
+            source: l.kind === 'visit' ? (l.source ?? null) : null,
+            note: l.note,
+            at: l.at,
+          })),
+        // Since this shift's check-in only: yesterday's are not today's story.
+        ...saidNo
+          .filter(
+            (d) =>
+              d.technicianId === r.technicianId &&
+              !!d.at &&
+              (!r.checkedInAt || d.at.getTime() >= r.checkedInAt.getTime()),
+          )
+          .map((d): LedgerLine => ({
+            delta: 0,
+            kind: 'deny_excused',
+            services: [],
+            source: null,
+            note: d.reason,
+            at: d.at!,
+          })),
+      ].sort((x, y) => x.at.getTime() - y.at.getTime()),
     };
   });
 }

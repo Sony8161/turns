@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
-import { kioskFromForm } from './form';
+import { techniciansFor } from '@turn/db/kiosk';
+import { kioskFromForm, techsFor, type KioskTech } from './form';
 
 const A = '11111111-1111-4111-8111-111111111111';
 const B = '22222222-2222-4222-8222-222222222222';
@@ -118,5 +119,29 @@ describe('kiosk form', () => {
       ]),
     );
     expect(blank.ok && blank.note).toBe(null);
+  });
+});
+
+// v0.15.0: the technician step lists only who does every chosen service.
+describe('kiosk technician list', () => {
+  const techs: KioskTech[] = [
+    { id: 'gel', name: 'Linh', serviceIds: [A, B] },
+    { id: 'reg', name: 'Vân', serviceIds: [A] },
+    { id: 'all', name: 'Hoa', serviceIds: null },
+  ];
+  const names = (ids: string[]) => techsFor(techs, ids).map((t) => t.name);
+
+  it('narrows to the chosen services; nobody until a service is chosen', () => {
+    expect(names([])).toEqual([]);
+    expect(names([A])).toEqual(['Linh', 'Vân', 'Hoa']);
+    expect(names([B])).toEqual(['Linh', 'Hoa']);
+    expect(names([A, B])).toEqual(['Linh', 'Hoa']);
+    expect(names(['33333333-3333-4333-8333-333333333333'])).toEqual(['Hoa']);
+  });
+
+  it('is the same rule the check-in enforces on the server', () => {
+    for (const ids of [[], [A], [B], [A, B]]) {
+      expect(techsFor(techs, ids)).toEqual(techniciansFor(techs, ids));
+    }
   });
 });
