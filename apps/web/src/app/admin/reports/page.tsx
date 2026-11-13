@@ -8,19 +8,25 @@ import {
   OVERRIDE_ACTIONS,
   overrideSummary,
   parseDate,
+  previousDate,
   signed,
 } from '@turn/db/reports';
+import { appointmentsBetween } from '@turn/db/appointments';
+import { todayCounts } from '@turn/db/engine';
+import { feedSummary, FEED_STALE_MIN } from '@turn/db/feeds';
+import Link from 'next/link';
 import { locations } from '@turn/db';
 import { fixesByOriginalTech } from '@turn/db/fixes';
 import { eq } from 'drizzle-orm';
 import { redirect } from 'next/navigation';
 import { AdminNav } from '@/components/AdminNav';
 import { SectionTabs } from '@/components/SectionTabs';
-import { Button } from '@/components/ui';
+import { Button, LinkButton } from '@/components/ui';
 import { fill } from '@/i18n/dictionary';
 import { getDictionary } from '@/i18n/lang';
 import { membershipWith, requireActor } from '@/lib/auth';
 import { db } from '@/lib/db';
+import { can } from '@/lib/permissions';
 
 function addDays(date: string, days: number): string {
   const d = new Date(`${date}T12:00:00Z`);
@@ -73,6 +79,22 @@ export default async function ReportsPage({
     // v0.17.0: the fairness table, the 7 days up to this one.
     fairnessReport(db(), m.locationId, fairRange.from, fairRange.to),
   ]);
+  // v0.18.0 (B15): the board's old "today" lines live here now.
+  const now = new Date();
+  const [counts, calendar, upcoming, lastDay] = await Promise.all([
+    todayCounts(db(), m.locationId),
+    feedSummary(db(), m.locationId, now),
+    appointmentsBetween(
+      db(),
+      m.locationId,
+      new Date(now.getTime() - 30 * 60_000),
+      new Date(now.getTime() + 4 * 3_600_000),
+    ),
+    can(m.role, 'manage_rules')
+      ? ensureDailySummary(db(), m.locationId, previousDate(today), now)
+      : Promise.resolve(null),
+  ]);
+  const nextAppointments = upcoming.filter((a) => !a.arrivedAt && !a.cancelledAt).slice(0, 4);
   const fr = t.reports.fairness;
   const skipWhy = fr.skipWhy as Record<string, string>;
   const clock = new Intl.DateTimeFormat(lang === 'vi' ? 'vi-VN' : 'en-US', {
@@ -98,6 +120,79 @@ export default async function ReportsPage({
           { href: '/admin/log', label: t.nav.history },
         ]}
       />
+      {/* v0.18.0 (B15): what used to sit on the board: today's counts,
+          yesterday's line and the calendar box. */}
+      <section
+        aria-labelledby="today-h"
+        className="flex flex-col gap-2 border-l-[12px] border-navy bg-board p-4"
+      >
+        <h2 id="today-h" className="text-lead font-semibold">
+          {t.floor.todayTitle}
+        </h2>
+        <p>{fill(t.admin.today, counts)}</p>
+        {lastDay ? (
+          <p>
+            {fill(t.admin.yesterday, {
+              date: lastDay.date,
+              visits: lastDay.visits,
+              denies: lastDay.denies,
+              overrides: lastDay.overrides,
+            })}{' '}
+            {closedCount(lastDay) > 0
+              ? `${fill(t.admin.yesterdayClosed, { n: closedCount(lastDay) })} `
+              : ''}
+            <Link
+              href={`/admin/reports?date=${lastDay.date}`}
+              className="inline-flex min-h-11 items-center font-semibold underline"
+            >
+              {t.admin.seeReport}
+            </Link>
+          </p>
+        ) : null}
+        {calendar && (calendar.feeds > 0 || nextAppointments.length > 0) ? (
+          <div className="flex flex-col gap-1 border-t-2 border-pumice pt-2">
+            {calendar.feeds > 0 ? (
+              <p className="text-slate/80">
+                {calendar.lastSyncedAt
+                  ? fill(t.appointments.lastSynced, { time: clock.format(calendar.lastSyncedAt) })
+                  : t.appointments.neverSynced}
+              </p>
+            ) : null}
+            {calendar.failing.map((x) => (
+              <p key={x.technicianName} className="font-semibold text-polish">
+                {fill(t.appointments.failing, {
+                  name: x.technicianName,
+                  error: t.appointments.feedErrors[x.error] ?? x.error,
+                })}
+              </p>
+            ))}
+            {calendar.stale.length ? (
+              <p className="font-semibold text-polish">
+                {fill(t.appointments.stale, {
+                  minutes: FEED_STALE_MIN,
+                  names: calendar.stale.join(', '),
+                })}
+              </p>
+            ) : null}
+            {nextAppointments.length ? (
+              <p className="text-slate/80">
+                <span className="font-medium">{t.appointments.upcomingOnBoard}: </span>
+                {nextAppointments
+                  .map((a) =>
+                    fill(t.appointments.upcomingLine, {
+                      time: clock.format(a.startAt),
+                      name: a.technicianName,
+                    }),
+                  )
+                  .join(' · ')}
+              </p>
+            ) : null}
+            <LinkButton href="/admin/appointments" tone="quiet">
+              {t.appointments.open}
+            </LinkButton>
+          </div>
+        ) : null}
+      </section>
       <section className="flex flex-col gap-2">
         <h1 className="text-heading font-semibold">
           {t.reports.title}: {m.locationName}
@@ -208,6 +303,9 @@ export default async function ReportsPage({
             </p>
             {summary.closedAtDayEnd ? (
               <p>{fill(t.reports.closedLine, summary.closedAtDayEnd)}</p>
+            ) : null}
+            {summary.closedAtDayEnd?.checkouts ? (
+              <p>{fill(t.reports.checkoutsLine, { n: summary.closedAtDayEnd.checkouts })}</p>
             ) : null}
             {summary.walkedOut !== undefined ? (
               <p>
@@ -419,4 +517,18 @@ export default async function ReportsPage({
       </section>
     </main>
   );
+}
+
+/** v0.17.0: how many things the day-end close-out closed for that day. */
+function closedCount(s: {
+  closedAtDayEnd?: {
+    visits: number;
+    autoFinished: number;
+    calls: number;
+    help: number;
+    checkouts?: number;
+  };
+}): number {
+  const c = s.closedAtDayEnd;
+  return c ? c.visits + c.autoFinished + c.calls + c.help + (c.checkouts ?? 0) : 0;
 }

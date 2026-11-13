@@ -26,6 +26,9 @@
   --text-points: 112px;
 
   --radius-control: 8px;
+
+  /* v0.18.0: the board's two panes from an iPad in landscape up (1100 px). */
+  --breakpoint-wide: 68.75rem;
 }
 
 :root {

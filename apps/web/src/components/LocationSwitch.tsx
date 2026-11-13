@@ -16,7 +16,7 @@ export async function LocationSwitch({ t }: { t: Dictionary['nav'] }) {
         aria-label={`${t.location}: ${here!.name}`}
         className="flex min-h-11 cursor-pointer list-none items-center rounded-control border-2 border-slate/30 px-3 text-small font-semibold"
       >
-        {here!.name}
+        {t.location}
       </summary>
       <div className="absolute right-0 z-20 mt-1 flex min-w-48 flex-col gap-1 rounded-control border-2 border-slate/30 bg-board p-2">
         {others.map((p) => (

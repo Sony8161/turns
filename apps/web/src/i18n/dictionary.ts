@@ -1048,6 +1048,8 @@ const en = {
       'Left without service: {walkedOut}. Left after the call: {clientLeft}. No-shows: {noShows}. None of these count against a technician.',
     closedLine:
       'Closed at day end: still waiting or called {visits} (no points), finished automatically {autoFinished} (points kept), calls {calls} (no penalty), help requests {help}, check-outs {shifts}.',
+    // v0.18.0 (F1)
+    checkoutsLine: 'Finished but not checked out at day end: {n}.',
     fairness: {
       title: 'Fairness, {from} to {to}',
       lead: 'One row per technician over 7 days, counts only. "No for free" is a no the rules do not charge for (a break, personal). Open the details for the rest.',
@@ -2761,6 +2763,7 @@ const vi: Dictionary = {
       '{walkedOut} khách về khi chưa làm, {clientLeft} khách về sau khi gọi, {noShows} khách không đến. Không tính cho thợ nào.',
     closedLine:
       'Đóng cuối ngày: {visits} khách còn chờ hoặc đã gọi (không tính điểm), {autoFinished} bấm xong tự động (giữ điểm), {calls} lượt gọi (không phạt), {help} yêu cầu giúp, {shifts} lượt check-out.',
+    checkoutsLine: 'Làm xong nhưng chưa check out lúc cuối ngày: {n}.',
     fairness: {
       title: 'Công bằng, {from} đến {to}',
       lead: 'Mỗi thợ một hàng trong 7 ngày, chỉ có số đếm. "Từ chối miễn điểm" là lần từ chối luật không tính (nghỉ, việc riêng). Mở chi tiết để xem thêm.',

@@ -5,7 +5,7 @@
 // is titled by the person, has one main button and one "More". "Call next"
 // at the top calls for the first client who can be called by turn; after a
 // call the row says who and, under it, who was passed over and why.
-import { useActionState, type ReactNode } from 'react';
+import { useActionState, useId, useState, type ReactNode } from 'react';
 import { Button } from '@/components/ui';
 import { fill } from '@/i18n/dictionary';
 import { AcceptFor, DenyFor, FinishFor } from '../ActForTech';
@@ -189,6 +189,8 @@ function Row({
   const w = useWords();
   const f = w.floor;
   const d = w.desk;
+  const [moreOpen, setMoreOpen] = useState(false);
+  const moreId = useId();
   const chips = visitChips(v, d.chips);
   const notHere = notHereAction(v);
   const plain =
@@ -389,7 +391,21 @@ function Row({
             </span>
           ) : null}
         </span>
-        {main ? <span className="ml-auto flex flex-col items-end">{main}</span> : null}
+        <span className="ml-auto flex flex-wrap items-start justify-end gap-2">
+          {main}
+          {showMore ? (
+            <Button
+              type="button"
+              tone="quiet"
+              aria-expanded={moreOpen}
+              aria-controls={moreId}
+              aria-label={fill(f.moreFor, { who: v.who })}
+              onClick={() => setMoreOpen((o) => !o)}
+            >
+              {f.more}
+            </Button>
+          ) : null}
+        </span>
       </div>
 
       {lastCall?.error ? (
@@ -421,11 +437,8 @@ function Row({
         </details>
       ) : null}
 
-      {showMore ? (
-        <details className="text-small">
-          <summary className="flex min-h-11 w-fit cursor-pointer items-center rounded-control border-2 border-slate/30 px-4 font-semibold">
-            {f.more}
-          </summary>
+      {showMore && moreOpen ? (
+        <div id={moreId} className="border-t-2 border-dashed border-pumice text-small">
           <div className="flex max-w-[44ch] flex-col gap-3 py-2">
             {plain && !first ? (
               <form action={call} className="flex flex-col gap-1">
@@ -503,7 +516,7 @@ function Row({
               </div>
             ) : null}
           </div>
-        </details>
+        </div>
       ) : null}
     </li>
   );

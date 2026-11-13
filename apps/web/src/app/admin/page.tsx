@@ -484,7 +484,7 @@ export default async function AdminPage() {
   }));
 
   return (
-    <main className="mx-auto flex w-full max-w-[1500px] flex-1 flex-col gap-3 px-4 py-3 min-[1100px]:h-dvh min-[1100px]:overflow-hidden">
+    <main className="mx-auto flex w-full max-w-[1500px] flex-1 flex-col gap-3 px-4 py-3 wide:h-dvh wide:max-h-dvh wide:overflow-hidden">
       <AutoRefresh seconds={5} />
       <AdminNav current="board" badge={needs.length} />
       <Floor

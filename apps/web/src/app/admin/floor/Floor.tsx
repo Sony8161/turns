@@ -58,7 +58,7 @@ export function Floor(p: FloorProps) {
     .map((r) => ({ id: r.id, title: r.title }));
   return (
     <FloorWords value={p.words}>
-      <div className="flex flex-col gap-3 min-[1100px]:min-h-0 min-[1100px]:flex-1">
+      <div className="flex flex-col gap-3 wide:min-h-0 wide:flex-1">
         <NeedsYou
           items={p.needs}
           waitLine={p.waitLine}
@@ -84,8 +84,8 @@ export function Floor(p: FloorProps) {
             </Button>
           ) : null}
         </div>
-        <div className="grid gap-3 min-[1100px]:min-h-0 min-[1100px]:flex-1 min-[1100px]:grid-cols-[minmax(0,5fr)_minmax(0,7fr)] min-[1100px]:grid-rows-1">
-          <div className="flex min-h-0 flex-col min-[1100px]:col-start-2 min-[1100px]:row-start-1">
+        <div className="grid gap-3 wide:min-h-0 wide:flex-1 wide:grid-cols-[minmax(0,5fr)_minmax(0,7fr)] wide:grid-rows-1">
+          <div className="flex min-h-0 flex-col wide:col-start-2 wide:row-start-1">
             <ClientsPane
               rows={p.rows}
               checkout={p.checkout}
@@ -98,7 +98,7 @@ export function Floor(p: FloorProps) {
               calling={calling}
             />
           </div>
-          <div className="flex min-h-0 flex-col min-[1100px]:col-start-1 min-[1100px]:row-start-1">
+          <div className="flex min-h-0 flex-col wide:col-start-1 wide:row-start-1">
             <TeamPane team={p.team} onOpen={setDrawer} />
           </div>
         </div>

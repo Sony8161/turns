@@ -30,7 +30,10 @@ export async function AdminNav({ current, badge }: { current: Page; badge?: numb
         {m ? <span className="text-small text-slate/70">{t.roles[m.role]}</span> : null}
       </div>
       {tabs.length ? (
-        <nav aria-label="Admin" className="flex flex-wrap items-center gap-1">
+        <nav
+          aria-label="Admin"
+          className="order-last grid w-full grid-cols-4 gap-1 sm:order-none sm:flex sm:w-auto sm:items-center"
+        >
           {tabs.map((tab) => (
             <Link
               key={tab}
@@ -41,7 +44,7 @@ export async function AdminNav({ current, badge }: { current: Page; badge?: numb
                   ? `${t.nav.board}, ${fill(t.nav.boardBadge, { n: count })}`
                   : undefined
               }
-              className={`inline-flex min-h-11 items-center gap-2 rounded-control px-4 font-semibold ${
+              className={`inline-flex min-h-11 items-center justify-center gap-1.5 rounded-control px-2 font-semibold sm:px-4 ${
                 tab === active ? 'bg-navy text-board' : 'text-slate hover:bg-board'
               }`}
             >

@@ -61,7 +61,7 @@ export function NeedsYou({
         </span>
       </div>
       {items.length ? (
-        <ul className="grid max-h-[32vh] gap-2 overflow-y-auto sm:grid-cols-2 min-[1100px]:max-h-44 min-[1100px]:grid-cols-3">
+        <ul className="grid max-h-[32vh] gap-2 overflow-y-auto md:grid-cols-2 wide:max-h-[9.5rem]">
           {items.map((i) => (
             <li
               key={i.key}
