@@ -12,6 +12,7 @@ import {
   calendarFeeds,
   helpRequests,
   serviceCategories,
+  technicianStatus,
   services,
   turnCalls,
   turnLedger,
@@ -310,9 +311,10 @@ export async function plainQueue(
  * v0.18.0: the number on the Board tab, on every admin page: what waits for
  * someone at the desk. Kiosk check-ins to confirm, fixes to approve (owners
  * and managers), a technician's "client left", help requests, calls nobody
- * answered, calendar links to approve (owners and managers). The board's own
- * strip also counts a busy requested tech past the wait and a failing sync.
- * Counts only.
+ * answered, a busy requested or booked tech past the rules' wait (her status
+ * or an open call or visit; the board's strip asks the full queue), calendar
+ * links to approve (owners and managers). A group from the kiosk is one. The
+ * board's own strip also counts a failing calendar sync. Counts only.
  */
 export async function needsYouCount(
   db: Db,
@@ -322,9 +324,19 @@ export async function needsYouCount(
 ): Promise<number> {
   const rules = await activeRules(db, locationId);
   const unansweredBefore = new Date(now.getTime() - rules.attention.unanswered_call_min * 60_000);
+  const waitBefore = new Date(now.getTime() - rules.attention.request_wait_min * 60_000);
+  const bypass = rules.requests.requested_tech_bypasses_queue;
   const [row] = await db.execute<{ n: number }>(sql`
     select
-      (select count(*) from ${visits} v where v.location_id = ${locationId} and v.status = 'waiting' and v.needs_confirm)
+      (select count(distinct coalesce(v.party_id, v.id)) from ${visits} v where v.location_id = ${locationId} and v.status = 'waiting' and v.needs_confirm)
+      + (select count(*) from ${visits} v
+           join ${technicianStatus} s on s.technician_id = v.requested_technician_id
+           where v.location_id = ${locationId} and v.status = 'waiting' and not v.needs_confirm
+             and (v.source = 'appointment' or ${bypass}::boolean)
+             and coalesce(v.request_ack_at, v.arrived_at) <= ${waitBefore.toISOString()}::timestamptz
+             and (s.status <> 'available'
+                  or exists (select 1 from ${turnCalls} c2 where c2.technician_id = v.requested_technician_id and c2.responded_at is null)
+                  or exists (select 1 from ${visits} o where o.assigned_technician_id = v.requested_technician_id and o.status in ('called', 'in_service'))))
       + (case when ${approver}::boolean then (select count(*) from ${visits} v where v.location_id = ${locationId} and v.status = 'waiting' and v.needs_approval) else 0 end)
       + (select count(*) from ${helpRequests} h where h.location_id = ${locationId} and h.acknowledged_at is null)
       + (select count(*) from ${turnCalls} c where c.location_id = ${locationId} and c.responded_at is null

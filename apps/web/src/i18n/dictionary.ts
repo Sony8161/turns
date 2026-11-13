@@ -1094,6 +1094,8 @@ const en = {
     notAllowed: 'Only the owner and managers can open reports.',
     date: 'Day',
     show: 'Show',
+    // v0.18.0: one tap to yesterday's report.
+    yesterdayButton: 'Yesterday',
     exportCsv: 'Download CSV',
     noShifts: 'No one checked in that day.',
     daily: 'Daily turn report',
@@ -2809,6 +2811,7 @@ const vi: Dictionary = {
     notAllowed: 'Chỉ chủ tiệm và quản lý mới mở được báo cáo.',
     date: 'Ngày',
     show: 'Xem',
+    yesterdayButton: 'Hôm qua',
     exportCsv: 'Tải CSV',
     noShifts: 'Hôm đó không ai vào ca.',
     daily: 'Báo cáo lượt trong ngày',

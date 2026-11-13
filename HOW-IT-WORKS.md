@@ -149,7 +149,7 @@ and Check out wait for the call. This is what Phu sees on Dec 4.
   60-minute tier stays unset until Phu decides). A shift left open from an
   earlier day is checked out when the board loads, unless the technician is in
   service or has an open call.
-- **Overrides** (owner and manager, the Overrides tab): move an open visit to
+- **Overrides** (owner and manager; since v0.18.0 in each tech's drawer on the board): move an open visit to
   another technician, with "count it as a deny" and "override skills,
   restrictions and the appointment buffer" switches (status is never
   overridden: a technician on break stays on break); excuse any of today's
@@ -469,6 +469,64 @@ Release 2 of `../17-Next-Build-Plan.md`: the review of v0.11.0 to v0.16.1.
   its check, and the indexes `visits_location_arrived`,
   `visits_assigned_open` (partial: called or in service) and
   `turn_calls_location_called`.
+
+### Simplify the desk (v0.18.0)
+
+The desk and owner board redesigned from the problems seen on the real
+screens (`../18-UX-Ideas-and-API.md`, B1 to B18, C1 to C4, F1). No engine
+rule changed; the screens send the same server functions.
+
+- **The board** (`apps/web/src/app/admin/page.tsx`, `floor/`): the page
+  gathers everything on the server and works out the words in
+  `floor/model.ts` (pure, tested): status words (`floorStatus`), labelled
+  times (`timeText`), the Next line (`nextLine`), row titles (`rowTitle`),
+  which action "Client isn't here" sends (`notHereAction`), the first client
+  "Call next" acts on (`firstCallable`), the walk-in tiles (`tileGroup`,
+  `groupTiles`, `categoryLabel`) and the Pick someone labels
+  (`pickOptions`). `floor/Floor.tsx` lays it out: `NeedsYou`, the Next
+  banner, `TeamPane`, `ClientsPane`, and three modal `<dialog>`s
+  (`TechDrawer`, `PickSheet`, `WalkInSheet`) that keep focus inside and close
+  with Escape. Two panes from 1100 px wide (`--breakpoint-wide`), stacked
+  below it.
+- **Reads added to the database package**: `board.plainQueue` (the engine's
+  `queueFor` with no visit, so the banner names exactly who `callNext` would
+  pick for a plain walk-in, and why the others cannot be called),
+  `engine.pickQueues` (each waiting visit's whole queue, for Pick someone),
+  `board.needsYouCount` (the Board tab's number on every page; a group from
+  the kiosk counts once). `techBoard` now also returns `since` and
+  `calledAt`.
+- **Pick someone** maps each tech to the existing write: the first eligible
+  → `callNext`; a tech held out only by the level rule while nobody gets it
+  by turn → `deskCall('offer')`; a desk-pick service → `deskCall('desk_pick')`;
+  owners and managers sending a free tech out of turn → `reassignVisit` with
+  a reason. Each one checks again on the server.
+- **Client isn't here** (`notHereFor`): a waiting visit → `leftWithoutService`;
+  a called visit → `clientLeft`; an unconfirmed kiosk check-in →
+  `reviewKioskVisit('decline')`. A booked client after the start is
+  `markNoShow` on Appointments, now worded the same.
+- **To check out** (`packages/db/src/checkout.ts`): `toCheckOut` lists today's
+  finished visits with `checked_out_at` null, one row per client (split parts
+  and same-time services share a key, `checkoutKeys`), only once no part is
+  still open; `checkOutVisit` sets `checked_out_at` and `checked_out_by` on
+  every part (`enter_walkins`; same location and organisation; audit
+  `visit_checked_out` with a count only). `locations.checkout_list` [on]
+  turns it off (`setCheckoutList`, owner, audited). The day-end close-out
+  clears an earlier day's (`checkout_closed_day_end`, counted in
+  `closedAtDayEnd.checkouts`) and marks a visit it auto-finishes as checked
+  out. Migration 0030 adds the columns, the partial index
+  `visits_to_check_out (location_id, completed_at) where completed and not
+checked out`, and a check that only a completed visit is checked out.
+- **Nav** (`components/AdminNav.tsx`, `nav-model.ts`): four tabs; `More`
+  (`/admin/more`) lists `moreItemsFor(role)`. `SectionTabs` joins Reports and
+  the Log, Rules and Levels by turn. `/admin/manage` redirects to the board.
+- **Receptionists see client phones** (Duong, 2026-11-13):
+  `see_client_phone` now includes receptionists behind a third owner switch,
+  `locations.receptionist_sees_client_phone` [on] (`allowedAt`). With the
+  switch on, search lists and client pages show the number to the desk;
+  off, v0.17.1's masking and the counted Show return. Technicians: none.
+- **Two-letter names**: `parseClientQuery` accepts one two-letter word as
+  `{ name, exact: true }`; `clientNameMatch` then matches a whole word of
+  `search_name` only (clients search and the fix lookup).
 
 ## How the pieces talk to each other
 

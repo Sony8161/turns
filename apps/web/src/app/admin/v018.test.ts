@@ -299,6 +299,22 @@ describe('one "Pick someone" sheet (C1, B12)', () => {
       label: 'no male clients',
       action: null,
     });
+    // The original tech with a call open: still named, greyed, not suggested.
+    const busy = pickOptions(
+      en,
+      {
+        deskPicks: true,
+        originalTechnicianId: 'Hoa',
+        queue: [q('Vân', true, 'available'), q('Hoa', false, 'already_called')],
+      },
+      { canReassign: false, clock },
+    );
+    expect(busy[1]).toMatchObject({
+      label: 'did the original work; waiting for her answer',
+      action: null,
+      suggested: false,
+    });
+    expect(busy[0]).toMatchObject({ name: 'Vân', suggested: true });
   });
 });
 

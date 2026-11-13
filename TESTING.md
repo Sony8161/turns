@@ -767,9 +767,10 @@ screen at iPad landscape (1366), iPad portrait (1024) and phone (390).
 Load the demo (`npm run up -- -Demo`). Sign in as Hạnh (0102, receptionist)
 unless a step says otherwise. iPad landscape (1366), portrait (1024), phone (390).
 
-1. **Client search.** Clients: type `ng` or `019`: "Type at least 4 digits of a
-   phone number, or 3 letters of a name." Type `0210`: Kim L., phone shown as
-   "(•••) •••-0210". A client with one visit says "1 visit".
+1. **Client search.** Clients: type `n` or `019`: "Type at least 4 digits of a
+   phone number, or 3 letters of a name…" Type `0210`: Kim L. (v0.18.0: the
+   whole number, unless the owner turned that off). A client with one visit
+   says "1 visit".
 2. **The phone on a client's page.** Open Kim L.: the phone is masked with
    **Show**. Tap it: the full number. As Phu (0100) or Vy (0101): the full
    number, no Show. As Phu: Log → "Client phone shown in full", by Hạnh, with
@@ -810,6 +811,82 @@ unless a step says otherwise. iPad landscape (1366), portrait (1024), phone (390
     indexes) and `apps/web/src/app/admin/v0171.test.ts`.
 14. **Vietnamese.** Switch to Tiếng Việt on Clients, Appointments, Rules, the
     desk and the phone: every new line has a Vietnamese string.
+
+## 8r. The new board (v0.18.0)
+
+Load the demo (`npm run up -- -Demo`). Sign in as Phu (0100, owner) unless a
+step says otherwise. iPad landscape (1366 x 1024) first, then portrait (1024)
+and a phone (390). Screenshots of each step: `..\demo\simplify\desk\`.
+
+1. **One screen.** /admin at 1366 x 1024: the page does not scroll. Top to
+   bottom: the header (Heavenly Nails main, Board with a red number, Appointments,
+   Clients, More, Location, Tiếng Việt), **Needs you**, the **Next: Vân**
+   banner with **+ Walk-in**, then **Team** (left) and **Waiting** (right).
+   Each pane scrolls on its own. Portrait and phone: Needs you, Next,
+   Waiting, Team, one under the other.
+2. **Needs you (7 for Phu).** Bích and Quynh T. (kiosk: **Confirm** / **Confirm
+   all 3**, **Client isn't here**), **Fix / repair: Trang H.** (**Approve fix**,
+   **Decline fix**), **Linh says the client left.** (**Yes, the client left**,
+   **The client is here**), **Mai needs help** (**On my way**), **Waiting … for
+   Hoa** (**Keep waiting**, **Send by turn**), **Calendar links to approve: Vân**
+   (**Open**). The strip shows two rows and scrolls. The Board tab says 7 on
+   every admin page. As Hạnh (0102): 5 (no fix approval, no calendar link).
+3. **Next.** "Next: Vân. A plain walk-in goes to her." Team rows: 1 Thảo
+   **Held for appointment**, "appt (time)", dimmed; 2 Linh **Called**; 3 Tâm
+   **Break**; 4 Vân **Available**, highlighted; 5 Hoa **With client**; 6 Mai
+   **Available**. Points small on the right (0, 00, ½, 1, 1½, 2).
+4. **Tech drawer.** Tap Thảo: a drawer from the right with "Place 1 · 0 points",
+   "Level: Dip", "Does not do: Nail art / design", Limits "no men", "Held for
+   her (time) appointment", the "Free no today: 3" badge (Phu and Vy only),
+   **Why this order?** with her lines, and **More for Thảo**: Change status or
+   points, Adjust points, Excuse a penalty, Send a client to her. Escape
+   closes it; Tab stays inside it. As Hạnh: no Adjust, Excuse or Send (as the
+   old Overrides page); Change status or points is there while the owner's
+   switch is on.
+5. **Walk-in.** **+ Walk-in**: tiles under Hands, Feet, Enhancements, Add-ons,
+   the most used first. Tap **Gel manicure**, then **Add**: the sheet closes
+   and a "Walk-in · Gel manicure · just now" row is at the bottom of Waiting.
+   That is three taps. "Add details (optional)" holds the name, phone, woman
+   or man, kid and age, requested tech, request note and same time. **A
+   group** and **Nail fix** are at the top (the fix shows the lookup when you
+   tap a fix tile). No `full_set` anywhere; Rules says "Full set".
+6. **Pick someone.** On Minh T.: **Pick someone**: Thảo "no male clients",
+   Linh "waiting for her answer", Tâm "on break", **Vân Suggested next by
+   turn** with **Call Vân**, Hoa "with a client", Mai "higher level; Vân is
+   free by turn". On Hanh B. (nail art, the desk picks): Vân and Mai with
+   **Pick**, the others greyed with why. On Trang H. after approving: Linh
+   reads "did the original work; waiting for her answer" (she has a call), so
+   the first free tech is suggested; once Linh is free she is the suggested one.
+7. **Call next.** **Call next** at the top of Waiting: Ngoc V.'s row says
+   "Called Vân · just now", **Accept for Vân**, and "Why not Thảo, Linh, Tâm?"
+   opens to the reasons. The banner now says "Next: Mai".
+8. **More on a row.** **More** on An D.: **Call out of turn**, **Add a
+   request**, "They left before anyone was called…" with **Client isn't
+   here**. On a called row: Deny for her, Client isn't here (client left), the
+   request. On a kiosk row the two buttons stay in view.
+9. **To check out.** Under Waiting, **To check out (2)**: "Walk-in, Dip powder
+   by Mai, finished (time)" and "Walk-in, Gel fill by Linh". **Checked out**
+   removes one; Log "Checked out" with no name. **Being served (1)** has Hoa's
+   client with **Finish for Hoa**. Rules → Advanced: "Show a "To check out"
+   list on the board": untick and Save: the group is gone. Tick it again.
+10. **More tab.** As Phu: Reports and history, Team, Services and rules,
+    Devices, then Language and Sign out. As Vy: Levels by turn instead of
+    Services and rules. As Hạnh: language and sign out only. Reports has the
+    **Today** block (today's counts, yesterday's line with See the report, the
+    calendar box) and a **Yesterday** button; History is the log. /admin/manage
+    opens the board.
+11. **Location.** Phu works at two locations: **Location** opens a small list
+    with "Heavenly Nails second". Hạnh has one: no control.
+12. **Client phones.** As Hạnh: Clients → `0210`: Kim L. with the whole number;
+    her page shows it whole, no Show. As Phu: Team → Advanced, untick
+    "Receptionists see full client phone numbers", Save: Hạnh sees
+    "(•••) •••-0210" and Show again (v0.17.1). Tick it again.
+13. **Two-letter names.** Clients → `vo` or `Lê`: whole first or last names
+    only; `v` says type more.
+14. **Vietnamese.** Tiếng Việt on the board, the sheets, the drawer and More:
+    every new string is Vietnamese ("Kế tiếp: Vân", "Khách không có ở đây").
+15. **Automated:** `packages/db/test/v018.test.ts` and
+    `apps/web/src/app/admin/v018.test.ts`.
 
 ## 9. If something is off
 

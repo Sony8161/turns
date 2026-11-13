@@ -2,6 +2,113 @@
 
 One version per delivered part. Tags point at the commits.
 
+## v0.18.0, 2026-11-13: Simplify the desk
+
+Duong: "make the system easy to use for everyone and simplify as much as we
+can", then, looking at the problems found on the real screens, "let's fix the
+problems". This release does the desk and the owner board (B1 to B18, C1 to
+C4 and F1 of `18-UX-Ideas-and-API.md`); the tech phone, kiosk and rules page
+are the next release. No engine rule changed: every button sends the same
+server function as before, with the same permission checks. Nothing was
+removed; Overrides, the tech cards and the always-open walk-in form were
+folded into the board.
+
+- **One screen (B1, B10, B15).** On an iPad in landscape the board no longer
+  scrolls: "Needs you" on top, the Next banner, then two panes, **Team** on
+  the left and **Clients** on the right, each scrolling on its own. Portrait
+  and phone stack the same blocks: Needs you, Next, Clients, Team. Before:
+  6,367 px tall at 1366 wide, "next up" 5,477 px down. After: 1,024 px.
+- **Needs you.** Every alert in one strip with its own one or two buttons:
+  kiosk check-ins to confirm (Confirm / Client isn't here), fixes to approve,
+  "Linh says the client left", Need help, calls nobody answered, a busy
+  requested or booked tech past the wait, calendar links to approve, a failing
+  calendar sync. The long-wait notice switch and the wait estimate end the
+  strip. Nothing waiting: one quiet line. The **Board tab shows the count** on
+  every admin page.
+- **Who is next (B2, B3, B4).** A banner: "Next: Vân" (the tech a plain
+  walk-in goes to now, from the engine's own queue), or "Nobody can be called
+  now: 3 with a client, 1 on break". Tech rows: place, name, a status chip
+  with an icon and words, points small (0, 00, ½ as before) and a labelled
+  time ("free 64 min", "called just now", "with client 12 min", "on break 5
+  min", "appt 2:30 PM"). One set of words everywhere: Available, Held for
+  appointment, Called, With client, Break, Out. A tech held for her
+  appointment never reads "available". Rows a plain call cannot go to are
+  dimmed.
+- **Tech drawer (B5, B6, C4).** Tap a tech row: her level and only what
+  differs from it ("Also does", "Does not do"), her limits, her next
+  appointment, "Why this order?", and what you may do: Accept or Finish for
+  her, and under "More for her": Deny for her, Change status or points (her
+  page), Adjust points, Excuse a penalty, Send a client to her (reassign, with
+  the old options). This replaces the tech cards and the Overrides page;
+  `/admin/manage` now opens the board.
+- **Walk-in: "+ Walk-in", a tile, Add (B7, B8, B18).** "+ Walk-in" opens a
+  sheet of big service tiles in groups, Hands, Feet, Enhancements, Add-ons,
+  most used first (visits in the last 30 days). Tap one or more, tap **Add**.
+  Name, phone, woman or man, kid and age, requested tech, request note and
+  same-time are under "Add details". "A group" and "Nail fix" are choices at
+  the top and keep their flows. Category codes (`full_set`) are never shown:
+  the walk-in sheet, the Rules page and a tech's skills say "Full set". The
+  word "engine" is gone from every screen. Every action is a button, 44 px
+  or taller.
+- **Client rows (B9, B11, B12, C1, C2, C3).** Titled by the person: "Thu P. ·
+  Gel manicure · 13 min" ("Walk-in" with no name). One main button and one
+  **More** per row; "Add a request" and the less common actions are in More.
+  One big **Call next** at the top of Waiting calls for the first client who
+  can be called by turn; "Call out of turn" is in each other row's More.
+  After a call the row reads "Called Vân · just now" with "Why not Thảo,
+  Linh?" under it. **Pick someone** is one sheet for "Ask a higher-level
+  tech", "Pick a tech" (nail art, fixes) and sending a named tech: everyone
+  able, in turn order, labelled "next by turn", "higher level, can say no",
+  "with a client", "held for 2:30 PM appt", the suggested one marked, the rest
+  greyed with the reason. Owners and managers can send a free tech out of
+  turn with a reason (the old reassign). **Client isn't here** is one wording:
+  waiting means left without service, called means client left, an
+  unconfirmed kiosk check-in means not here, a booked client after the start
+  (Appointments) means no-show. Same engine functions as before.
+- **To check out (F1, new).** A finished visit waits under "To check out"
+  (who, what was done, by whom, when it finished) until the desk taps
+  **Checked out**. A client's visit in parts is one row once every part is
+  done. Whoever enters walk-ins may use it; a technician never sees it. At
+  day end anything left is cleared by the close-out and counted in that day's
+  summary ("Finished but not checked out at day end"). The owner can turn the
+  list off (Services and rules → Advanced); on for Heavenly. No payment, no
+  prices. Migration 0030: `visits.checked_out_at`, `checked_out_by`, a
+  partial index `visits_to_check_out`, a check that only a finished visit is
+  checked out. Audit: `visit_checked_out` (counts only, no names),
+  `checkout_closed_day_end`, `checkout_list_setting`.
+- **Four tabs (B13, B14, C4).** Board, Appointments, Clients, More. More holds
+  Reports and history (Reports and the Log, as two views), Team (Staff; each
+  tech's level is on her page), Services and rules (Rules and Levels by turn),
+  Devices (the kiosks), each only for the roles that open it, plus Language,
+  Kiosk mode (on a paired iPad) and Sign out. A receptionist's More is
+  language and sign out. The header keeps a one-tap language button; the
+  location switch shows only for someone at two or more locations, as one
+  small control. Old addresses still work.
+- **Reports "Today".** Today's counts, yesterday's line with "See the report"
+  (owner) and the calendar box moved from the board to the top of Reports. A
+  **Yesterday** button next to the date.
+- **Receptionists see full client phone numbers (Duong, 2026-11-13).** On the
+  client page and in search, like owners and managers; no Show tap and no log
+  row. New owner switch on Team → Advanced, "Receptionists see full client
+  phone numbers", on by default; off brings back v0.17.1 exactly (the search
+  list masked for everyone, a receptionist's page masked with the counted,
+  logged Show). Audit `client_phone_setting`. Technicians still see nothing.
+  The shared search budget and the minimum length stay.
+- **Two-letter surnames (v0.17.1 follow-up).** A search of two letters works
+  when they are a whole first or last name, accents ignored ("Võ", "vo",
+  "Lê", "Hà"); still never a two-letter prefix, still counted against the
+  same budget.
+- **Appointments:** "No-show" reads "Client isn't here".
+- **Demo:** two finished walk-ins wait on "To check out"; the others finished
+  today are checked out. `docs/DEMO-EXPECTED.md` has a "To check out" section.
+- Tests: `packages/db/test/v018.test.ts` (the checkout list, the phone
+  switch, two-letter search, the Next banner's queue, the tab count) and
+  `apps/web/src/app/admin/v018.test.ts` (status words, labelled times, the
+  Next line, row titles, Client isn't here, Call next, tiles, category words,
+  Pick someone labels, the nav by role, no "engine"). Older tests updated
+  where the defaults changed (phone switch, two-letter search, day-end
+  counts).
+
 ## v0.17.1, 2026-11-13: Review fixes
 
 Release 2 of `17-Next-Build-Plan.md`: findings #4 to #11 of the independent

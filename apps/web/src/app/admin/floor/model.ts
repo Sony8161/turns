@@ -244,7 +244,11 @@ export function pickOptions(
               : t.label.higher!;
         return { ...base, label, why: null, action: 'desk_pick' };
       }
-      return greyed(reason(c));
+      return greyed(
+        c.technicianId === entry.originalTechnicianId
+          ? `${t.label.original!}; ${reason(c)}`
+          : reason(c),
+      );
     }
     if (c.eligible) {
       if (first && c.technicianId === first.technicianId) {

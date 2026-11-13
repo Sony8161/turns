@@ -30,7 +30,7 @@ export default async function MorePage() {
     devices: { title: t.nav.devices, lead: t.nav.devicesLead },
   };
   return (
-    <main className="mx-auto flex w-full max-w-3xl flex-1 flex-col gap-6 px-4 py-4 sm:px-8">
+    <main className="mx-auto flex w-full max-w-5xl flex-1 flex-col gap-6 px-4 py-4 sm:px-8">
       <AdminNav current="more" />
       <h1 className="text-heading font-semibold">{t.nav.moreTitle}</h1>
       {items.length ? (

@@ -211,6 +211,9 @@ export default async function ReportsPage({
           />
         </label>
         <Button type="submit">{t.reports.show}</Button>
+        <LinkButton href={`/admin/reports?date=${previousDate(today)}`} tone="quiet">
+          {t.reports.yesterdayButton}
+        </LinkButton>
       </form>
 
       <section className="flex flex-col gap-3">

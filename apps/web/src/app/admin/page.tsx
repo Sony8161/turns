@@ -487,6 +487,9 @@ export default async function AdminPage() {
     <main className="mx-auto flex w-full max-w-[1500px] flex-1 flex-col gap-3 px-4 py-3 wide:h-dvh wide:max-h-dvh wide:overflow-hidden">
       <AutoRefresh seconds={5} />
       <AdminNav current="board" badge={needs.length} />
+      <h1 className="sr-only">
+        {t.nav.board}: {membership.locationName}
+      </h1>
       <Floor
         words={{
           floor: f,
