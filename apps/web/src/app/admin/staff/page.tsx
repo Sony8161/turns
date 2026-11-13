@@ -3,6 +3,7 @@ import { serviceCategories } from '@turn/db';
 import { loadProfiles, type TechnicianProfile } from '@turn/db/profile';
 import { listStaff } from '@turn/db/staff';
 import { receptionistMayEdit } from '@turn/db/tech-settings';
+import { receptionistMayActFor } from '@turn/db/act-for';
 import Link from 'next/link';
 import { redirect } from 'next/navigation';
 import { AdminNav } from '@/components/AdminNav';
@@ -99,6 +100,7 @@ export default async function StaffPage() {
   const categoryNames = new Map(categories.map((c) => [c.id, c.name]));
   const owner = can(m.role, 'manage_rules');
   const deskEdits = owner ? await receptionistMayEdit(db(), m.locationId) : false;
+  const deskActsFor = owner ? await receptionistMayActFor(db(), m.locationId) : false;
   return (
     <main className="mx-auto flex w-full max-w-5xl flex-1 flex-col gap-8 px-4 py-6 sm:px-8">
       {header}
@@ -122,6 +124,7 @@ export default async function StaffPage() {
         </p>
       </section>
       {owner ? <ReceptionistToggle on={deskEdits} t={t.techSettings} /> : null}
+      {owner ? <ReceptionistToggle on={deskActsFor} t={t.techSettings} kind="act_for" /> : null}
       <StaffPanel
         rows={rows.map((r) => ({
           membershipId: r.membershipId,

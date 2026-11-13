@@ -4,6 +4,7 @@ import {
   addAppointment,
   appointmentArrived,
   cancelAppointment,
+  markNoShow,
   editAppointment,
   type DeskActor,
 } from '@turn/db/appointments';
@@ -104,6 +105,14 @@ async function appointmentsActionRun(
       });
       refresh();
       return r.ok ? { done: 'cancelled' } : { error: r.reason };
+    }
+    case 'no_show': {
+      // v0.17.0 (WALK-001): nobody's points change; the tech is free again.
+      const appointmentId = uuidOf(formData.get('appointmentId'));
+      if (!appointmentId) return { error: 'unknown_appointment' };
+      const r = await markNoShow(db(), { actor: me, appointmentId });
+      refresh();
+      return r.ok ? { done: 'no_show' } : { error: r.reason };
     }
     case 'arrived': {
       const appointmentId = uuidOf(formData.get('appointmentId'));

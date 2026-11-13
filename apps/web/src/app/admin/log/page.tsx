@@ -11,6 +11,7 @@ import { visitLabels } from '@turn/db/clients';
 import { eq } from 'drizzle-orm';
 import { redirect } from 'next/navigation';
 import { AdminNav } from '@/components/AdminNav';
+import { pointsWord } from '@/components/Board';
 import { Button } from '@/components/ui';
 import { fill } from '@/i18n/dictionary';
 import { LanguageToggle } from '@/i18n/LanguageToggle';
@@ -207,7 +208,7 @@ export default async function LogPage({
                                 {fill(t.log.queueLine, {
                                   n: n + 1,
                                   name: q.name,
-                                  points: q.hadAppointmentLast && q.points === 0 ? '00' : q.points,
+                                  points: pointsWord(q.points, q.hadAppointmentLast, t.board),
                                   status: status[q.status] ?? q.status,
                                 })}
                                 {q.eligible

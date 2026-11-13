@@ -234,6 +234,8 @@ export type KioskListRow = {
   name: string;
   paired: boolean;
   pairingOpen: boolean;
+  /** v0.17.0: when the waiting pairing code stops working (the screen shows it). */
+  pairingExpiresAt: Date | null;
   createdAt: Date;
   pairedAt: Date | null;
   lastSeenAt: Date | null;
@@ -266,6 +268,7 @@ export async function listKiosks(
     name: r.name,
     paired: r.tokenHash !== null,
     pairingOpen: r.revokedAt === null && !!r.pairingExpiresAt && r.pairingExpiresAt > now,
+    pairingExpiresAt: r.pairingExpiresAt,
     createdAt: r.createdAt,
     pairedAt: r.pairedAt,
     lastSeenAt: r.lastSeenAt,

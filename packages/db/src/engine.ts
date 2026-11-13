@@ -1737,6 +1737,12 @@ export async function waitingVisits(db: Db, locationId: string) {
       isFix: visits.isFix,
       fixOfVisitId: visits.fixOfVisitId,
       needsApproval: visits.needsApproval,
+      // v0.17.0: what the desk needs to act for the technician, and her
+      // "client left" waiting for the desk.
+      callId: turnCalls.id,
+      calledTechnicianId: turnCalls.technicianId,
+      assignedTechnicianId: visits.assignedTechnicianId,
+      leftClaimPending: sql<boolean>`(${turnCalls.leftClaimedAt} is not null and ${turnCalls.leftClaimOutcome} is null)`,
     })
     .from(visits)
     .leftJoin(turnCalls, and(eq(turnCalls.visitId, visits.id), isNull(turnCalls.respondedAt)))

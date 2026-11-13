@@ -16,6 +16,7 @@ import { requestHolds } from '@turn/db/requests';
 import { ensureDailySummary, localDate, previousDate } from '@turn/db/reports';
 import { activeRules } from '@turn/db/rules';
 import { mayEditTechnicians } from '@turn/db/tech-settings';
+import { mayActForTechnicians } from '@turn/db/act-for';
 import { locationStatus, sweepFloor } from '@turn/db/status';
 import Link from 'next/link';
 import { redirect } from 'next/navigation';
@@ -106,6 +107,11 @@ export default async function AdminPage() {
   });
   const nextAppointments = upcoming.filter((a) => !a.arrivedAt && !a.cancelledAt).slice(0, 4);
   const owner = !!membership && can(membership.role, 'manage_rules');
+  // v0.17.0: may this person accept, deny and finish for a technician?
+  const canActFor =
+    !!membership &&
+    can(membership.role, 'act_for_technician') &&
+    (await mayActForTechnicians(db(), membership));
   // Part 9: this browser is also paired as this location's kiosk.
   const kiosk = membership ? await currentKiosk() : null;
   const kioskHere = !!kiosk && kiosk.locationId === membership?.locationId;
@@ -172,6 +178,9 @@ export default async function AdminPage() {
                   denies: lastDay.denies,
                   overrides: lastDay.overrides,
                 })}{' '}
+                {closedCount(lastDay) > 0
+                  ? `${fill(t.admin.yesterdayClosed, { n: closedCount(lastDay) })} `
+                  : ''}
                 <Link
                   href={`/admin/reports?date=${lastDay.date}`}
                   className="font-semibold underline"
@@ -265,6 +274,10 @@ export default async function AdminPage() {
                 callKind: v.callKind ?? null,
                 slip: v.slip,
                 held: v.held,
+                callId: v.callId ?? null,
+                calledTechnicianId: v.calledTechnicianId ?? null,
+                assignedTechnicianId: v.assignedTechnicianId ?? null,
+                leftClaimPending: v.leftClaimPending === true,
                 booked: v.source === 'appointment',
                 hold: holdOf(holds.get(v.id), now, clock),
                 partyId: v.partyId,
@@ -332,6 +345,11 @@ export default async function AdminPage() {
                 (rules?.fixes.receptionist_needs_approval ?? true)
               }
               groupMax={rules?.groups.max_people ?? 8}
+              canActFor={canActFor}
+              actFor={t.actFor}
+              denyReasons={t.me.call.reasons}
+              freeReasons={rules?.penalties.deny_excused_reasons ?? []}
+              freeLabel={t.me.call.freeReason}
               t={t.desk}
               levelNames={t.levels.name}
               statusNames={t.board.status}
@@ -347,6 +365,7 @@ export default async function AdminPage() {
             lang={lang}
             timezone={loc?.timezone ?? 'America/New_York'}
             canEdit={await mayEditTechnicians(db(), membership)}
+            canActFor={canActFor}
             sort={rules?.queue.sort}
           />
         </>
@@ -355,6 +374,14 @@ export default async function AdminPage() {
       )}
     </main>
   );
+}
+
+/** v0.17.0: how many things the day-end close-out closed for that day. */
+function closedCount(s: {
+  closedAtDayEnd?: { visits: number; autoFinished: number; calls: number; help: number };
+}): number {
+  const c = s.closedAtDayEnd;
+  return c ? c.visits + c.autoFinished + c.calls + c.help : 0;
 }
 
 /** A request hold in the desk's shape: minutes and a clock time, no ids. */

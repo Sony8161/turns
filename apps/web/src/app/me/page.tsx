@@ -20,6 +20,7 @@ import { signOut } from '../login/actions';
 import { CallPanel } from './CallPanel';
 import { ClientLeftButton, HelpPanel } from './MeExtras';
 import { myOpenHelp } from '@turn/db/help';
+import { actedForToday } from '@turn/db/act-for';
 import { StatusPanel } from './StatusPanel';
 import { meStatusLine } from './status-line';
 
@@ -30,7 +31,7 @@ export default async function MePage() {
   const tech = await technicianForUser(actor.userId);
   // Part 6: the out-over penalty posts even if nobody looked at the board.
   if (tech) await sweepFloor(db(), tech.locationId);
-  const [board, call, rules, upcoming, loc, calendar, help] = tech
+  const [board, call, rules, upcoming, loc, calendar, help, doneForMe] = tech
     ? await Promise.all([
         locationStatus(db(), tech.locationId),
         openCallFor(db(), tech.id),
@@ -46,8 +47,15 @@ export default async function MePage() {
         feedStateFor(db(), tech.id),
         // v0.16.0: her own open "Need help", if any.
         myOpenHelp(db(), tech.id),
+        // v0.17.0: what the desk did for her today.
+        actedForToday(db(), tech.id),
       ])
-    : [[], null, null, [], undefined, null, null];
+    : [[], null, null, [], undefined, null, null, []];
+  const clockOf = new Intl.DateTimeFormat(lang === 'vi' ? 'vi-VN' : 'en-US', {
+    timeZone: loc?.timezone ?? 'America/New_York',
+    hour: 'numeric',
+    minute: '2-digit',
+  });
   const timeOf = new Intl.DateTimeFormat(lang === 'vi' ? 'vi-VN' : 'en-US', {
     timeZone: loc?.timezone ?? 'America/New_York',
     weekday: 'short',
@@ -121,7 +129,33 @@ export default async function MePage() {
               t={t.me}
             />
           ) : null}
-          {call ? <ClientLeftButton visitId={call.visitId} t={t.me} /> : null}
+          {call ? (
+            <ClientLeftButton
+              visitId={call.visitId}
+              claim={call.leftClaim}
+              asksDesk={rules.fairness.client_left_by_tech === 'ask_desk'}
+              t={t.me}
+            />
+          ) : null}
+          {doneForMe.length > 0 ? (
+            // v0.17.0: "Accepted for you by Hạnh, 2:14 PM".
+            <section className="flex flex-col gap-1 bg-board p-4">
+              <h2 className="font-semibold">{t.me.doneForYou}</h2>
+              <ul className="flex flex-col gap-1">
+                {doneForMe.map((d, i) => (
+                  <li key={i} className="text-slate/80">
+                    {fill(t.me.doneForYouLine[d.what], {
+                      name: d.by ?? t.log.system,
+                      time: clockOf.format(d.at),
+                      reason: d.reason
+                        ? ((t.me.call.reasons as Record<string, string>)[d.reason] ?? d.reason)
+                        : '',
+                    })}
+                  </li>
+                ))}
+              </ul>
+            </section>
+          ) : null}
           <StatusPanel status={status} t={t.me} />
           {status !== 'off' ? (
             <HelpPanel

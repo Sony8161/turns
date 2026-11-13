@@ -5,11 +5,14 @@ import { useActionState, useState } from 'react';
 import { formatClock } from '@/components/Board';
 import { Button } from '@/components/ui';
 import { fill, type Dictionary } from '@/i18n/dictionary';
+import { AcceptFor, DenyFor, FinishFor } from './ActForTech';
 import {
   ackHelpFor,
   callNextFor,
   clearCallFor,
+  clientHereFor,
   clientLeftFor,
+  leftWithoutServiceFor,
   reviewFixFor,
   deskCallFor,
   enterWalkIn,
@@ -49,8 +52,15 @@ export type Waiting = {
   splitRest: boolean;
   /** The open call's kind: by turn, an offer to a higher level, or a desk pick. */
   callKind: string | null;
-  /** v0.15.0: the earlier parts of this client's visit (the on-screen slip). */
-  slip: { technician: string | null; services: string[] }[] | null;
+  /** v0.15.0: the earlier parts of this client's visit (the on-screen slip).
+   *  v0.17.0: done = her part is finished ("did"), else she "is doing" it. */
+  slip: { technician: string | null; services: string[]; done?: boolean }[] | null;
+  /** v0.17.0: the open call and the technicians, so the desk can act for her. */
+  callId: string | null;
+  calledTechnicianId: string | null;
+  assignedTechnicianId: string | null;
+  /** v0.17.0: the called technician said the client left; the desk answers. */
+  leftClaimPending: boolean;
   /** Not callable yet: it waits until this technician finishes her part. */
   held: { technician: string | null } | null;
   /** The requested technician was booked (an appointment), not asked for at the desk. */
@@ -121,7 +131,18 @@ export function Desk({
   fixWindowDays,
   fixNeedsApproval,
   groupMax,
+  canActFor,
+  actFor,
+  denyReasons,
+  freeReasons,
+  freeLabel,
 }: {
+  /** v0.17.0: this person may accept, deny and finish for a technician. */
+  canActFor: boolean;
+  actFor: Dictionary['actFor'];
+  denyReasons: Record<string, string>;
+  freeReasons: readonly string[];
+  freeLabel: string;
   /** v0.16.0: a manager or owner: approves a receptionist's fix. */
   canApprove: boolean;
   fixWindowDays: number;
@@ -149,6 +170,12 @@ export function Desk({
   const [fixState, reviewFix, reviewingFix] = useActionState<DeskState, FormData>(reviewFixFor, {});
   const [leftState, markLeft, markingLeft] = useActionState<DeskState, FormData>(clientLeftFor, {});
   const [helpState, ackHelp, acking] = useActionState<DeskState, FormData>(ackHelpFor, {});
+  // v0.17.0
+  const [walkState, markWalked, markingWalked] = useActionState<DeskState, FormData>(
+    leftWithoutServiceFor,
+    {},
+  );
+  const [hereState, markHere, markingHere] = useActionState<DeskState, FormData>(clientHereFor, {});
   // v0.16.0: one client or a group; the fix lookup shows when a fix is ticked.
   const [mode, setMode] = useState<'one' | 'group'>('one');
   const [fixTicked, setFixTicked] = useState(false);
@@ -447,6 +474,14 @@ export function Desk({
               <ErrorRef refId={leftState.ref} />
             </p>
           ) : null}
+          {walkState.error || hereState.error ? (
+            <p role="alert" className="text-polish">
+              {t.errors[walkState.error ?? hereState.error ?? ''] ??
+                walkState.error ??
+                hereState.error}
+              <ErrorRef refId={walkState.ref ?? hereState.ref} />
+            </p>
+          ) : null}
           {callState.error ? (
             <p role="alert" className="text-polish">
               {t.errors[callState.error] ?? callState.error}
@@ -529,7 +564,7 @@ export function Desk({
                           parts: v.slip
                             .map((p) =>
                               p.technician
-                                ? fill(t.slipPart, {
+                                ? fill(p.done === false ? t.slipDoing : t.slipPart, {
                                     name: p.technician,
                                     services: p.services.join(' + '),
                                   })
@@ -587,6 +622,45 @@ export function Desk({
                         </form>
                       </details>
                     ) : null}
+                    {v.status === 'waiting' ||
+                    (v.status === 'called' &&
+                      canActFor &&
+                      v.callId &&
+                      v.calledTechnician &&
+                      !v.leftClaimPending) ? (
+                      // v0.17.0: less common desk actions sit under "More".
+                      <details className="text-small">
+                        <summary className="min-h-11 cursor-pointer py-2 text-slate/80 underline">
+                          {t.more}
+                        </summary>
+                        <div className="flex max-w-[40ch] flex-col gap-2 pb-2">
+                          {v.status === 'waiting' ? (
+                            <form action={markWalked} className="flex flex-col gap-1">
+                              <input type="hidden" name="visitId" value={v.id} />
+                              <span className="text-slate/80">{t.walkedOutLead}</span>
+                              <Button
+                                type="submit"
+                                tone="quiet"
+                                disabled={markingWalked}
+                                aria-label={`${t.walkedOut}: ${rowLabel(v)}`}
+                              >
+                                {t.walkedOut}
+                              </Button>
+                            </form>
+                          ) : v.callId && v.calledTechnician ? (
+                            <DenyFor
+                              callId={v.callId}
+                              name={v.calledTechnician}
+                              reasons={denyReasons}
+                              freeReasons={v.callKind === 'turn' ? freeReasons : []}
+                              freeLabel={freeLabel}
+                              label={rowLabel(v)}
+                              t={actFor}
+                            />
+                          ) : null}
+                        </div>
+                      </details>
+                    ) : null}
                     <span className="text-small text-slate/70">
                       {v.status === 'called' && v.calledTechnician
                         ? fill(
@@ -605,22 +679,75 @@ export function Desk({
                           : fill(t.waitingLine, { time: formatClock(v.waitSeconds) })}
                     </span>
                   </span>
-                  {v.status === 'called' ? (
-                    // v0.16.0: the client walked out after the call, before the service.
-                    <form action={markLeft} className="ml-auto flex flex-col items-end gap-1">
-                      <input type="hidden" name="visitId" value={v.id} />
-                      <Button
-                        type="submit"
-                        tone="quiet"
-                        disabled={markingLeft}
-                        aria-label={`${t.clientLeft}: ${rowLabel(v)}`}
-                      >
-                        {t.clientLeft}
-                      </Button>
-                      <span className="max-w-[24ch] text-right text-small text-slate/70">
-                        {t.clientLeftLead}
+                  {v.status === 'called' && v.leftClaimPending ? (
+                    // v0.17.0 (FAIR-001): she said the client left; the desk checks.
+                    <span className="ml-auto flex flex-col items-end gap-2 border-l-4 border-amber pl-3">
+                      <span className="font-semibold">
+                        {fill(t.claimLine, { name: v.calledTechnician ?? '' })}
                       </span>
-                    </form>
+                      <span className="flex flex-wrap justify-end gap-2">
+                        <form action={markLeft}>
+                          <input type="hidden" name="visitId" value={v.id} />
+                          <Button
+                            type="submit"
+                            disabled={markingLeft}
+                            aria-label={`${t.claimConfirm}: ${rowLabel(v)}`}
+                          >
+                            {t.claimConfirm}
+                          </Button>
+                        </form>
+                        <form action={markHere}>
+                          <input type="hidden" name="visitId" value={v.id} />
+                          <Button
+                            type="submit"
+                            tone="quiet"
+                            disabled={markingHere}
+                            aria-label={`${t.claimHere}: ${rowLabel(v)}`}
+                          >
+                            {t.claimHere}
+                          </Button>
+                        </form>
+                      </span>
+                    </span>
+                  ) : v.status === 'called' ? (
+                    <span className="ml-auto flex flex-wrap items-start justify-end gap-3">
+                      {canActFor && v.callId && v.calledTechnician ? (
+                        <AcceptFor
+                          callId={v.callId}
+                          name={v.calledTechnician}
+                          label={rowLabel(v)}
+                          t={actFor}
+                        />
+                      ) : null}
+                      {/* v0.16.0: the client walked out after the call, before the service. */}
+                      <form action={markLeft} className="flex flex-col items-end gap-1">
+                        <input type="hidden" name="visitId" value={v.id} />
+                        <Button
+                          type="submit"
+                          tone="quiet"
+                          disabled={markingLeft}
+                          aria-label={`${t.clientLeft}: ${rowLabel(v)}`}
+                        >
+                          {t.clientLeft}
+                        </Button>
+                        <span className="max-w-[24ch] text-right text-small text-slate/70">
+                          {t.clientLeftLead}
+                        </span>
+                      </form>
+                    </span>
+                  ) : v.status === 'in_service' &&
+                    canActFor &&
+                    v.assignedTechnicianId &&
+                    v.assignedTechnician ? (
+                    <span className="ml-auto">
+                      <FinishFor
+                        technicianId={v.assignedTechnicianId}
+                        visitId={v.id}
+                        name={v.assignedTechnician}
+                        label={rowLabel(v)}
+                        t={actFor}
+                      />
+                    </span>
                   ) : null}
                   {v.status === 'waiting' && v.needsApproval ? (
                     // v0.16.0: a receptionist's fix: a manager or owner approves it first.

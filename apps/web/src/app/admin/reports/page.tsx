@@ -2,6 +2,8 @@ import {
   dailyTurnReport,
   DESK_ACTIONS,
   ensureDailySummary,
+  fairnessReport,
+  lastDays,
   localDate,
   OVERRIDE_ACTIONS,
   overrideSummary,
@@ -90,13 +92,18 @@ export default async function ReportsPage({
   const today = localDate(new Date(), tz);
   const asked = parseDate(Array.isArray(params.date) ? params.date[0] : params.date);
   const day = asked && asked <= today ? asked : today;
-  const [report, week, summary, fixes] = await Promise.all([
+  const fairRange = lastDays(day, 7);
+  const [report, week, summary, fixes, fairness] = await Promise.all([
     dailyTurnReport(db(), m.locationId, day),
     overrideSummary(db(), m.locationId, addDays(day, -6), day),
     day < today ? ensureDailySummary(db(), m.locationId, day) : Promise.resolve(null),
     // v0.16.0: fixes per technician who did the original work.
     fixesByOriginalTech(db(), m.locationId, day),
+    // v0.17.0: the fairness table, the 7 days up to this one.
+    fairnessReport(db(), m.locationId, fairRange.from, fairRange.to),
   ]);
+  const fr = t.reports.fairness;
+  const skipWhy = fr.skipWhy as Record<string, string>;
   const clock = new Intl.DateTimeFormat(lang === 'vi' ? 'vi-VN' : 'en-US', {
     timeZone: tz,
     hour: 'numeric',
@@ -144,7 +151,16 @@ export default async function ReportsPage({
         <h2 className="text-lead font-semibold">
           {t.reports.daily}, {day}
         </h2>
-        {report ? <p>{fill(t.reports.totals, report.totals)}</p> : null}
+        {report ? <p>{fill(t.reports.totals, { ...report.totals, closedAtDayEnd: '' })}</p> : null}
+        {report ? (
+          <p>
+            {fill(t.reports.leftLine, {
+              walkedOut: report.totals.walkedOut,
+              clientLeft: report.totals.clientLeft,
+              noShows: report.totals.noShows,
+            })}
+          </p>
+        ) : null}
         {report && report.totals.feedFailures > 0 ? (
           <p className="text-polish">
             {fill(t.reports.feedFailures, { count: report.totals.feedFailures })}
@@ -219,6 +235,18 @@ export default async function ReportsPage({
                 overrides: summary.overrides,
               })}
             </p>
+            {summary.closedAtDayEnd ? (
+              <p>{fill(t.reports.closedLine, summary.closedAtDayEnd)}</p>
+            ) : null}
+            {summary.walkedOut !== undefined ? (
+              <p>
+                {fill(t.reports.leftLine, {
+                  walkedOut: summary.walkedOut,
+                  clientLeft: summary.clientLeft ?? 0,
+                  noShows: summary.noShows ?? 0,
+                })}
+              </p>
+            ) : null}
             <p>
               {summary.overridesBy.length
                 ? fill(t.reports.overridesBy, {
@@ -268,6 +296,108 @@ export default async function ReportsPage({
               </tbody>
             </table>
           </div>
+        )}
+      </section>
+
+      <section className="flex flex-col gap-3">
+        <h2 className="text-lead font-semibold">
+          {fill(fr.title, { from: fairRange.from, to: fairRange.to })}
+        </h2>
+        <p className="max-w-[70ch] text-slate/80">{fr.lead}</p>
+        {fairness.length === 0 ? (
+          <p>{fr.empty}</p>
+        ) : (
+          <>
+            <div className="overflow-x-auto">
+              <table className="w-full border-collapse text-left text-small">
+                <thead>
+                  <tr className="border-b-2 border-slate/30">
+                    {[fr.cols.technician, fr.cols.visits, fr.cols.points, fr.cols.flags].map(
+                      (h) => (
+                        <th key={h} scope="col" className="px-2 py-2 font-semibold">
+                          {h}
+                        </th>
+                      ),
+                    )}
+                  </tr>
+                </thead>
+                <tbody>
+                  {fairness.map((r) => {
+                    const flags = [
+                      r.deniesFree ? fill(fr.flagFree, { n: r.deniesFree }) : null,
+                      r.clientLeftMarked
+                        ? fill(fr.flagLeft, {
+                            n: r.clientLeftMarked,
+                            confirmed: r.clientLeftConfirmed,
+                          })
+                        : null,
+                      r.fixesOnHerWork ? fill(fr.flagFixes, { n: r.fixesOnHerWork }) : null,
+                    ].filter((x): x is string => !!x);
+                    return (
+                      <tr key={r.technicianId} className="border-b border-slate/15 align-top">
+                        <td className={`${cell} font-semibold`}>{r.name}</td>
+                        <td className={cell}>{r.visitsDone}</td>
+                        <td className={cell}>{r.points}</td>
+                        <td className="px-2 py-2">{flags.length ? flags.join(' · ') : '–'}</td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
+            </div>
+            <details>
+              <summary className="min-h-11 cursor-pointer py-2 font-semibold underline">
+                {fr.showDetails}
+              </summary>
+              <div className="overflow-x-auto">
+                <table className="w-full border-collapse text-left text-small">
+                  <thead>
+                    <tr className="border-b-2 border-slate/30">
+                      {[
+                        fr.cols.technician,
+                        fr.cols.visits,
+                        fr.cols.points,
+                        fr.cols.deniesPenalty,
+                        fr.cols.deniesFree,
+                        fr.cols.declined,
+                        fr.cols.splits,
+                        fr.cols.clientLeft,
+                        fr.cols.fixes,
+                        fr.cols.skipped,
+                      ].map((h) => (
+                        <th key={h} scope="col" className="px-2 py-2 font-semibold">
+                          {h}
+                        </th>
+                      ))}
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {fairness.map((r) => (
+                      <tr key={r.technicianId} className="border-b border-slate/15 align-top">
+                        <td className={`${cell} font-semibold`}>{r.name}</td>
+                        <td className={cell}>{r.visitsDone}</td>
+                        <td className={cell}>{r.points}</td>
+                        <td className={cell}>{r.deniesPenalty}</td>
+                        <td className={cell}>{r.deniesFree}</td>
+                        <td className={cell}>{r.declined}</td>
+                        <td className={cell}>{r.splits}</td>
+                        <td className={cell}>
+                          {r.clientLeftMarked} / {r.clientLeftConfirmed}
+                        </td>
+                        <td className={cell}>{r.fixesOnHerWork}</td>
+                        <td className="px-2 py-2">
+                          {Object.entries(r.skipped)
+                            .sort((x, y) => y[1] - x[1])
+                            .map(([why, n]) => `${skipWhy[why] ?? why.replace(/_/g, ' ')}: ${n}`)
+                            .join('; ') || '–'}
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            </details>
+          </>
         )}
       </section>
 

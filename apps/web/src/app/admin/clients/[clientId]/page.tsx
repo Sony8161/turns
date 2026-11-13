@@ -67,6 +67,7 @@ export default async function ClientPage({ params }: { params: Promise<{ clientI
           {fill(tc.visits, { n: c.visitCount })}
           {c.lastVisitAt ? ` · ${fill(tc.lastVisit, { date: day.format(c.lastVisitAt) })}` : ''}
           {c.usualTechnician ? ` · ${fill(tc.usual, { name: c.usualTechnician })}` : ''}
+          {c.noShows > 0 ? ` · ${fill(tc.noShows, { n: c.noShows })}` : ''}
         </p>
       </section>
       <ClientForm

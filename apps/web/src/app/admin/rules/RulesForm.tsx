@@ -285,6 +285,33 @@ export function RulesForm({
         </div>,
       )}
 
+      {/* v0.17.0: one new choice in view; the rest under Advanced. */}
+      {section(
+        t.sections.clientLeft,
+        <div className="flex flex-col gap-3">
+          {select('fairness.client_left_by_tech', t.fields.client_left_by_tech, [
+            { value: 'ask_desk', label: t.fields.client_left_ask_desk },
+            { value: 'direct', label: t.fields.client_left_direct },
+          ])}
+          <details className="flex flex-col gap-3">
+            <summary className="min-h-11 cursor-pointer py-2 font-semibold underline">
+              {t.advanced}
+            </summary>
+            <div className="flex flex-col gap-4 pt-2">
+              <div className="flex flex-wrap gap-5">
+                {number('fairness.free_deny_flag', t.fields.free_deny_flag)}
+                {number('fairness.free_deny_daily_limit', t.fields.free_deny_daily_limit)}
+                {number('closing.no_show_after_min', t.fields.no_show_after_min)}
+              </div>
+              {select('closing.day_end_in_service', t.fields.day_end_in_service, [
+                { value: 'finish', label: t.fields.day_end_finish },
+                { value: 'close', label: t.fields.day_end_close },
+              ])}
+            </div>
+          </details>
+        </div>,
+      )}
+
       {state.preview ? (
         <section aria-live="polite" className="flex flex-col gap-3 bg-board p-5">
           <h2 className="text-heading font-semibold">{t.previewTitle}</h2>

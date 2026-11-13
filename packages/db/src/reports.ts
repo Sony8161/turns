@@ -130,6 +130,16 @@ export const AUDIT_ACTIONS = [
   'visit_completed',
   'visit_split',
   'client_left',
+  // v0.17.0
+  'client_left_claimed',
+  'client_left_rejected',
+  'left_without_service',
+  'appointment_no_show',
+  'visit_closed_day_end',
+  'visit_auto_finished',
+  'call_closed_day_end',
+  'help_closed_day_end',
+  'act_for_setting',
   'fix_entered',
   'fix_approved',
   'fix_declined',
@@ -194,6 +204,7 @@ export const OVERRIDE_ACTIONS = [
   'member_restored',
   'technician_profile_changed',
   'technician_edits_setting',
+  'act_for_setting',
 ] as const;
 
 /** Desk entries a receptionist makes that steer a call (T4: edits per receptionist). */
@@ -210,6 +221,10 @@ export const DESK_ACTIONS = [
   'kiosk_confirmed',
   'kiosk_declined',
   'client_updated',
+  // v0.17.0
+  'left_without_service',
+  'client_left_rejected',
+  'appointment_no_show',
 ] as const;
 
 export type QueueEntry = {
@@ -531,6 +546,8 @@ const VISIT_KEYS: Record<string, string> = {
 };
 const PERSON_KEYS: Record<string, string> = {
   technicianId: 'technician',
+  // v0.17.0: the desk acted for this technician.
+  actedFor: 'acted_for',
   requestedTechnicianId: 'asked_for',
   userId: 'person',
 };

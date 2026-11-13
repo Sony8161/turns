@@ -179,6 +179,16 @@ export function configFromForm(
     groups: {
       max_people: num(fd.get('groups.max_people')),
     },
+    // v0.17.0. A blank daily limit is "no limit".
+    fairness: {
+      client_left_by_tech: String(fd.get('fairness.client_left_by_tech') ?? ''),
+      free_deny_flag: num(fd.get('fairness.free_deny_flag')),
+      free_deny_daily_limit: num(fd.get('fairness.free_deny_daily_limit')) ?? null,
+    },
+    closing: {
+      day_end_in_service: String(fd.get('closing.day_end_in_service') ?? ''),
+      no_show_after_min: num(fd.get('closing.no_show_after_min')),
+    },
   };
   return { candidate, tierSlots };
 }
@@ -230,6 +240,14 @@ export function formValues(config: RuleConfig): Record<string, string> {
     'fixes.window_days': String(config.fixes.window_days),
     'fixes.receptionist_needs_approval': config.fixes.receptionist_needs_approval ? 'on' : '',
     'groups.max_people': String(config.groups.max_people),
+    'fairness.client_left_by_tech': config.fairness.client_left_by_tech,
+    'fairness.free_deny_flag': String(config.fairness.free_deny_flag),
+    'fairness.free_deny_daily_limit':
+      config.fairness.free_deny_daily_limit === null
+        ? ''
+        : String(config.fairness.free_deny_daily_limit),
+    'closing.day_end_in_service': config.closing.day_end_in_service,
+    'closing.no_show_after_min': String(config.closing.no_show_after_min),
   };
   for (const [id, points] of Object.entries(config.points.by_service ?? {})) {
     v[`service.${id}`] = String(points);

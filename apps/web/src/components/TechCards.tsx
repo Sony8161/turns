@@ -1,6 +1,7 @@
 import type { TechCard } from '@turn/db/board';
 import { aheadBecause } from '@turn/db/board';
 import Link from 'next/link';
+import { AcceptFor, FinishFor } from '@/app/admin/ActForTech';
 import { formatPoints } from '@/components/Board';
 import { fill, type Dictionary } from '@/i18n/dictionary';
 import { lineText, signedPoints } from './tech-lines';
@@ -29,9 +30,12 @@ export function TechCards({
   timezone,
   lang,
   canEdit,
+  canActFor = false,
   sort,
 }: {
   cards: TechCard[];
+  /** v0.17.0: show Accept / Finish for her on her current visit. */
+  canActFor?: boolean;
   /** The rules' queue.sort: whether an appointment counts at zero only (v0.15.0). */
   sort?: readonly string[];
   t: Dictionary;
@@ -82,6 +86,26 @@ export function TechCards({
                         })
                       : status}
                   </span>
+                  {canActFor && c.status === 'called' && c.openCallId ? (
+                    <span className="pt-2">
+                      <AcceptFor
+                        callId={c.openCallId}
+                        name={c.displayName}
+                        t={t.actFor}
+                        align="start"
+                      />
+                    </span>
+                  ) : canActFor && c.status === 'in_service' && c.inServiceVisitId ? (
+                    <span className="pt-2">
+                      <FinishFor
+                        technicianId={c.technicianId}
+                        visitId={c.inServiceVisitId}
+                        name={c.displayName}
+                        t={t.actFor}
+                        align="start"
+                      />
+                    </span>
+                  ) : null}
                 </div>
                 <span className="flex flex-col items-end">
                   <span className="text-[44px] font-semibold leading-none text-slate">
@@ -111,6 +135,12 @@ export function TechCards({
                     {tag}
                   </li>
                 ))}
+                {c.freeDenyFlag ? (
+                  // v0.17.0 (FAIR-001): one small badge, for the manager to notice.
+                  <li className={`${chip} border-2 border-polish font-semibold text-slate`}>
+                    {fill(tb.freeDenies, { n: c.freeDenies })}
+                  </li>
+                ) : null}
               </ul>
               <ul aria-label={tb.restrictions} className="flex flex-wrap gap-2">
                 {c.restrictions.length === 0 ? (

@@ -10,15 +10,42 @@ import { Button } from '@/components/ui';
 import { fill, type Dictionary } from '@/i18n/dictionary';
 import { askHelp, markClientLeft, type MeState } from './actions';
 
-export function ClientLeftButton({ visitId, t }: { visitId: string; t: Dictionary['me'] }) {
+export function ClientLeftButton({
+  visitId,
+  claim = null,
+  asksDesk = false,
+  t,
+}: {
+  visitId: string;
+  /** v0.17.0: the rules send her tap to the desk to confirm. */
+  asksDesk?: boolean;
+  /** v0.17.0: her "client left" is waiting for the desk, or the desk said
+   *  the client is still here. */
+  claim?: 'pending' | 'client_here' | null;
+  t: Dictionary['me'];
+}) {
   const [state, action, pending] = useActionState<MeState, FormData>(markClientLeft, {});
+  if (claim === 'pending') {
+    return (
+      <p role="status" className="border-l-[12px] border-amber bg-board p-4 font-semibold">
+        {t.call.clientLeftAsked}
+      </p>
+    );
+  }
   return (
     <form action={action} className="flex flex-col gap-2 bg-board p-4">
       <input type="hidden" name="visitId" value={visitId} />
+      {claim === 'client_here' ? (
+        <p role="status" className="font-semibold text-polish">
+          {t.call.clientStillHere}
+        </p>
+      ) : null}
       <Button type="submit" tone="quiet" disabled={pending}>
         {t.call.clientLeft}
       </Button>
-      <span className="text-small text-slate/80">{t.call.clientLeftNote}</span>
+      <span className="text-small text-slate/80">
+        {asksDesk ? t.call.clientLeftNoteAsk : t.call.clientLeftNote}
+      </span>
       {state.error ? (
         <p role="alert" className="text-polish">
           {t.errors[state.error] ?? state.error}

@@ -42,6 +42,16 @@ export function formatPoints(points: number, hadAppointmentLast = false): string
   return half ? `${whole}½` : whole;
 }
 
+/** v0.17.0: "1 point", "2 points", "00 points" (Vietnamese has one form). Pure. */
+export function pointsWord(
+  points: number,
+  hadAppointmentLast: boolean,
+  t: { pointOne: string; pointMany: string },
+): string {
+  const n = formatPoints(points, hadAppointmentLast);
+  return (n === '1' ? t.pointOne : t.pointMany).replace('{n}', n);
+}
+
 /** Whole seconds since a timestamp, never negative. Kept out of component
  *  bodies so the render stays pure. */
 export function secondsSince(at: Date | null | undefined): number {

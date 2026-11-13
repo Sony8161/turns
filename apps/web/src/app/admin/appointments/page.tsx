@@ -1,4 +1,5 @@
 import { appointmentsBetween } from '@turn/db/appointments';
+import { activeRules } from '@turn/db/rules';
 import { feedStates, feedSummary, FEED_STALE_MIN } from '@turn/db/feeds';
 import { locations, serviceCategories, services, technicians } from '@turn/db';
 import { and, asc, eq, isNull } from 'drizzle-orm';
@@ -92,6 +93,8 @@ export default async function AppointmentsPage() {
     isOwner ? feedStates(db(), m.locationId, now) : Promise.resolve([]),
   ]);
   const timezone = loc?.timezone ?? 'America/New_York';
+  // v0.17.0: No-show is offered once the start time plus these minutes has passed.
+  const noShowAfterMin = (await activeRules(db(), m.locationId)).closing.no_show_after_min;
   const locale = lang === 'vi' ? 'vi-VN' : 'en-US';
   const when = new Intl.DateTimeFormat(locale, {
     timeZone: timezone,
@@ -188,7 +191,18 @@ export default async function AppointmentsPage() {
           start: salonInput(a.startAt, timezone),
           minutes: Math.round((a.endAt.getTime() - a.startAt.getTime()) / 60_000),
           source: a.source,
-          state: a.arrivedAt ? 'arrived' : a.cancelledAt ? 'cancelled' : 'open',
+          state: a.arrivedAt
+            ? 'arrived'
+            : a.cancelledAt
+              ? 'cancelled'
+              : a.noShowAt
+                ? 'no_show'
+                : 'open',
+          canNoShow:
+            !a.arrivedAt &&
+            !a.cancelledAt &&
+            !a.noShowAt &&
+            now.getTime() >= a.startAt.getTime() + noShowAfterMin * 60_000,
         }))}
       />
     </main>

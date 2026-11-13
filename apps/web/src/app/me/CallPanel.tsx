@@ -32,7 +32,7 @@ export function CallPanel({
 }: {
   /** v0.15.0: the earlier parts of this client's visit, when another
    *  technician did some of it first (the on-screen slip). */
-  slip?: { technician: string | null; services: string[] }[] | null;
+  slip?: { technician: string | null; services: string[]; done?: boolean }[] | null;
   /** v0.15.0: deny reasons the rules excuse on their own (no points). */
   excusedReasons?: readonly string[];
   callId: string;
@@ -90,7 +90,10 @@ export function CallPanel({
           {slip.map((p, i) => (
             <span key={i}>
               {p.technician
-                ? fill(t.call.slipDone, { name: p.technician, services: p.services.join(' + ') })
+                ? fill(p.done === false ? t.call.slipDoing : t.call.slipDone, {
+                    name: p.technician,
+                    services: p.services.join(' + '),
+                  })
                 : fill(t.call.slipNobody, { services: p.services.join(' + ') })}
             </span>
           ))}

@@ -100,6 +100,9 @@ const en = {
     technician: 'technician',
   },
   board: {
+    // v0.17.0: "1 point", "2 points".
+    pointOne: '{n} point',
+    pointMany: '{n} points',
     empty: 'Nobody is checked in yet.',
     points: 'points',
     waiting: 'waiting',
@@ -115,6 +118,14 @@ const en = {
     },
   },
   me: {
+    // v0.17.0: what the front desk did for her today.
+    doneForYou: 'Done for you today by the front desk',
+    doneForYouLine: {
+      accepted: 'Accepted for you by {name}, {time}',
+      denied: 'Denied for you by {name} ({reason}), {time}',
+      declined: 'Declined for you by {name}, {time}',
+      finished: 'Finished for you by {name}, {time}',
+    },
     statusLine: 'You are {status}',
     callWaiting: 'A call is waiting for you',
     pointsToday: 'points today',
@@ -124,6 +135,12 @@ const en = {
     upcoming: 'Your appointments',
     upcomingLine: '{start} to {end}',
     call: {
+      // v0.17.0: her "Client left" goes to the front desk first.
+      clientLeftNoteAsk:
+        'The client walked out before you started. The front desk checks; then no points, and you keep your place.',
+      clientLeftAsked: 'You said the client left. The front desk is checking.',
+      clientStillHere: 'The front desk says the client is still here. Accept or deny the call.',
+      slipDoing: '{name} is doing: {services}',
       title: "You're called",
       waitedLine: 'waiting for your answer, {seconds} s',
       requested: 'The client asked for you',
@@ -182,6 +199,7 @@ const en = {
       openNow: 'Help asked just now. The desk sees it.',
     },
     errors: {
+      not_on_shift: 'Check in first, then ask for help.',
       server: 'Something went wrong on our side. Try again in a moment.',
       illegal_transition: "That move isn't possible from where you are. Refresh and try again.",
       outside_geofence:
@@ -202,6 +220,14 @@ const en = {
     },
   },
   desk: {
+    // v0.17.0
+    more: 'More',
+    walkedOut: 'Left without service',
+    walkedOutLead: 'The client left before anyone was called. No points for anyone.',
+    claimLine: '{name} says the client left.',
+    claimConfirm: 'Yes, the client left',
+    claimHere: 'The client is here',
+    slipDoing: '{name} is doing {services}',
     walkIn: 'New walk-in',
     pickServices: 'Pick the services. The engine calls the next technician.',
     addWalkIn: 'Add to the queue',
@@ -351,6 +377,7 @@ const en = {
     outFor: '{name} out {minutes} min',
     outOver: '{name} out {minutes} min, over {limit}: penalty posted',
     errors: {
+      no_claim: 'She already answered, or took it back. The board will update.',
       server: 'Something went wrong on our side. Try again in a moment.',
       no_services: 'Pick at least one service.',
       unknown_service: 'One of those services is not on the menu any more. Refresh.',
@@ -441,6 +468,11 @@ const en = {
     } as Record<string, string>,
   },
   appointments: {
+    // v0.17.0
+    more: 'More',
+    noShow: 'No-show',
+    noShowLead: 'The client did not come. No points for anyone; the technician is free again.',
+    noShowState: 'no-show',
     title: 'Appointments',
     lead: 'Today and the next week. When the client is here, pick the services and tap Client arrived: the visit goes to the technician they booked, and the appointment discount applies.',
     notAllowed: 'The front desk, managers and owners see appointments.',
@@ -498,6 +530,9 @@ const en = {
       synced: 'Sync done.',
     } as Record<string, string>,
     errors: {
+      too_early: 'Wait until the start time has passed.',
+      already_no_show: 'Already marked as a no-show.',
+      unknown_client: 'That client is not on file here.',
       server: 'Something went wrong on our side. Try again in a moment.',
       not_allowed: 'Your role cannot do that.',
       wrong_location: 'That is at another location.',
@@ -585,6 +620,8 @@ const en = {
     } as Record<string, string>,
   },
   rules: {
+    // v0.17.0: one choice in view, the rest under Advanced.
+    advanced: 'Advanced',
     title: 'Rules',
     lead: 'Every number the engine uses. Saving makes a new version; old versions are kept and nothing is edited in place.',
     version: 'Version {version}',
@@ -596,6 +633,7 @@ const en = {
     notAllowed: 'Only the owner changes the rules.',
     server: 'Something went wrong on our side. Try again in a moment.',
     sections: {
+      clientLeft: 'Client left',
       points: 'Points',
       categories: 'Points per service category',
       penalties: 'Penalties',
@@ -626,6 +664,15 @@ const en = {
       "A fix is free and entered at the front desk only, never on the kiosk. The desk sees the client's visits from this many days back and picks the technician; the one who did the work is listed first.",
     lateLead: 'Tiers from fewer to more minutes late. Blank start points = not set yet.',
     fields: {
+      client_left_by_tech: 'When a technician taps "Client left"',
+      client_left_ask_desk: 'The front desk confirms first',
+      client_left_direct: 'It closes right away',
+      free_deny_flag: "Badge after this many free no's in a day (0 = never)",
+      free_deny_daily_limit: "Free no's a day before the next one costs points (blank = no limit)",
+      no_show_after_min: 'Minutes after the start time before "No-show" shows',
+      day_end_in_service: 'A client still in the chair when the day ends',
+      day_end_finish: 'Finish the visit; the points count',
+      day_end_close: 'Close it with no points',
       default_service: 'Standard service',
       fill_or_full_set: 'Fill or full set',
       appointment_discount: 'Appointment discount (negative)',
@@ -768,7 +815,7 @@ const en = {
     count: '{count} entries',
     system: 'System',
     showQueue: 'Queue at that second',
-    queueLine: '{n}. {name}: {points} points, {status}',
+    queueLine: '{n}. {name}: {points}, {status}',
     queueSkipped: 'skipped: {why}',
     // v0.16.1: the Details column in words, not ids. The CSV keeps the ids.
     detail: {
@@ -781,6 +828,20 @@ const en = {
       meters: '{n} m',
       more: '+{n} more',
       keys: {
+        // v0.17.0
+        acted_for: 'Done for',
+        forDay: 'For the day',
+        was: 'Was',
+        penalty: 'Penalty',
+        overFreeLimit: 'Over the daily free limit',
+        waitedMin: 'Waited (min)',
+        heldPart: 'Second part',
+        unconfirmed: 'Not confirmed',
+        pendingFix: 'Fix waiting for approval',
+        requestHold: 'Waiting for a requested tech',
+        minutesLate: 'Minutes late',
+        wasNoShow: 'Was marked a no-show',
+        receptionistActsForTechnicians: 'Receptionists may act for technicians',
         visit: 'Client',
         rest_of_visit: 'Rest of the visit',
         fix_of: 'Fixes',
@@ -833,7 +894,11 @@ const en = {
           self_checkin: 'kiosk',
         },
         choice: { all: 'did it all', split: 'split it' },
-        by: { technician: 'the technician', desk: 'the desk' },
+        by: {
+          technician: 'the technician',
+          desk: 'the desk',
+          technician_confirmed: 'the technician, confirmed by the desk',
+        },
         geofence: { passed: 'inside the salon', failed: 'outside the salon' },
       } as Record<string, Record<string, string>>,
     },
@@ -849,6 +914,16 @@ const en = {
       queue: 'Queue',
     },
     actions: {
+      // v0.17.0
+      client_left_claimed: 'Tech said the client left (desk to check)',
+      client_left_rejected: 'Desk: the client is still here',
+      left_without_service: 'Left without service',
+      appointment_no_show: 'No-show',
+      visit_closed_day_end: 'Closed at day end (no points)',
+      visit_auto_finished: 'Finished at day end',
+      call_closed_day_end: 'Call closed at day end (no penalty)',
+      help_closed_day_end: 'Help request closed at day end',
+      act_for_setting: 'Receptionists acting for technicians switched',
       check_in: 'Checked in',
       checked_in: 'Checked in',
       available: 'Ready',
@@ -922,6 +997,49 @@ const en = {
     },
   },
   reports: {
+    // v0.17.0
+    leftLine:
+      '{walkedOut} left without service, {clientLeft} left after the call, {noShows} no-shows. None of these count against a technician.',
+    closedLine:
+      'Closed at day end: {visits} still waiting or called (no points), {autoFinished} finished automatically (points kept), {calls} calls (no penalty), {help} help requests, {shifts} check-outs.',
+    fairness: {
+      title: 'Fairness, {from} to {to}',
+      lead: 'One row per technician over 7 days, counts only. "No for free" is a no the rules do not charge for (a break, personal). Open the details for the rest.',
+      empty: 'Nobody worked these days.',
+      showDetails: 'Show details',
+      cols: {
+        technician: 'Technician',
+        visits: 'Visits',
+        points: 'Points',
+        flags: 'Worth a look',
+        deniesPenalty: 'Said no (points)',
+        deniesFree: 'Said no (free)',
+        declined: 'Said no when asked',
+        splits: 'Split a visit',
+        clientLeft: 'Client left (hers / confirmed)',
+        fixes: 'Fixes on her work',
+        skipped: 'Skipped, by reason',
+      },
+      flagFree: '{n} free no',
+      flagLeft: '{n} client left ({confirmed} confirmed)',
+      flagFixes: '{n} fixes on her work',
+      skipWhy: {
+        checked_in: 'not ready',
+        in_service: 'with a client',
+        busy: 'with a client',
+        break: 'on break',
+        out: 'out',
+        already_called: 'already called',
+        no_skill: 'does not do it',
+        no_male_clients: 'no men',
+        no_kids: 'no kids',
+        min_client_age: 'client too young',
+        no_same_time: 'no two-at-once',
+        appointment_soon: 'appointment soon',
+        not_by_turn: 'not her level',
+        said_no: 'said no to that client',
+      } as Record<string, string>,
+    },
     title: 'Reports',
     lead: 'One day at this location, per technician, from the points ledger and the calls.',
     notAllowed: 'Only the owner and managers can open reports.',
@@ -1025,7 +1143,7 @@ const en = {
     cancel: 'Cancel',
     pairTitle: 'Set up this iPad for customer check-in',
     pairLead:
-      'An owner or manager makes a pairing code in Admin, Kiosk. Enter it here. It works once, within 15 minutes.',
+      'An owner or manager makes a pairing code in Admin, Kiosk, which shows until when it works. Enter it here. It works once.',
     pairCode: 'Pairing code',
     pair: 'Pair this iPad',
     staffTitle: 'Someone from the staff is signed in on this iPad',
@@ -1042,13 +1160,14 @@ const en = {
       too_many: 'Please check in at the front desk.',
       not_paired: 'This iPad is not set up for check-in. Please see the front desk.',
       staff_signed_in: 'Please see the front desk.',
-      bad_code: 'That code did not work. A code works once, within 15 minutes.',
+      bad_code: 'That code did not work. A code works once, until the time shown in Admin, Kiosk.',
       bad_pin: 'Wrong PIN.',
       party_too_big: 'Too many people for one check-in. Please see the front desk.',
       party_too_small: 'Please add at least two people.',
     } as Record<string, string>,
   },
   kioskAdmin: {
+    codeOpenUntil: 'pairing code waiting, works until {time}',
     title: 'Check-in kiosk',
     lead: 'The iPads at {location} where customers check themselves in. A kiosk can only add a customer to the waiting list; the desk confirms each one before anyone is called.',
     notAllowed: 'Only the owner and managers can set up the check-in kiosk.',
@@ -1066,7 +1185,7 @@ const en = {
     register: 'Make a pairing code',
     useHere: 'Make this iPad the kiosk',
     codeHint:
-      'Type this code on the kiosk iPad within {minutes} minutes. It works once and is not shown again.',
+      'Type this code on the kiosk iPad before {time}. It works once and is not shown again.',
     listTitle: 'Kiosk iPads',
     none: 'No kiosk iPads yet.',
     pairedAt: 'paired {time}',
@@ -1153,6 +1272,8 @@ const en = {
     } as Record<string, string>,
   },
   techBoard: {
+    // v0.17.0: one small badge (rules: fairness.free_deny_flag).
+    freeDenies: 'Said no {n} times today (free)',
     title: 'Technicians',
     lead: 'In the order the next call goes. Open "Why this order?" for every point behind a total.',
     turn: 'Turn {n}',
@@ -1202,9 +1323,13 @@ const en = {
     edit: 'Change this technician',
   },
   techSettings: {
+    // v0.17.0
+    actForToggle: 'Receptionists can accept, deny and finish for a technician',
+    actForToggleHint:
+      'For a technician whose phone is not at hand. On by default; owners and managers always can. Every one is in the Log.',
     lead: "Today's status and points, and what this technician does and does not take. Every change is in the Log with who made it.",
     todayTitle: 'Today',
-    statusLine: '{name}: {status}, {points} points today.',
+    statusLine: '{name}: {status}, {points} today.',
     setStatus: 'Change status for them (a phone that died, a forgotten tap):',
     inServiceNote: 'With a client now. Status changes when they tap Finished.',
     moves: {
@@ -1221,6 +1346,7 @@ const en = {
     adjust: 'Adjust',
     adjustSaved: 'Points adjusted.',
     errors: {
+      in_service: 'She is with a client. Finish the visit first (Finish for her on the board).',
       server: 'Something went wrong on our side. Try again in a moment.',
       not_allowed: 'Your role cannot change technicians here.',
       wrong_location: 'That technician is at another location.',
@@ -1243,6 +1369,7 @@ const en = {
     receptionistSaved: 'Saved.',
   },
   clients: {
+    noShows: '{n} no-shows',
     title: 'Clients',
     lead: 'Find a client by phone number (any format) or by name (accents do not matter). For the front desk, managers and the owner only; there is no way to download the list.',
     searchLabel: 'Phone or name',
@@ -1321,7 +1448,29 @@ const en = {
       no_levels: 'Tick at least one level, or turn on "The desk picks the tech".',
     } as Record<string, string>,
   },
+  // v0.17.0 (DESK-001): the desk acts for a technician.
+  actFor: {
+    accept: 'Accept for {name}',
+    finish: 'Finish for {name}',
+    deny: 'Deny for {name}',
+    denyReason: 'Why {name} says no',
+    pickReason: 'Pick a reason',
+    errors: {
+      server: 'Something went wrong on our side. Try again in a moment.',
+      not_allowed: 'The owner has turned this off for receptionists. Ask a manager.',
+      unknown_call: 'That call is gone. The board will update.',
+      already_answered: 'That call was already answered.',
+      no_visit_in_service: 'She is not with a client any more.',
+      wrong_location: 'That is at another location.',
+      bad_deny_reason: 'Pick a reason.',
+      cannot_start: 'She cannot start right now. Refresh.',
+      not_your_call: 'That call is for someone else now. Refresh.',
+      bad_split: 'Pick at least one service.',
+      unknown_technician: 'That technician is not here any more. Refresh.',
+    } as Record<string, string>,
+  },
   admin: {
+    yesterdayClosed: '{n} left open were closed at day end.',
     yesterday: 'Yesterday ({date}): {visits} visits, {denies} denies, {overrides} overrides.',
     seeReport: 'See the report',
     today: '{visits} visits today, {denies} denies, {overrides} overrides',
@@ -1426,6 +1575,8 @@ const vi: Dictionary = {
     technician: 'thợ',
   },
   board: {
+    pointOne: '{n} điểm',
+    pointMany: '{n} điểm',
     empty: 'Chưa có ai điểm danh.',
     points: 'điểm',
     waiting: 'đang chờ',
@@ -1441,6 +1592,13 @@ const vi: Dictionary = {
     },
   },
   me: {
+    doneForYou: 'Quầy làm giúp bạn hôm nay',
+    doneForYouLine: {
+      accepted: '{name} nhận khách giúp bạn, {time}',
+      denied: '{name} từ chối giúp bạn ({reason}), {time}',
+      declined: '{name} từ chối giúp bạn, {time}',
+      finished: '{name} bấm xong giúp bạn, {time}',
+    },
     statusLine: 'Bạn đang {status}',
     callWaiting: 'Bạn có lượt gọi đang chờ',
     pointsToday: 'điểm hôm nay',
@@ -1449,6 +1607,11 @@ const vi: Dictionary = {
     upcoming: 'Lịch hẹn của bạn',
     upcomingLine: '{start} đến {end}',
     call: {
+      clientLeftNoteAsk:
+        'Khách về trước khi bạn bắt đầu. Quầy kiểm tra lại; sau đó không tính điểm và bạn giữ chỗ.',
+      clientLeftAsked: 'Bạn báo khách đã về. Quầy đang kiểm tra.',
+      clientStillHere: 'Quầy báo khách vẫn còn ở đây. Hãy nhận hoặc từ chối.',
+      slipDoing: '{name} đang làm: {services}',
       title: 'Bạn được gọi',
       waitedLine: 'đang chờ bạn trả lời, {seconds} giây',
       requested: 'Khách chọn bạn',
@@ -1508,6 +1671,7 @@ const vi: Dictionary = {
       openNow: 'Vừa báo. Quầy đang thấy.',
     },
     errors: {
+      not_on_shift: 'Hãy check-in trước, rồi gọi giúp.',
       server: 'Có lỗi từ phía chúng tôi. Thử lại sau giây lát.',
       illegal_transition: 'Không thể chuyển từ trạng thái hiện tại. Tải lại trang rồi thử lại.',
       outside_geofence:
@@ -1527,6 +1691,13 @@ const vi: Dictionary = {
     },
   },
   desk: {
+    more: 'Thêm',
+    walkedOut: 'Khách về, chưa làm',
+    walkedOutLead: 'Khách về trước khi gọi thợ. Không ai bị tính điểm.',
+    claimLine: '{name} báo khách đã về.',
+    claimConfirm: 'Đúng, khách đã về',
+    claimHere: 'Khách vẫn còn đây',
+    slipDoing: '{name} đang làm {services}',
     walkIn: 'Khách mới',
     pickServices: 'Chọn dịch vụ. Hệ thống sẽ gọi thợ kế tiếp.',
     addWalkIn: 'Thêm vào hàng chờ',
@@ -1672,6 +1843,7 @@ const vi: Dictionary = {
     outFor: '{name} ra ngoài {minutes} phút',
     outOver: '{name} ra ngoài {minutes} phút, quá {limit}: đã cộng điểm phạt',
     errors: {
+      no_claim: 'Thợ đã trả lời hoặc rút lại. Bảng sẽ cập nhật.',
       server: 'Có lỗi từ phía chúng tôi. Thử lại sau giây lát.',
       no_services: 'Chọn ít nhất một dịch vụ.',
       unknown_service: 'Một dịch vụ không còn trong thực đơn. Tải lại trang.',
@@ -1762,6 +1934,10 @@ const vi: Dictionary = {
     } as Record<string, string>,
   },
   appointments: {
+    more: 'Thêm',
+    noShow: 'Khách không đến',
+    noShowLead: 'Khách không đến. Không ai bị tính điểm; thợ được rảnh lại.',
+    noShowState: 'khách không đến',
     title: 'Lịch hẹn',
     lead: 'Hôm nay và tuần tới. Khi khách tới, chọn dịch vụ rồi bấm Khách đã tới: lượt khách đi cho thợ khách đã hẹn, và được trừ điểm lịch hẹn.',
     notAllowed: 'Quầy lễ tân, quản lý và chủ tiệm mới xem được lịch hẹn.',
@@ -1818,6 +1994,9 @@ const vi: Dictionary = {
       synced: 'Đồng bộ xong.',
     } as Record<string, string>,
     errors: {
+      too_early: 'Hãy đợi qua giờ hẹn.',
+      already_no_show: 'Đã ghi khách không đến rồi.',
+      unknown_client: 'Không có khách này ở tiệm.',
       server: 'Có lỗi từ phía chúng tôi. Thử lại sau giây lát.',
       not_allowed: 'Vai trò của bạn không làm được việc này.',
       wrong_location: 'Việc này ở chi nhánh khác.',
@@ -1905,6 +2084,7 @@ const vi: Dictionary = {
     } as Record<string, string>,
   },
   rules: {
+    advanced: 'Nâng cao',
     title: 'Quy tắc',
     lead: 'Mọi con số hệ thống dùng. Lưu sẽ tạo phiên bản mới; các phiên bản cũ được giữ nguyên, không sửa tại chỗ.',
     version: 'Phiên bản {version}',
@@ -1916,6 +2096,7 @@ const vi: Dictionary = {
     notAllowed: 'Chỉ chủ tiệm đổi được quy tắc.',
     server: 'Có lỗi từ phía chúng tôi. Thử lại sau giây lát.',
     sections: {
+      clientLeft: 'Khách về',
       points: 'Điểm',
       categories: 'Điểm theo nhóm dịch vụ',
       penalties: 'Phạt',
@@ -1946,6 +2127,16 @@ const vi: Dictionary = {
       'Sửa móng miễn phí và chỉ nhập ở quầy, không có trên máy tự ghi danh. Quầy xem các lần khách đến trong số ngày này và chọn thợ; thợ đã làm lần trước đứng đầu.',
     lateLead: 'Các mức từ ít đến nhiều phút trễ. Điểm bắt đầu để trống = chưa đặt.',
     fields: {
+      client_left_by_tech: 'Khi thợ bấm "Khách đã về"',
+      client_left_ask_desk: 'Quầy xác nhận trước',
+      client_left_direct: 'Đóng ngay',
+      free_deny_flag: 'Hiện huy hiệu sau số lần từ chối miễn điểm trong ngày (0 = không bao giờ)',
+      free_deny_daily_limit:
+        'Số lần từ chối miễn điểm mỗi ngày trước khi lần sau bị tính điểm (để trống = không giới hạn)',
+      no_show_after_min: 'Số phút sau giờ hẹn thì hiện "Khách không đến"',
+      day_end_in_service: 'Khách còn trên ghế khi hết ngày',
+      day_end_finish: 'Bấm xong; giữ điểm',
+      day_end_close: 'Đóng, không tính điểm',
       default_service: 'Dịch vụ chuẩn',
       fill_or_full_set: 'Fill hoặc full set',
       appointment_discount: 'Giảm cho khách hẹn (số âm)',
@@ -2087,7 +2278,7 @@ const vi: Dictionary = {
     count: '{count} dòng',
     system: 'Hệ thống',
     showQueue: 'Thứ tự lúc đó',
-    queueLine: '{n}. {name}: {points} điểm, {status}',
+    queueLine: '{n}. {name}: {points}, {status}',
     queueSkipped: 'bỏ qua: {why}',
     detail: {
       walkIn: 'Khách vãng lai',
@@ -2099,6 +2290,19 @@ const vi: Dictionary = {
       meters: '{n} m',
       more: '+{n} nữa',
       keys: {
+        acted_for: 'Làm giúp',
+        forDay: 'Của ngày',
+        was: 'Trước đó',
+        penalty: 'Phạt',
+        overFreeLimit: 'Quá số lần miễn trong ngày',
+        waitedMin: 'Đã chờ (phút)',
+        heldPart: 'Phần thứ hai',
+        unconfirmed: 'Chưa xác nhận',
+        pendingFix: 'Sửa móng chờ duyệt',
+        requestHold: 'Chờ thợ được yêu cầu',
+        minutesLate: 'Trễ (phút)',
+        wasNoShow: 'Đã ghi không đến',
+        receptionistActsForTechnicians: 'Lễ tân được làm giúp thợ',
         visit: 'Khách',
         rest_of_visit: 'Phần còn lại',
         fix_of: 'Sửa cho lần',
@@ -2151,7 +2355,11 @@ const vi: Dictionary = {
           self_checkin: 'khách tự check-in',
         },
         choice: { all: 'làm hết', split: 'chia ra' },
-        by: { technician: 'thợ', desk: 'quầy' },
+        by: {
+          technician: 'thợ',
+          desk: 'quầy',
+          technician_confirmed: 'thợ, quầy xác nhận',
+        },
         geofence: { passed: 'trong tiệm', failed: 'ngoài tiệm' },
       } as Record<string, Record<string, string>>,
     },
@@ -2167,6 +2375,15 @@ const vi: Dictionary = {
       queue: 'Thứ tự',
     },
     actions: {
+      client_left_claimed: 'Thợ báo khách đã về (chờ quầy kiểm tra)',
+      client_left_rejected: 'Quầy: khách vẫn còn đây',
+      left_without_service: 'Khách về, chưa làm',
+      appointment_no_show: 'Khách không đến',
+      visit_closed_day_end: 'Đóng cuối ngày (không tính điểm)',
+      visit_auto_finished: 'Bấm xong cuối ngày',
+      call_closed_day_end: 'Đóng lượt gọi cuối ngày (không phạt)',
+      help_closed_day_end: 'Đóng yêu cầu giúp cuối ngày',
+      act_for_setting: 'Bật/tắt lễ tân làm giúp thợ',
       check_in: 'Đã vào ca',
       checked_in: 'Đã vào ca',
       available: 'Sẵn sàng',
@@ -2240,6 +2457,48 @@ const vi: Dictionary = {
     },
   },
   reports: {
+    leftLine:
+      '{walkedOut} khách về khi chưa làm, {clientLeft} khách về sau khi gọi, {noShows} khách không đến. Không tính cho thợ nào.',
+    closedLine:
+      'Đóng cuối ngày: {visits} khách còn chờ hoặc đã gọi (không tính điểm), {autoFinished} bấm xong tự động (giữ điểm), {calls} lượt gọi (không phạt), {help} yêu cầu giúp, {shifts} lượt check-out.',
+    fairness: {
+      title: 'Công bằng, {from} đến {to}',
+      lead: 'Mỗi thợ một hàng trong 7 ngày, chỉ có số đếm. "Từ chối miễn điểm" là lần từ chối luật không tính (nghỉ, việc riêng). Mở chi tiết để xem thêm.',
+      empty: 'Không ai làm trong những ngày này.',
+      showDetails: 'Xem chi tiết',
+      cols: {
+        technician: 'Thợ',
+        visits: 'Lượt khách',
+        points: 'Điểm',
+        flags: 'Nên xem',
+        deniesPenalty: 'Từ chối (có điểm)',
+        deniesFree: 'Từ chối (miễn điểm)',
+        declined: 'Từ chối khi được hỏi',
+        splits: 'Chia lượt',
+        clientLeft: 'Khách về (thợ báo / đã xác nhận)',
+        fixes: 'Sửa móng do thợ làm',
+        skipped: 'Bị bỏ qua, theo lý do',
+      },
+      flagFree: '{n} lần từ chối miễn điểm',
+      flagLeft: '{n} lần báo khách về ({confirmed} đã xác nhận)',
+      flagFixes: '{n} lần sửa móng do thợ làm',
+      skipWhy: {
+        checked_in: 'chưa sẵn sàng',
+        in_service: 'đang làm khách',
+        busy: 'đang làm khách',
+        break: 'đang nghỉ',
+        out: 'ra ngoài',
+        already_called: 'đã được gọi',
+        no_skill: 'không làm dịch vụ này',
+        no_male_clients: 'không nhận khách nam',
+        no_kids: 'không nhận trẻ em',
+        min_client_age: 'khách quá nhỏ',
+        no_same_time: 'không làm cùng lúc',
+        appointment_soon: 'sắp có hẹn',
+        not_by_turn: 'không đúng cấp',
+        said_no: 'đã từ chối khách đó',
+      } as Record<string, string>,
+    },
     title: 'Báo cáo',
     lead: 'Một ngày tại chi nhánh này, theo từng thợ, tính từ sổ điểm và các lượt gọi.',
     notAllowed: 'Chỉ chủ tiệm và quản lý mới mở được báo cáo.',
@@ -2343,7 +2602,7 @@ const vi: Dictionary = {
     cancel: 'Hủy',
     pairTitle: 'Cài iPad này cho khách tự check-in',
     pairLead:
-      'Chủ tiệm hoặc quản lý tạo mã ghép trong Quản trị, Máy check-in. Nhập mã ở đây. Mã dùng một lần, trong 15 phút.',
+      'Chủ tiệm hoặc quản lý tạo mã ghép trong Quản trị, Máy check-in (có ghi mã dùng được đến lúc nào). Nhập mã ở đây. Mã dùng một lần.',
     pairCode: 'Mã ghép',
     pair: 'Ghép iPad này',
     staffTitle: 'Có nhân viên đang đăng nhập trên iPad này',
@@ -2361,13 +2620,14 @@ const vi: Dictionary = {
       too_many: 'Vui lòng check-in tại quầy lễ tân.',
       not_paired: 'iPad này chưa được cài cho check-in. Vui lòng gặp quầy lễ tân.',
       staff_signed_in: 'Vui lòng gặp quầy lễ tân.',
-      bad_code: 'Mã không đúng. Mỗi mã dùng một lần, trong 15 phút.',
+      bad_code: 'Mã không đúng. Mỗi mã dùng một lần, đến giờ ghi trong Quản trị, Máy check-in.',
       bad_pin: 'Sai mã PIN.',
       party_too_big: 'Nhóm quá đông cho một lần ghi danh. Xin đến quầy.',
       party_too_small: 'Xin thêm ít nhất hai người.',
     } as Record<string, string>,
   },
   kioskAdmin: {
+    codeOpenUntil: 'đang chờ mã ghép, dùng được đến {time}',
     title: 'Máy check-in',
     lead: 'Các iPad ở {location} để khách tự check-in. Máy check-in chỉ thêm khách vào danh sách chờ; lễ tân xác nhận từng khách trước khi gọi thợ.',
     notAllowed: 'Chỉ chủ tiệm và quản lý mới cài được máy check-in.',
@@ -2383,8 +2643,7 @@ const vi: Dictionary = {
       'Chạm tên tiệm năm lần trên máy check-in, rồi nhập mã này, để quay lại đăng nhập nhân viên.',
     register: 'Tạo mã ghép',
     useHere: 'Đặt iPad này làm máy check-in',
-    codeHint:
-      'Nhập mã này trên iPad check-in trong {minutes} phút. Mã dùng một lần và không hiện lại.',
+    codeHint: 'Nhập mã này trên iPad check-in trước {time}. Mã dùng một lần và không hiện lại.',
     listTitle: 'Các iPad check-in',
     none: 'Chưa có iPad check-in nào.',
     pairedAt: 'đã ghép {time}',
@@ -2471,6 +2730,7 @@ const vi: Dictionary = {
     } as Record<string, string>,
   },
   techBoard: {
+    freeDenies: 'Hôm nay từ chối {n} lần (miễn điểm)',
     title: 'Thợ',
     lead: 'Theo thứ tự lượt gọi tiếp theo. Mở "Vì sao thứ tự này?" để xem từng điểm.',
     turn: 'Lượt {n}',
@@ -2520,9 +2780,12 @@ const vi: Dictionary = {
     edit: 'Chỉnh thông tin thợ',
   },
   techSettings: {
+    actForToggle: 'Lễ tân được nhận, từ chối và bấm xong giúp thợ',
+    actForToggleHint:
+      'Khi thợ không có điện thoại bên cạnh. Mặc định bật; chủ tiệm và quản lý luôn làm được. Mọi lần đều ghi trong Nhật ký.',
     lead: 'Trạng thái và điểm hôm nay, và thợ này làm gì, không nhận ai. Mọi thay đổi đều ghi vào Nhật ký kèm người sửa.',
     todayTitle: 'Hôm nay',
-    statusLine: '{name}: {status}, hôm nay {points} điểm.',
+    statusLine: '{name}: {status}, hôm nay {points}.',
     setStatus: 'Đổi trạng thái giúp thợ (điện thoại hết pin, quên bấm):',
     inServiceNote: 'Đang làm cho khách. Trạng thái đổi khi thợ bấm Xong.',
     moves: {
@@ -2539,6 +2802,7 @@ const vi: Dictionary = {
     adjust: 'Chỉnh',
     adjustSaved: 'Đã chỉnh điểm.',
     errors: {
+      in_service: 'Thợ đang làm khách. Hãy bấm xong trước (Bấm xong giúp trên bảng).',
       server: 'Có lỗi phía hệ thống. Thử lại sau giây lát.',
       not_allowed: 'Vai trò của bạn không được chỉnh thợ ở đây.',
       wrong_location: 'Thợ này ở tiệm khác.',
@@ -2560,6 +2824,7 @@ const vi: Dictionary = {
     receptionistSaved: 'Đã lưu.',
   },
   clients: {
+    noShows: '{n} lần không đến',
     title: 'Khách',
     lead: 'Tìm khách theo số điện thoại (viết kiểu nào cũng được) hoặc theo tên (không cần dấu). Chỉ dành cho lễ tân, quản lý và chủ tiệm; không tải danh sách xuống được.',
     searchLabel: 'Số điện thoại hoặc tên',
@@ -2637,7 +2902,28 @@ const vi: Dictionary = {
       no_levels: 'Hãy chọn ít nhất một bậc, hoặc bật "Quầy chọn thợ".',
     } as Record<string, string>,
   },
+  actFor: {
+    accept: 'Nhận giúp {name}',
+    finish: 'Bấm xong giúp {name}',
+    deny: 'Từ chối giúp {name}',
+    denyReason: 'Lý do {name} từ chối',
+    pickReason: 'Chọn lý do',
+    errors: {
+      server: 'Có lỗi phía chúng tôi. Hãy thử lại sau giây lát.',
+      not_allowed: 'Chủ tiệm đã tắt việc này cho lễ tân. Hãy nhờ quản lý.',
+      unknown_call: 'Lượt gọi đó không còn. Bảng sẽ cập nhật.',
+      already_answered: 'Lượt gọi đó đã được trả lời.',
+      no_visit_in_service: 'Thợ không còn đang làm khách.',
+      wrong_location: 'Việc này ở tiệm khác.',
+      bad_deny_reason: 'Hãy chọn lý do.',
+      cannot_start: 'Thợ chưa bắt đầu được. Hãy tải lại.',
+      not_your_call: 'Lượt gọi đó giờ của người khác. Hãy tải lại.',
+      bad_split: 'Hãy chọn ít nhất một dịch vụ.',
+      unknown_technician: 'Thợ đó không còn ở đây. Hãy tải lại.',
+    } as Record<string, string>,
+  },
   admin: {
+    yesterdayClosed: '{n} việc còn dở đã được đóng cuối ngày.',
     yesterday: 'Hôm qua ({date}): {visits} lượt khách, {denies} từ chối, {overrides} can thiệp.',
     seeReport: 'Xem báo cáo',
     today: 'Hôm nay {visits} lượt khách, {denies} từ chối, {overrides} can thiệp',

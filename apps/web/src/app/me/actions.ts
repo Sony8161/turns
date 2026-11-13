@@ -34,6 +34,7 @@ export type MeState = {
     | 'bad_split'
     | 'too_many'
     | 'not_called'
+    | 'not_on_shift'
     | 'server';
   distanceM?: number;
   radiusM?: number;
@@ -190,7 +191,14 @@ async function askHelpRun(_prev: MeState, formData: FormData): Promise<MeState> 
   revalidatePath('/me');
   revalidatePath('/admin');
   if (result.ok) return {};
-  return { error: result.reason === 'too_many' ? 'too_many' : 'not_technician' };
+  return {
+    error:
+      result.reason === 'too_many'
+        ? 'too_many'
+        : result.reason === 'not_on_shift'
+          ? 'not_on_shift'
+          : 'not_technician',
+  };
 }
 
 function readPosition(formData: FormData): { lat: number; lng: number; accuracyM?: number } | null {

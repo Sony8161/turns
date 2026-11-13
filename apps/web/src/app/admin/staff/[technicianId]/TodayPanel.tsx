@@ -1,7 +1,7 @@
 'use client';
 
 import { useActionState } from 'react';
-import { formatPoints } from '@/components/Board';
+import { formatPoints, pointsWord } from '@/components/Board';
 import { ErrorRef } from '@/components/ErrorRef';
 import { Button } from '@/components/ui';
 import { fill, type Dictionary } from '@/i18n/dictionary';
@@ -51,7 +51,7 @@ export function TodayPanel({
         {fill(t.statusLine, {
           name,
           status: board.status[status as keyof typeof board.status] ?? status,
-          points: formatPoints(points, hadAppointmentLast),
+          points: pointsWord(points, hadAppointmentLast, board),
         })}
       </p>
       {state.done ? (

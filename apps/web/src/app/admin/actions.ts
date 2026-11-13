@@ -1,13 +1,18 @@
 'use server';
 
+import { deskAnswerCall, deskFinishVisit } from '@turn/db/act-for';
 import {
   callNext,
+  clientHere,
   clientLeft,
   createWalkIn,
+  DENY_REASONS,
   deskCall,
   expireCall,
+  leftWithoutService,
   setLongWaitNotice,
   setVisitNote,
+  type DenyReason,
 } from '@turn/db/engine';
 import { fixCandidates, reviewFix } from '@turn/db/fixes';
 import { acknowledgeHelp } from '@turn/db/help';
@@ -433,4 +438,107 @@ async function requestHoldForRun(_prev: DeskState, formData: FormData): Promise<
   // Every time problem reads the same to the desk: pick another time.
   const time = ['end_before_start', 'too_long', 'too_far_back', 'too_far_ahead'];
   return { error: time.includes(result.reason) ? 'bad_time' : result.reason };
+}
+
+/**
+ * v0.17.0 (DESK-001): the desk acts for a technician whose phone is not to
+ * hand: accept her call (it starts the service), deny it with a reason (the
+ * same penalty rules as her phone) or finish her visit. Who may is checked
+ * in @turn/db/act-for, next to the write (receptionists: the owner's switch).
+ */
+export async function actForTech(prev: DeskState, formData: FormData): Promise<DeskState> {
+  return guarded('actForTech', { error: 'server' } as DeskState, () =>
+    actForTechRun(prev, formData),
+  );
+}
+
+async function actForTechRun(_prev: DeskState, formData: FormData): Promise<DeskState> {
+  const actor = await requireActor();
+  const m = membershipWith(actor, 'act_for_technician');
+  if (!m) return { error: 'not_allowed' };
+  const who = {
+    userId: actor.userId,
+    role: m.role,
+    organizationId: m.organizationId,
+    locationId: m.locationId,
+  };
+  const intent = String(formData.get('intent') ?? '');
+  let result: { ok: true } | { ok: false; reason: string; detail?: string };
+  if (intent === 'accept' || intent === 'deny') {
+    const callId = uuidOf(formData.get('callId'));
+    if (!callId) return { error: 'unknown_call' };
+    const reason = String(formData.get('reason') ?? '');
+    if (intent === 'deny' && !(DENY_REASONS as readonly string[]).includes(reason)) {
+      return { error: 'bad_deny_reason' };
+    }
+    result = await deskAnswerCall(db(), {
+      actor: who,
+      callId,
+      response: intent === 'accept' ? 'accepted' : 'denied',
+      ...(intent === 'deny' ? { denyReason: reason as DenyReason } : {}),
+    });
+  } else if (intent === 'finish') {
+    const technicianId = uuidOf(formData.get('technicianId'));
+    const visitId = uuidOf(formData.get('visitId'));
+    if (!technicianId) return { error: 'unknown_technician' };
+    result = await deskFinishVisit(db(), {
+      actor: who,
+      technicianId,
+      ...(visitId ? { visitId } : {}),
+    });
+  } else {
+    return { error: 'unknown_visit' };
+  }
+  revalidatePath('/admin');
+  revalidatePath('/me');
+  return result.ok ? {} : { error: result.reason, detail: result.detail };
+}
+
+/** v0.17.0 (WALK-001): a waiting client walked out before anyone was called. */
+export async function leftWithoutServiceFor(
+  prev: DeskState,
+  formData: FormData,
+): Promise<DeskState> {
+  return guarded('leftWithoutServiceFor', { error: 'server' } as DeskState, () =>
+    leftWithoutServiceForRun(prev, formData),
+  );
+}
+
+async function leftWithoutServiceForRun(_prev: DeskState, formData: FormData): Promise<DeskState> {
+  const actor = await requireActor();
+  const m = await deskMembership();
+  if (!m || !can(m.role, 'call_technician')) return { error: 'not_allowed' };
+  const visitId = uuidOf(formData.get('visitId'));
+  if (!visitId) return { error: 'unknown_visit' };
+  const result = await leftWithoutService(db(), {
+    visitId,
+    actor: { userId: actor.userId },
+    locationId: m.locationId,
+  });
+  revalidatePath('/admin');
+  return result.ok ? {} : { error: result.reason };
+}
+
+/** v0.17.0 (FAIR-001): the technician said the client left; the desk says the
+ *  client is still here, so she answers the call as usual. */
+export async function clientHereFor(prev: DeskState, formData: FormData): Promise<DeskState> {
+  return guarded('clientHereFor', { error: 'server' } as DeskState, () =>
+    clientHereForRun(prev, formData),
+  );
+}
+
+async function clientHereForRun(_prev: DeskState, formData: FormData): Promise<DeskState> {
+  const actor = await requireActor();
+  const m = await deskMembership();
+  if (!m || !can(m.role, 'call_technician')) return { error: 'not_allowed' };
+  const visitId = uuidOf(formData.get('visitId'));
+  if (!visitId) return { error: 'unknown_visit' };
+  const result = await clientHere(db(), {
+    visitId,
+    actor: { userId: actor.userId },
+    locationId: m.locationId,
+  });
+  revalidatePath('/admin');
+  revalidatePath('/me');
+  return result.ok ? {} : { error: result.reason };
 }

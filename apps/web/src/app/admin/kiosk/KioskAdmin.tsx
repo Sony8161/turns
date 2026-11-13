@@ -24,20 +24,31 @@ const field = 'min-h-12 rounded-control border-2 border-slate/30 bg-board px-3 t
 function CodeShown({
   state,
   t,
-  minutes,
+  timezone,
+  locale,
 }: {
   state: KioskAdminState;
   t: Dictionary['kioskAdmin'];
-  minutes: number;
+  timezone: string;
+  locale: string;
 }) {
   if (!state.code) return null;
+  // v0.17.0: the code's real expiry, as a clock time at the salon.
+  const until = state.expiresAt
+    ? new Intl.DateTimeFormat(locale, {
+        timeZone: timezone,
+        weekday: 'short',
+        hour: 'numeric',
+        minute: '2-digit',
+      }).format(new Date(state.expiresAt))
+    : '';
   return (
     <div
       aria-live="polite"
       className="flex flex-col gap-1 border-l-[12px] border-teal bg-board p-4"
     >
       <span className="text-heading font-semibold tracking-widest">{state.code}</span>
-      <span className="text-slate/80">{fill(t.codeHint, { minutes })}</span>
+      <span className="text-slate/80">{fill(t.codeHint, { time: until })}</span>
     </div>
   );
 }
@@ -45,11 +56,13 @@ function CodeShown({
 export function KioskAdmin({
   t,
   rows,
-  pairingMinutes,
+  timezone,
+  locale,
 }: {
   t: Dictionary['kioskAdmin'];
   rows: KioskRowView[];
-  pairingMinutes: number;
+  timezone: string;
+  locale: string;
 }) {
   const [made, register, registering] = useActionState<KioskAdminState, FormData>(
     registerKiosk,
@@ -108,7 +121,7 @@ export function KioskAdmin({
           <Button type="submit" disabled={registering}>
             {t.register}
           </Button>
-          <CodeShown state={made} t={t} minutes={pairingMinutes} />
+          <CodeShown state={made} t={t} timezone={timezone} locale={locale} />
         </form>
         <form action={pairHere} className="flex flex-col gap-4 bg-board p-5">
           <h2 className="text-heading font-semibold">{t.useHereTitle}</h2>
@@ -125,7 +138,7 @@ export function KioskAdmin({
         <h2 className="text-heading font-semibold">{t.listTitle}</h2>
         {err(again)}
         {err(gone)}
-        <CodeShown state={again} t={t} minutes={pairingMinutes} />
+        <CodeShown state={again} t={t} timezone={timezone} locale={locale} />
         {rows.length === 0 ? <p className="text-slate/70">{t.none}</p> : null}
         <ul className="flex flex-col gap-2">
           {rows.map((r) => (

@@ -30,6 +30,9 @@ const TABLE: Record<Capability, Record<Role, boolean>> = {
   manage_kiosks: OM,
   // v0.16.0 (Duong): a receptionist's fix waits for a manager or owner.
   approve_fixes: OM,
+  // v0.17.0: the desk accepts, denies and finishes for a technician. A
+  // receptionist only while the owner's switch is on (act-for.ts checks it).
+  act_for_technician: OMR,
   technician_actions: T,
   view_own_schedule: T,
   delete_records: NOBODY,
@@ -52,7 +55,14 @@ describe('principles', () => {
   });
   it('receptionists only run the queue', () => {
     const allowed = (Object.keys(TABLE) as Capability[]).filter((c) => can('receptionist', c));
-    expect(allowed.sort()).toEqual(['call_technician', 'enter_walkins', 'view_board']);
+    // v0.17.0: answering a call or finishing for a tech is part of running the
+    // queue (on by default; the owner can switch it off for receptionists).
+    expect(allowed.sort()).toEqual([
+      'act_for_technician',
+      'call_technician',
+      'enter_walkins',
+      'view_board',
+    ]);
   });
   it('technicians never see the board or the archive', () => {
     expect(can('technician', 'view_board')).toBe(false);

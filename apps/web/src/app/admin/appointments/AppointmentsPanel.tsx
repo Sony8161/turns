@@ -18,7 +18,9 @@ export type AppointmentItem = {
   start: string;
   minutes: number;
   source: 'ics' | 'manual';
-  state: 'open' | 'arrived' | 'cancelled';
+  state: 'open' | 'arrived' | 'cancelled' | 'no_show';
+  /** v0.17.0: the start time (plus the rules' minutes) has passed: No-show is offered. */
+  canNoShow?: boolean;
 };
 type Sync = {
   feeds: number;
@@ -124,7 +126,9 @@ export function AppointmentsPanel({
                   {a.source === 'ics' ? t.fromCalendar : t.byHand}
                 </span>
                 {a.state !== 'open' ? (
-                  <span className="font-semibold text-slate">{t[a.state]}</span>
+                  <span className="font-semibold text-slate">
+                    {a.state === 'no_show' ? t.noShowState : t[a.state]}
+                  </span>
                 ) : null}
               </div>
               {a.state === 'open' ? (
@@ -210,6 +214,22 @@ export function AppointmentsPanel({
                   ) : (
                     <p className="text-small text-slate/70">{t.calendarChange}</p>
                   )}
+                  {a.canNoShow ? (
+                    // v0.17.0: the client did not come. Under "More": Client arrived stays first.
+                    <details className="flex flex-col gap-2">
+                      <summary className="min-h-11 cursor-pointer py-2 font-medium">
+                        {t.more}
+                      </summary>
+                      <form action={action} className="flex flex-col items-start gap-2">
+                        <input type="hidden" name="intent" value="no_show" />
+                        <input type="hidden" name="appointmentId" value={a.id} />
+                        <span className="text-small text-slate/80">{t.noShowLead}</span>
+                        <Button type="submit" tone="quiet" disabled={pending}>
+                          {t.noShow}
+                        </Button>
+                      </form>
+                    </details>
+                  ) : null}
                 </>
               ) : null}
             </li>

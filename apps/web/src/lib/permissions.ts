@@ -28,6 +28,7 @@ export type Capability =
   | 'export_data'
   | 'manage_kiosks' // pair, re-pair and revoke the customer check-in iPads (Part 9)
   | 'approve_fixes' // v0.16.0: approve or decline a nail fix a receptionist entered
+  | 'act_for_technician' // v0.17.0: accept, deny, finish for a tech (receptionist: owner switch)
   | 'technician_actions' // own status, accept, deny, finish
   | 'view_own_schedule' // own calls and upcoming appointments
   | 'delete_records'; // nobody, on purpose
@@ -50,6 +51,10 @@ const TABLE: Record<Capability, readonly Role[]> = {
   export_data: ['owner'],
   manage_kiosks: ['owner', 'manager'],
   approve_fixes: ['owner', 'manager'],
+  // v0.17.0: the most a role may have. A receptionist also needs the owner's
+  // switch on (Staff page, default on); @turn/db/act-for checks it next to
+  // the write, as tech-settings does for edits.
+  act_for_technician: ['owner', 'manager', 'receptionist'],
   technician_actions: ['technician'],
   view_own_schedule: ['technician'],
   delete_records: [],

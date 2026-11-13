@@ -1,4 +1,4 @@
-import { listKiosks, PAIRING_TTL_MIN } from '@turn/db/kiosk';
+import { listKiosks } from '@turn/db/kiosk';
 import { locations } from '@turn/db';
 import { eq } from 'drizzle-orm';
 import { redirect } from 'next/navigation';
@@ -84,7 +84,14 @@ export default async function KioskAdminPage() {
     else if (r.paired && r.pairedAt)
       parts.push(fill(k.pairedAt, { time: when.format(r.pairedAt) }));
     else parts.push(k.notPaired);
-    if (!r.revokedAt && r.pairingOpen) parts.push(k.codeOpen);
+    if (!r.revokedAt && r.pairingOpen) {
+      // v0.17.0: the real expiry (the sample code lasts 24 hours, a new one 15 minutes).
+      parts.push(
+        r.pairingExpiresAt
+          ? fill(k.codeOpenUntil, { time: when.format(r.pairingExpiresAt) })
+          : k.codeOpen,
+      );
+    }
     if (!r.revokedAt && r.lastSeenAt)
       parts.push(fill(k.lastSeen, { time: when.format(r.lastSeenAt) }));
     return { id: r.id, name: r.name, state: parts.join(' · '), revoked: !!r.revokedAt };
@@ -98,7 +105,12 @@ export default async function KioskAdminPage() {
         <h1 className="text-heading font-semibold">{k.title}</h1>
         <p className="max-w-[70ch] text-slate/80">{fill(k.lead, { location: m.locationName })}</p>
       </section>
-      <KioskAdmin t={k} rows={view} pairingMinutes={PAIRING_TTL_MIN} />
+      <KioskAdmin
+        t={k}
+        rows={view}
+        timezone={loc?.timezone ?? 'America/New_York'}
+        locale={lang === 'vi' ? 'vi-VN' : 'en-US'}
+      />
     </main>
   );
 }

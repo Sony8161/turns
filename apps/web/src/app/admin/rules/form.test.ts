@@ -78,6 +78,32 @@ describe('rule builder form', () => {
     expect(validateRuleConfig(nine.candidate).ok).toBe(false);
   });
 
+  it('v0.17.0: client left, the free-deny flag and limit, and the day-end choices round-trip', () => {
+    const changed: RuleConfig = {
+      ...base,
+      fairness: { client_left_by_tech: 'direct', free_deny_flag: 0, free_deny_daily_limit: 4 },
+      closing: { day_end_in_service: 'close', no_show_after_min: 10 },
+    };
+    const values = formValues(changed);
+    expect(values['fairness.client_left_by_tech']).toBe('direct');
+    expect(values['fairness.free_deny_daily_limit']).toBe('4');
+    const checked = validateRuleConfig(configFromForm(form(values), changed, []).candidate);
+    expect(checked.ok && checked.config.fairness).toEqual(changed.fairness);
+    expect(checked.ok && checked.config.closing).toEqual(changed.closing);
+    // A blank daily limit is no limit (Heavenly).
+    const blank = configFromForm(
+      form({ ...values, 'fairness.free_deny_daily_limit': '' }),
+      changed,
+      [],
+    );
+    const again = validateRuleConfig(blank.candidate);
+    expect(again.ok && again.config.fairness.free_deny_daily_limit).toBeNull();
+    // Heavenly's defaults.
+    expect(formValues(base)['fairness.client_left_by_tech']).toBe('ask_desk');
+    expect(formValues(base)['fairness.free_deny_flag']).toBe('3');
+    expect(formValues(base)['fairness.free_deny_daily_limit']).toBe('');
+  });
+
   it('keeps text in a number field so the validator names it; accepts a decimal comma', () => {
     const values = { ...formValues(base), 'penalties.deny': 'one' };
     const checked = validateRuleConfig(configFromForm(form(values), base, []).candidate);
