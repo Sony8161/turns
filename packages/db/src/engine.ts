@@ -452,6 +452,8 @@ export async function queueFor(
           isNull(appointments.cancelledAt),
           // An appointment whose client is here is a visit now (Part 7).
           isNull(appointments.arrivedAt),
+          // v0.17.0: a client the desk marked a no-show holds nobody.
+          isNull(appointments.noShowAt),
           gt(appointments.endAt, now),
           gt(appointments.startAt, noShowBefore),
           lt(appointments.startAt, bufferEnd),
@@ -817,6 +819,9 @@ export async function respondToCall(
      *  of them = "do all". */
     keepServiceIds?: string[];
     actor: Actor;
+    /** v0.17.0 (DESK-001): the desk answers for her. Same rules and
+     *  penalties; the call and the audit row name who acted for whom. */
+    onBehalf?: boolean;
   },
 ): Promise<{ ok: true; splitVisitId?: string } | EngineError> {
   return db.transaction(async (tx) => {
@@ -829,6 +834,12 @@ export async function respondToCall(
     if (call.technicianId !== input.technicianId) return { ok: false, reason: 'not_your_call' };
     if (call.respondedAt) return { ok: false, reason: 'already_answered' };
     const now = new Date();
+    // v0.17.0: who answered, when it was not her; read by her phone's
+    // "done for you" lines and the audit log.
+    const actedFor = input.onBehalf
+      ? { actedFor: call.technicianId, by: 'desk' as const }
+      : ({} as Record<string, never>);
+    const answeredBy = input.onBehalf ? { answeredBy: input.actor.userId } : {};
 
     if (input.response === 'accepted') {
       // Decide the split before anything is written.
@@ -868,7 +879,7 @@ export async function respondToCall(
       if (!moved.ok) return { ok: false, reason: 'cannot_start', detail: moved.reason };
       await tx
         .update(turnCalls)
-        .set({ respondedAt: now, response: 'accepted' })
+        .set({ respondedAt: now, response: 'accepted', ...answeredBy })
         .where(eq(turnCalls.id, call.id));
       await tx
         .update(visits)
@@ -896,6 +907,7 @@ export async function respondToCall(
           ...(all.length > 1 ? { choice: sendBack.length ? 'split' : 'all' } : {}),
           // She does only part of it: the rest was never hers to choose.
           ...(able.length < all.length ? { takesOnly: able } : {}),
+          ...actedFor,
         },
       });
       return { ok: true, ...(splitVisitId ? { splitVisitId } : {}) };
@@ -906,7 +918,7 @@ export async function respondToCall(
     if (call.kind !== 'turn') {
       await tx
         .update(turnCalls)
-        .set({ respondedAt: now, response: 'denied', denyReason: 'declined' })
+        .set({ respondedAt: now, response: 'denied', denyReason: 'declined', ...answeredBy })
         .where(eq(turnCalls.id, call.id));
       await tx
         .update(visits)
@@ -919,7 +931,7 @@ export async function respondToCall(
         entityType: 'turn_calls',
         entityId: call.id,
         action: call.kind === 'offer' ? 'offer_declined' : 'desk_pick_declined',
-        after: { visitId: call.visitId, kind: call.kind },
+        after: { visitId: call.visitId, kind: call.kind, ...actedFor },
       });
       return { ok: true };
     }
@@ -929,7 +941,18 @@ export async function respondToCall(
     const rules = await activeRules(tx, call.locationId);
     // v0.15.0: a reason the rules excuse (Heavenly: break, personal) costs
     // nothing and needs no manager. She is not called for this visit again.
-    const excused = rules.penalties.deny_excused_reasons.includes(reason);
+    // v0.17.0: unless the rules set a daily limit and she has reached it:
+    // then it costs the deny penalty like any other reason.
+    let excused = rules.penalties.deny_excused_reasons.includes(reason);
+    let overLimit = false;
+    const limit = rules.fairness.free_deny_daily_limit;
+    if (excused && limit !== null) {
+      const used = await freeDeniesToday(tx, call.technicianId);
+      if (used >= limit) {
+        excused = false;
+        overLimit = true;
+      }
+    }
     await tx
       .update(turnCalls)
       .set({
@@ -937,6 +960,7 @@ export async function respondToCall(
         response: 'denied',
         denyReason: reason,
         ...(excused ? { autoExcused: true, excusedAt: now } : {}),
+        ...answeredBy,
       })
       .where(eq(turnCalls.id, call.id));
     await tx
@@ -971,11 +995,33 @@ export async function respondToCall(
         visitId: call.visitId,
         denyReason: reason,
         ...(excused ? { excused: 'by_rule' } : {}),
+        ...(overLimit ? { overFreeLimit: limit } : {}),
+        ...actedFor,
       },
       reason,
     });
     return { ok: true };
   });
+}
+
+/**
+ * v0.17.0 (FAIR-001): free (auto-excused) denies on the technician's current
+ * shift: the board's flag and the rules' daily limit count these.
+ */
+export async function freeDeniesToday(db: Db | Tx, technicianId: string): Promise<number> {
+  const [row] = await db
+    .select({ n: sql<string>`count(*)` })
+    .from(turnCalls)
+    .innerJoin(technicianStatus, eq(technicianStatus.technicianId, turnCalls.technicianId))
+    .innerJoin(shifts, eq(shifts.id, technicianStatus.shiftId))
+    .where(
+      and(
+        eq(turnCalls.technicianId, technicianId),
+        eq(turnCalls.autoExcused, true),
+        sql`${turnCalls.calledAt} >= ${shifts.checkedInAt}`,
+      ),
+    );
+  return Number(row?.n ?? 0);
 }
 
 /**
@@ -1175,7 +1221,8 @@ export async function deskOptions(
         level: c.level ?? null,
         turn: i + 1,
         points: c.points,
-        status: c.status,
+        // v0.17.0 (LEFT-001): she has an open call: "Called", not "available".
+        status: c.why === 'already_called' ? 'called' : c.status,
         canCall: c.eligible || c.why === 'not_by_turn',
       });
       const technicians = queue
@@ -1217,14 +1264,26 @@ export async function deskOptions(
  *  completes, the technician is available again. */
 export async function finishVisit(
   db: Db,
-  input: { technicianId: string; actor: Actor },
+  input: {
+    technicianId: string;
+    actor: Actor;
+    /** v0.17.0 (DESK-001): the desk pressed Finished for her. */
+    onBehalf?: boolean;
+    /** v0.17.0: the desk names the visit it sees, so a stale screen cannot
+     *  finish a different one. */
+    visitId?: string;
+  },
 ): Promise<{ ok: true; points: number } | EngineError> {
   return db.transaction(async (tx) => {
     const [visit] = await tx
       .select()
       .from(visits)
       .where(
-        and(eq(visits.assignedTechnicianId, input.technicianId), eq(visits.status, 'in_service')),
+        and(
+          eq(visits.assignedTechnicianId, input.technicianId),
+          eq(visits.status, 'in_service'),
+          ...(input.visitId ? [eq(visits.id, input.visitId)] : []),
+        ),
       )
       .for('update');
     if (!visit) return { ok: false, reason: 'no_visit_in_service' };
@@ -1272,6 +1331,7 @@ export async function finishVisit(
         status: 'completed',
         completedAt: now,
         pointsPosted: points.toFixed(1),
+        ...(input.onBehalf ? { finishedBy: input.actor.userId } : {}),
         updatedAt: now,
       })
       .where(eq(visits.id, visit.id));
@@ -1282,7 +1342,11 @@ export async function finishVisit(
       entityType: 'visits',
       entityId: visit.id,
       action: 'visit_completed',
-      after: { points, technicianId: input.technicianId },
+      after: {
+        points,
+        technicianId: input.technicianId,
+        ...(input.onBehalf ? { actedFor: input.technicianId, by: 'desk' } : {}),
+      },
     });
     return { ok: true, points };
   });
@@ -1426,6 +1490,8 @@ export type SlipPart = {
   /** Who did (or is doing) this part; null while nobody has it. */
   technician: string | null;
   services: string[];
+  /** v0.17.0: finished. Until then the slip says she "is doing" it. */
+  done: boolean;
 };
 
 /**
@@ -1446,6 +1512,7 @@ async function slipFor(
         id: visits.id,
         splitFromVisitId: visits.splitFromVisitId,
         technician: technicians.displayName,
+        status: visits.status,
       })
       .from(visits)
       .leftJoin(technicians, eq(technicians.id, visits.assignedTechnicianId))
@@ -1457,7 +1524,11 @@ async function slipFor(
       .innerJoin(services, eq(services.id, visitServices.serviceId))
       .where(eq(visitServices.visitId, p.id))
       .orderBy(asc(services.name));
-    parts.unshift({ technician: p.technician, services: items.map((i) => i.name) });
+    parts.unshift({
+      technician: p.technician,
+      services: items.map((i) => i.name),
+      done: p.status === 'completed',
+    });
     parentId = p.splitFromVisitId;
   }
   return parts.length ? parts : null;
@@ -1477,6 +1548,8 @@ export async function openCallFor(db: Db, technicianId: string) {
       locationId: turnCalls.locationId,
       queueSnapshot: turnCalls.queueSnapshot,
       splitFromVisitId: visits.splitFromVisitId,
+      leftClaimedAt: turnCalls.leftClaimedAt,
+      leftClaimOutcome: turnCalls.leftClaimOutcome,
     })
     .from(turnCalls)
     .innerJoin(visits, eq(visits.id, turnCalls.visitId))
@@ -1510,6 +1583,8 @@ export async function openCallFor(db: Db, technicianId: string) {
     locationId: _locationId,
     queueSnapshot: _queueSnapshot,
     splitFromVisitId,
+    leftClaimedAt,
+    leftClaimOutcome,
     ...rest
   } = call;
   void _locationId;
@@ -1524,6 +1599,13 @@ export async function openCallFor(db: Db, technicianId: string) {
     serviceItems: items.map((i) => ({ id: i.id, name: i.name, canDo: able.has(i.id) })),
     /** v0.15.0: the earlier parts of this client's visit, when this is the rest of one. */
     slip: await slipFor(db, { splitFromVisitId }),
+    /** v0.17.0: she said the client left. 'pending' = the desk has not
+     *  answered yet; 'client_here' = the desk says the client is still here. */
+    leftClaim: (leftClaimedAt && !leftClaimOutcome
+      ? 'pending'
+      : leftClaimOutcome === 'client_here'
+        ? 'client_here'
+        : null) as 'pending' | 'client_here' | null,
   };
 }
 
@@ -2258,11 +2340,17 @@ export async function adjustPoints(
 
 /**
  * v0.16.0, "Client left": the visit was called but the service had not started
- * and the client walked out. The desk (receptionist, manager, owner) or the
- * called technician marks it. The call closes as client_left, the visit
+ * and the client walked out. The call closes as client_left, the visit
  * closes as left, no points post, and the technician keeps her place: she is
  * still available, as before the call. Visits already in service are not
  * touched (they finish or are reassigned as before).
+ *
+ * v0.17.0 (FAIR-001): who may close it. The desk (receptionist, manager,
+ * owner) always closes it at once. The called technician, on her phone,
+ * closes it only under the rule fairness.client_left_by_tech = 'direct';
+ * under 'ask_desk' (Heavenly) her tap is a claim: the visit stays called and
+ * the desk sees "Vân says the client left: Confirm / Client is here". Only
+ * the desk's Confirm closes it (clientLeft without technicianId).
  */
 export async function clientLeft(
   db: Db,
@@ -2274,7 +2362,7 @@ export async function clientLeft(
     /** Set when the called technician marks it on her phone: it must be her call. */
     technicianId?: string;
   },
-): Promise<{ ok: true; technicianId: string } | EngineError> {
+): Promise<{ ok: true; technicianId: string; pending?: boolean } | EngineError> {
   return db.transaction(async (tx) => {
     const [visit] = await tx
       .select()
@@ -2294,13 +2382,47 @@ export async function clientLeft(
       return { ok: false, reason: 'not_your_call' };
     }
     const now = new Date();
+    const byTech = !!input.technicianId;
+    if (byTech) {
+      const rules = await activeRules(tx, visit.locationId);
+      if (rules.fairness.client_left_by_tech === 'ask_desk') {
+        // Her word goes to the desk; nothing closes yet. A second tap while
+        // the desk has not answered is the same claim.
+        if (call.leftClaimedAt && !call.leftClaimOutcome) {
+          return { ok: true, technicianId: call.technicianId, pending: true };
+        }
+        await tx
+          .update(turnCalls)
+          .set({ leftClaimedAt: now, leftClaimOutcome: null })
+          .where(eq(turnCalls.id, call.id));
+        await writeAudit(tx, {
+          organizationId: visit.organizationId,
+          locationId: visit.locationId,
+          actorUserId: input.actor.userId,
+          entityType: 'turn_calls',
+          entityId: call.id,
+          action: 'client_left_claimed',
+          after: { visitId: visit.id, technicianId: call.technicianId },
+        });
+        return { ok: true, technicianId: call.technicianId, pending: true };
+      }
+    }
+    const claimed = !!call.leftClaimedAt && !call.leftClaimOutcome;
     await tx
       .update(turnCalls)
-      .set({ respondedAt: now, response: 'client_left' })
+      .set({
+        respondedAt: now,
+        response: 'client_left',
+        ...(byTech
+          ? { leftClaimedAt: now, leftClaimOutcome: 'direct' }
+          : claimed
+            ? { leftClaimOutcome: 'confirmed' }
+            : {}),
+      })
       .where(eq(turnCalls.id, call.id));
     await tx
       .update(visits)
-      .set({ status: 'left', leftAt: now, updatedAt: now })
+      .set({ status: 'left', leftAt: now, closeReason: 'client_left', updatedAt: now })
       .where(eq(visits.id, visit.id));
     await writeAudit(tx, {
       organizationId: visit.organizationId,
@@ -2312,10 +2434,122 @@ export async function clientLeft(
       after: {
         callId: call.id,
         technicianId: call.technicianId,
-        by: input.technicianId ? 'technician' : 'desk',
+        // technician: she closed it (rule 'direct'); technician_confirmed:
+        // she said so and the desk confirmed; desk: the desk saw it.
+        by: byTech ? 'technician' : claimed ? 'technician_confirmed' : 'desk',
         points: 0,
       },
     });
     return { ok: true, technicianId: call.technicianId };
+  });
+}
+
+/**
+ * v0.17.0 (FAIR-001): the desk answers a technician's "client left" with
+ * "Client is here". The call stays open for her to accept or deny as usual.
+ */
+export async function clientHere(
+  db: Db,
+  input: { visitId: string; actor: Actor; locationId: string },
+): Promise<{ ok: true; technicianId: string } | EngineError> {
+  return db.transaction(async (tx) => {
+    const [visit] = await tx
+      .select()
+      .from(visits)
+      .where(eq(visits.id, input.visitId))
+      .for('update');
+    if (!visit) return { ok: false, reason: 'unknown_visit' };
+    if (visit.locationId !== input.locationId) return { ok: false, reason: 'wrong_location' };
+    const [call] = await tx
+      .select()
+      .from(turnCalls)
+      .where(and(eq(turnCalls.visitId, visit.id), isNull(turnCalls.respondedAt)))
+      .for('update');
+    if (!call || !call.leftClaimedAt || call.leftClaimOutcome) {
+      return { ok: false, reason: 'no_claim' };
+    }
+    await tx
+      .update(turnCalls)
+      .set({ leftClaimOutcome: 'client_here' })
+      .where(eq(turnCalls.id, call.id));
+    await writeAudit(tx, {
+      organizationId: visit.organizationId,
+      locationId: visit.locationId,
+      actorUserId: input.actor.userId,
+      entityType: 'turn_calls',
+      entityId: call.id,
+      action: 'client_left_rejected',
+      after: { visitId: visit.id, technicianId: call.technicianId },
+    });
+    return { ok: true, technicianId: call.technicianId };
+  });
+}
+
+/** v0.17.0: open "client left" claims at a location, for the desk. */
+export async function leftClaims(
+  db: Db,
+  locationId: string,
+): Promise<{ visitId: string; technicianId: string; technician: string; claimedAt: Date }[]> {
+  const rows = await db
+    .select({
+      visitId: turnCalls.visitId,
+      technicianId: turnCalls.technicianId,
+      technician: technicians.displayName,
+      claimedAt: turnCalls.leftClaimedAt,
+    })
+    .from(turnCalls)
+    .innerJoin(technicians, eq(technicians.id, turnCalls.technicianId))
+    .where(
+      and(
+        eq(turnCalls.locationId, locationId),
+        isNull(turnCalls.respondedAt),
+        sql`${turnCalls.leftClaimedAt} is not null`,
+        isNull(turnCalls.leftClaimOutcome),
+      ),
+    )
+    .orderBy(asc(turnCalls.leftClaimedAt));
+  return rows.map((r) => ({ ...r, claimedAt: r.claimedAt! }));
+}
+
+/**
+ * v0.17.0 (WALK-001): "Left without service". A waiting client walked out
+ * before anyone was called: the desk closes the visit as left. No points, no
+ * penalty, nobody's place changes. Any waiting row: an unconfirmed kiosk
+ * check-in, a fix waiting for approval, the held second part of a split.
+ */
+export async function leftWithoutService(
+  db: Db,
+  input: { visitId: string; actor: Actor; locationId: string },
+): Promise<{ ok: true } | EngineError> {
+  return db.transaction(async (tx) => {
+    const [visit] = await tx
+      .select()
+      .from(visits)
+      .where(eq(visits.id, input.visitId))
+      .for('update');
+    if (!visit) return { ok: false, reason: 'unknown_visit' };
+    if (visit.locationId !== input.locationId) return { ok: false, reason: 'wrong_location' };
+    if (visit.status !== 'waiting') return { ok: false, reason: 'visit_not_waiting' };
+    const now = new Date();
+    await tx
+      .update(visits)
+      .set({ status: 'left', leftAt: now, closeReason: 'walked_out', updatedAt: now })
+      .where(eq(visits.id, visit.id));
+    await writeAudit(tx, {
+      organizationId: visit.organizationId,
+      locationId: visit.locationId,
+      actorUserId: input.actor.userId,
+      entityType: 'visits',
+      entityId: visit.id,
+      action: 'left_without_service',
+      after: {
+        source: visit.source,
+        waitedMin: Math.max(0, Math.floor((now.getTime() - visit.arrivedAt.getTime()) / 60_000)),
+        ...(visit.splitFromVisitId ? { heldPart: true } : {}),
+        ...(visit.needsConfirm ? { unconfirmed: true } : {}),
+        points: 0,
+      },
+    });
+    return { ok: true };
   });
 }

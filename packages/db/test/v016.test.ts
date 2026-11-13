@@ -740,6 +740,11 @@ describe('E. client left', () => {
         technicianId: b.id,
       }),
     ).toMatchObject({ ok: false, reason: 'not_your_call' });
+    // v0.17.0: Heavenly's rule now asks the desk first (fairness.client_left_by_tech);
+    // "direct" is the v0.16.0 behaviour this test was written for.
+    await saveRules((c) => {
+      c.fairness.client_left_by_tech = 'direct';
+    });
     expect(
       await clientLeft(db, {
         visitId: visit,
@@ -748,6 +753,9 @@ describe('E. client left', () => {
         technicianId: a.id,
       }),
     ).toEqual({ ok: true, technicianId: a.id });
+    await saveRules((c) => {
+      c.fairness.client_left_by_tech = 'ask_desk';
+    });
     const busy = await walkIn(['Gel manicure']);
     expect((await accept(await mustCall(busy, a), a)).ok).toBe(true);
     expect(await clientLeft(db, { visitId: busy, actor: desk, locationId: LOC })).toMatchObject({

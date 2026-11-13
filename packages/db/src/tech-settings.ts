@@ -7,7 +7,7 @@
 import { and, eq } from 'drizzle-orm';
 import { adjustPoints, type EngineError } from './engine';
 import type { Role } from './invites';
-import { locations, technicianStatus, technicians } from './schema';
+import { locations, technicianStatus, technicians, visits } from './schema';
 import type { Db } from './server';
 import type { StaffActor } from './staff';
 import {
@@ -77,7 +77,10 @@ export async function setReceptionistEdits(
   });
 }
 
-type Refused = { ok: false; reason: 'not_allowed' | 'wrong_location' | 'unknown_technician' };
+type Refused = {
+  ok: false;
+  reason: 'not_allowed' | 'wrong_location' | 'unknown_technician' | 'in_service';
+};
 
 async function techHere(db: Db, actor: StaffActor, technicianId: string) {
   const [t] = await db
@@ -116,6 +119,19 @@ export async function staffSetStatus(
   }
   const here = await techHere(db, input.actor, input.technicianId);
   if (!here.ok) return here;
+  // v0.17.0 (review #1): while she is with a client her status follows the
+  // visit. Setting it by hand left the visit open for good; finish it first
+  // (the desk can press Finish for her).
+  const [busy] = await db
+    .select({ id: visits.id })
+    .from(visits)
+    .where(
+      and(eq(visits.assignedTechnicianId, input.technicianId), eq(visits.status, 'in_service')),
+    )
+    .limit(1);
+  if (busy || (await statusOf(db, input.technicianId)) === 'in_service') {
+    return { ok: false, reason: 'in_service' };
+  }
   const reason = input.reason?.trim().slice(0, 300) || 'set by staff';
   if (input.to === 'checked_in') {
     return checkIn(db, {

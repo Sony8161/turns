@@ -82,6 +82,13 @@ export const HEAVENLY_RULE_CONFIG_V1: RuleConfig = {
   // for a manager or owner. Up to 8 people check in as one group.
   fixes: { window_days: 14, receptionist_needs_approval: true },
   groups: { max_people: 8 },
+  // v0.17.0 (Duong, 2026-11-13): a technician's "Client left" waits for the
+  // desk; the board flags 3 or more free denies in a day; no hard limit
+  // (break and personal denies stay free). A visit still in service at day
+  // end is finished with its points; a no-show can be marked once the
+  // appointment time has passed.
+  fairness: { client_left_by_tech: 'ask_desk', free_deny_flag: 3, free_deny_daily_limit: null },
+  closing: { day_end_in_service: 'finish', no_show_after_min: 0 },
 };
 
 // Categories named in the design doc. Points per the doc: standard 1, fill or

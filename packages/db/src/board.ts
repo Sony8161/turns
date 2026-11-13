@@ -60,6 +60,15 @@ export type TechCard = {
   /** The services of the client in the chair (in service) or being called. */
   currentServices: string[];
   lines: LedgerLine[];
+  /** v0.17.0: her open call (the desk may accept for her), or the visit she
+   *  is in service on (the desk may finish for her). */
+  openCallId: string | null;
+  openCallKind: string | null;
+  inServiceVisitId: string | null;
+  /** v0.17.0 (FAIR-001): denies the rules excused today, and whether that
+   *  reaches the rules' flag (fairness.free_deny_flag; 0 = never). */
+  freeDenies: number;
+  freeDenyFlag: boolean;
 };
 
 export async function techBoard(db: Db, locationId: string, now = new Date()): Promise<TechCard[]> {
@@ -106,13 +115,20 @@ export async function techBoard(db: Db, locationId: string, now = new Date()): P
           inArray(appointments.technicianId, ids),
           isNull(appointments.cancelledAt),
           isNull(appointments.arrivedAt),
+          // v0.17.0: one the desk marked a no-show holds nobody.
+          isNull(appointments.noShowAt),
           // A client past the buffer is a no-show and no longer holds anyone.
           gt(appointments.startAt, new Date(now.getTime() - bufferMs)),
         ),
       )
       .orderBy(asc(appointments.startAt)),
     db
-      .select({ technicianId: turnCalls.technicianId, visitId: turnCalls.visitId })
+      .select({
+        technicianId: turnCalls.technicianId,
+        visitId: turnCalls.visitId,
+        callId: turnCalls.id,
+        kind: turnCalls.kind,
+      })
       .from(turnCalls)
       .where(and(eq(turnCalls.locationId, locationId), isNull(turnCalls.respondedAt))),
     db
@@ -168,10 +184,25 @@ export async function techBoard(db: Db, locationId: string, now = new Date()): P
     (a, b) => (a.checkedInAt?.getTime() ?? 0) - (b.checkedInAt?.getTime() ?? 0),
   );
 
+  const flagAt = rules.fairness.free_deny_flag;
   return onShift.map((r, i) => {
     const profile = profiles.get(r.technicianId);
     const lv = levels.get(r.technicianId);
+    const myCall = open.find((c) => c.technicianId === r.technicianId);
+    const myChair = current.find((c) => c.technicianId === r.technicianId);
+    // Since this shift's check-in only: yesterday's are not today's story.
+    const freeToday = saidNo.filter(
+      (d) =>
+        d.technicianId === r.technicianId &&
+        !!d.at &&
+        (!r.checkedInAt || d.at.getTime() >= r.checkedInAt.getTime()),
+    );
     return {
+      openCallId: myCall?.callId ?? null,
+      openCallKind: myCall?.kind ?? null,
+      inServiceVisitId: myChair?.visitId ?? null,
+      freeDenies: freeToday.length,
+      freeDenyFlag: flagAt > 0 && freeToday.length >= flagAt,
       level: lv?.level ?? null,
       services: lv ? menu.filter((m) => lv.serviceIds.has(m.id)).map((m) => m.name) : null,
       technicianId: r.technicianId,
@@ -203,22 +234,14 @@ export async function techBoard(db: Db, locationId: string, now = new Date()): P
             note: l.note,
             at: l.at,
           })),
-        // Since this shift's check-in only: yesterday's are not today's story.
-        ...saidNo
-          .filter(
-            (d) =>
-              d.technicianId === r.technicianId &&
-              !!d.at &&
-              (!r.checkedInAt || d.at.getTime() >= r.checkedInAt.getTime()),
-          )
-          .map((d): LedgerLine => ({
-            delta: 0,
-            kind: 'deny_excused',
-            services: [],
-            source: null,
-            note: d.reason,
-            at: d.at!,
-          })),
+        ...freeToday.map((d): LedgerLine => ({
+          delta: 0,
+          kind: 'deny_excused',
+          services: [],
+          source: null,
+          note: d.reason,
+          at: d.at!,
+        })),
       ].sort((x, y) => x.at.getTime() - y.at.getTime()),
     };
   });

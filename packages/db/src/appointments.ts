@@ -6,7 +6,8 @@
 // The audit log gets times and technicians, never the client's name (T11).
 import { and, asc, eq, gt, gte, isNull, lt, lte, ne } from 'drizzle-orm';
 import { createWalkIn, type ClientAttributes, type EngineError } from './engine';
-import { appointments, technicians } from './schema';
+import { activeRules } from './rules';
+import { appointments, clients, technicians } from './schema';
 import type { Db } from './server';
 import { writeAudit, type Actor } from './status';
 
@@ -93,7 +94,12 @@ async function techAt(
 /** The desk enters an appointment by hand (the fallback when the feed missed it). */
 export async function addAppointment(
   db: Db,
-  input: AppointmentInput & { actor: DeskActor; now?: Date },
+  input: AppointmentInput & {
+    actor: DeskActor;
+    now?: Date;
+    /** v0.17.0: a known client at this location (the client page counts no-shows). */
+    clientId?: string | null;
+  },
 ): Promise<{ ok: true; appointmentId: string } | EngineError> {
   const now = input.now ?? new Date();
   const bad = checkTimes(input.startAt, input.endAt, now);
@@ -101,6 +107,13 @@ export async function addAppointment(
   return db.transaction(async (tx) => {
     if (!(await techAt(tx, input.technicianId, input.actor))) {
       return { ok: false, reason: 'unknown_technician' };
+    }
+    if (input.clientId) {
+      const [c] = await tx
+        .select({ id: clients.id })
+        .from(clients)
+        .where(and(eq(clients.id, input.clientId), eq(clients.locationId, input.actor.locationId)));
+      if (!c) return { ok: false, reason: 'unknown_client' };
     }
     // Already on the book (most often: the calendar brought it in).
     if ((await sameSlot(tx, input.technicianId, input.startAt)).length > 0) {
@@ -116,6 +129,7 @@ export async function addAppointment(
         startAt: input.startAt,
         endAt: input.endAt,
         source: 'manual',
+        clientId: input.clientId ?? null,
         createdBy: input.actor.userId,
       })
       .returning({ id: appointments.id });
@@ -281,9 +295,16 @@ export async function appointmentArrived(
       sameTime: false,
     });
     if (!visit.ok) return visit;
+    // v0.17.0: a client marked a no-show who turns up after all is not one.
     await tx
       .update(appointments)
-      .set({ arrivedAt: now, visitId: visit.visitId, updatedAt: now })
+      .set({
+        arrivedAt: now,
+        visitId: visit.visitId,
+        noShowAt: null,
+        noShowBy: null,
+        updatedAt: now,
+      })
       .where(eq(appointments.id, row.id));
     await writeAudit(tx, {
       organizationId: row.organizationId,
@@ -292,7 +313,12 @@ export async function appointmentArrived(
       entityType: 'appointments',
       entityId: row.id,
       action: 'appointment_arrived',
-      after: { visitId: visit.visitId, technicianId: row.technicianId, startAt: row.startAt },
+      after: {
+        visitId: visit.visitId,
+        technicianId: row.technicianId,
+        startAt: row.startAt,
+        ...(row.noShowAt ? { wasNoShow: true } : {}),
+      },
     });
     // The copies arrive with it: they stop holding the technician out of the
     // queue and cannot become a second visit (or a second discount).
@@ -325,6 +351,8 @@ export type AppointmentRow = {
   source: 'ics' | 'manual';
   arrivedAt: Date | null;
   cancelledAt: Date | null;
+  /** v0.17.0: the desk marked the client a no-show. */
+  noShowAt: Date | null;
 };
 
 /** A location's appointments in a window, for the desk (staff only). */
@@ -345,6 +373,7 @@ export async function appointmentsBetween(
       source: appointments.source,
       arrivedAt: appointments.arrivedAt,
       cancelledAt: appointments.cancelledAt,
+      noShowAt: appointments.noShowAt,
     })
     .from(appointments)
     .innerJoin(technicians, eq(technicians.id, appointments.technicianId))
@@ -373,9 +402,75 @@ export async function upcomingFor(
         eq(appointments.technicianId, technicianId),
         isNull(appointments.cancelledAt),
         isNull(appointments.arrivedAt),
+        isNull(appointments.noShowAt),
         gt(appointments.endAt, now),
       ),
     )
     .orderBy(asc(appointments.startAt))
     .limit(limit);
+}
+
+/**
+ * v0.17.0 (WALK-001): the booked client did not come. The desk marks it once
+ * the start time (plus the rules' closing.no_show_after_min) has passed. The
+ * technician is no longer held for it; nobody's points change. A calendar row
+ * can be marked too (the calendar itself is not changed). The audit row has
+ * times and the technician, never the client.
+ */
+export async function markNoShow(
+  db: Db,
+  input: { actor: DeskActor; appointmentId: string; now?: Date },
+): Promise<
+  | { ok: true }
+  | {
+      ok: false;
+      reason:
+        | 'unknown_appointment'
+        | 'already_arrived'
+        | 'already_cancelled'
+        | 'already_no_show'
+        | 'too_early';
+    }
+> {
+  const now = input.now ?? new Date();
+  return db.transaction(async (tx) => {
+    const [row] = await tx
+      .select()
+      .from(appointments)
+      .where(eq(appointments.id, input.appointmentId))
+      .for('update');
+    // Another location's row reads the same as no row at all (T10).
+    if (
+      !row ||
+      row.locationId !== input.actor.locationId ||
+      row.organizationId !== input.actor.organizationId
+    ) {
+      return { ok: false as const, reason: 'unknown_appointment' as const };
+    }
+    if (row.arrivedAt) return { ok: false as const, reason: 'already_arrived' as const };
+    if (row.cancelledAt) return { ok: false as const, reason: 'already_cancelled' as const };
+    if (row.noShowAt) return { ok: false as const, reason: 'already_no_show' as const };
+    const rules = await activeRules(tx, row.locationId);
+    const from = row.startAt.getTime() + rules.closing.no_show_after_min * 60_000;
+    if (now.getTime() < from) return { ok: false as const, reason: 'too_early' as const };
+    await tx
+      .update(appointments)
+      .set({ noShowAt: now, noShowBy: input.actor.userId, updatedAt: now })
+      .where(eq(appointments.id, row.id));
+    await writeAudit(tx, {
+      organizationId: row.organizationId,
+      locationId: row.locationId,
+      actorUserId: input.actor.userId,
+      entityType: 'appointments',
+      entityId: row.id,
+      action: 'appointment_no_show',
+      after: {
+        technicianId: row.technicianId,
+        startAt: row.startAt,
+        source: row.source,
+        minutesLate: Math.max(0, Math.floor((now.getTime() - row.startAt.getTime()) / 60_000)),
+      },
+    });
+    return { ok: true as const };
+  });
 }

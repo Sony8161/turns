@@ -30,7 +30,9 @@
     "./requests": "./src/requests.ts",
     "./fixes": "./src/fixes.ts",
     "./help": "./src/help.ts",
-    "./party": "./src/party.ts"
+    "./party": "./src/party.ts",
+    "./act-for": "./src/act-for.ts",
+    "./day-end": "./src/day-end.ts"
   },
   "scripts": {
     "typecheck": "tsc --noEmit",

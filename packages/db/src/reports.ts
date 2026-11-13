@@ -12,7 +12,9 @@
 // version's full config. The audit log itself holds none of the first three
 // (Parts 6, 7); `redact` below is the second line in case a later part slips.
 import { and, asc, desc, eq, inArray, sql } from 'drizzle-orm';
+import { DAY_END_ACTIONS } from './day-end';
 import {
+  appointments,
   auditLog,
   dailySummaries,
   locations,
@@ -25,6 +27,7 @@ import {
   visits,
 } from './schema';
 import type { Db } from './server';
+import { sweepFloor } from './status';
 
 // ---------------------------------------------------------------------------
 // Dates
@@ -933,7 +936,27 @@ export type DailyReport = {
     denies: number;
     overrides: number;
     feedFailures: number;
+    /** v0.17.0 (WALK-001): clients who left without service: while waiting
+     *  (walkedOut) and after the call, before the start (clientLeft). */
+    walkedOut: number;
+    clientLeft: number;
+    /** v0.17.0: booked clients the desk marked a no-show. */
+    noShows: number;
+    /** v0.17.0 (DAY-001): what the day-end close-out closed for this day. */
+    closedAtDayEnd: DayEndCounts;
   };
+};
+
+export type DayEndCounts = {
+  /** Waiting, called, unconfirmed and pending visits closed with no points. */
+  visits: number;
+  /** In service at day end: finished, points posted, marked auto-finished. */
+  autoFinished: number;
+  /** Open calls closed as expired, no penalty. */
+  calls: number;
+  help: number;
+  /** Shifts left open, checked out. */
+  shifts: number;
 };
 
 /** One location's day, per technician, from the ledger and the calls. */
@@ -1003,9 +1026,36 @@ export async function dailyTurnReport(
       cancelled: sql<string>`count(*) filter (where ${visits.status} = 'cancelled')`,
       walkIns: sql<string>`count(*) filter (where ${visits.source} <> 'appointment')`,
       appointments: sql<string>`count(*) filter (where ${visits.source} = 'appointment')`,
+      walkedOut: sql<string>`count(*) filter (where ${visits.status} = 'left' and ${visits.closeReason} = 'walked_out')`,
+      clientLeft: sql<string>`count(*) filter (where ${visits.status} = 'left' and ${visits.closeReason} is distinct from 'walked_out')`,
     })
     .from(visits)
     .where(and(eq(visits.locationId, locationId), inLocalDays(visits.arrivedAt, day, day, tz)));
+
+  const [ns] = await db
+    .select({ n: sql<string>`count(*)` })
+    .from(appointments)
+    .where(
+      and(
+        eq(appointments.locationId, locationId),
+        sql`${appointments.noShowAt} is not null`,
+        inLocalDays(appointments.startAt, day, day, tz),
+      ),
+    );
+
+  // The close-out runs on a later day; its rows name the day they closed.
+  const dayEnd = await db
+    .select({ action: auditLog.action, n: sql<string>`count(*)` })
+    .from(auditLog)
+    .where(
+      and(
+        eq(auditLog.locationId, locationId),
+        inArray(auditLog.action, [...DAY_END_ACTIONS]),
+        sql`${auditLog.after}->>'forDay' = ${day}`,
+      ),
+    )
+    .groupBy(auditLog.action);
+  const dayEndOf = (a: string) => Number(dayEnd.find((r) => r.action === a)?.n ?? 0);
 
   const [at] = await db
     .select({
@@ -1081,6 +1131,16 @@ export async function dailyTurnReport(
       denies: techRows.reduce((s, r) => s + r.denied, 0),
       overrides: Number(at?.overrides ?? 0),
       feedFailures: Number(at?.feedFailures ?? 0),
+      walkedOut: Number(vt?.walkedOut ?? 0),
+      clientLeft: Number(vt?.clientLeft ?? 0),
+      noShows: Number(ns?.n ?? 0),
+      closedAtDayEnd: {
+        visits: dayEndOf('visit_closed_day_end'),
+        autoFinished: dayEndOf('visit_auto_finished'),
+        calls: dayEndOf('call_closed_day_end'),
+        help: dayEndOf('help_closed_day_end'),
+        shifts: dayEndOf('auto_check_out'),
+      },
     },
   };
 }
@@ -1157,6 +1217,11 @@ export type EndOfDaySummary = {
   denies: number;
   overrides: number;
   feedFailures: number;
+  /** v0.17.0; missing in a summary stored before v0.17.0. */
+  walkedOut?: number;
+  clientLeft?: number;
+  noShows?: number;
+  closedAtDayEnd?: DayEndCounts;
   technicians: { name: string; points: number; visits: number; denied: number; late: number }[];
   overridesBy: { name: string | null; role: string | null; total: number }[];
 };
@@ -1172,6 +1237,10 @@ export function summarize(report: DailyReport, people: OverrideSummaryRow[]): En
     denies: report.totals.denies,
     overrides: report.totals.overrides,
     feedFailures: report.totals.feedFailures,
+    walkedOut: report.totals.walkedOut,
+    clientLeft: report.totals.clientLeft,
+    noShows: report.totals.noShows,
+    closedAtDayEnd: report.totals.closedAtDayEnd,
     technicians: report.technicians.map((t) => ({
       name: t.name,
       points: t.points,
@@ -1210,6 +1279,9 @@ export async function ensureDailySummary(
   if (day >= localDate(now, loc.timezone)) return null;
   const stored = await storedSummary(db, locationId, day);
   if (stored) return stored;
+  // v0.17.0 (DAY-001): close what the day left open first, so the stored
+  // summary lists it and never changes afterwards.
+  await sweepFloor(db, locationId, now);
   const report = await dailyTurnReport(db, locationId, day);
   if (!report) return null;
   const summary = summarize(report, await overrideSummary(db, locationId, day, day));
@@ -1240,6 +1312,8 @@ export async function summarizeYesterdayEverywhere(
   const locs = await db.select({ id: locations.id, timezone: locations.timezone }).from(locations);
   let written = 0;
   for (const l of locs) {
+    // v0.17.0 (DAY-001): the nightly close-out, even where the summary exists.
+    await sweepFloor(db, l.id, now);
     const day = previousDate(localDate(now, l.timezone));
     const had = await storedSummary(db, l.id, day);
     if (had) continue;
@@ -1255,4 +1329,181 @@ export async function techniciansAt(db: Db, locationId: string) {
     .from(technicians)
     .where(eq(technicians.locationId, locationId))
     .orderBy(asc(technicians.displayName));
+}
+
+// ---------------------------------------------------------------------------
+// v0.17.0 (FAIR-001): the fairness table, owner and manager. One row per
+// technician over a range of local days (default the last 7). Counts only:
+// no client names or phones, nothing a technician typed.
+
+export type FairnessRow = {
+  technicianId: string;
+  name: string;
+  visitsDone: number;
+  points: number;
+  /** Turn denies that cost points (not excused by the rules or a manager). */
+  deniesPenalty: number;
+  /** Denies the rules excused (Heavenly: break, personal). */
+  deniesFree: number;
+  /** Offers to a higher level and desk picks she said no to (never a penalty). */
+  declined: number;
+  /** Visits she took part of, sending the rest back to the line. */
+  splits: number;
+  /** "Client left" marks from her phone, and how many of those closed the visit. */
+  clientLeftMarked: number;
+  clientLeftConfirmed: number;
+  /** Fixes of work she did. */
+  fixesOnHerWork: number;
+  /** Times she was ahead in the line and passed over, by reason. */
+  skipped: Record<string, number>;
+};
+
+export function lastDays(today: string, days: number): { from: string; to: string } {
+  let from = today;
+  for (let i = 1; i < days; i++) from = previousDate(from);
+  return { from, to: today };
+}
+
+export async function fairnessReport(
+  db: Db,
+  locationId: string,
+  from: string,
+  to: string,
+): Promise<FairnessRow[]> {
+  const a = parseDate(from);
+  const b = parseDate(to);
+  if (!a || !b || a > b) return [];
+  const tz = await timezoneOf(db, locationId);
+  const techs = await db
+    .select({ id: technicians.id, name: technicians.displayName, active: technicians.active })
+    .from(technicians)
+    .where(eq(technicians.locationId, locationId))
+    .orderBy(asc(technicians.displayName));
+  const rows = new Map<string, FairnessRow>();
+  const row = (id: string): FairnessRow | undefined => rows.get(id);
+  for (const t of techs) {
+    rows.set(t.id, {
+      technicianId: t.id,
+      name: t.name,
+      visitsDone: 0,
+      points: 0,
+      deniesPenalty: 0,
+      deniesFree: 0,
+      declined: 0,
+      splits: 0,
+      clientLeftMarked: 0,
+      clientLeftConfirmed: 0,
+      fixesOnHerWork: 0,
+      skipped: {},
+    });
+  }
+  const callRange = inLocalDays(turnCalls.calledAt, a, b, tz);
+  const [done, pts, calls, splits, fixes, marks, skips] = await Promise.all([
+    db
+      .select({ id: visits.assignedTechnicianId, n: sql<string>`count(*)` })
+      .from(visits)
+      .where(
+        and(
+          eq(visits.locationId, locationId),
+          eq(visits.status, 'completed'),
+          inLocalDays(visits.arrivedAt, a, b, tz),
+        ),
+      )
+      .groupBy(visits.assignedTechnicianId),
+    db
+      .select({ id: turnLedger.technicianId, n: sql<string>`sum(${turnLedger.delta})` })
+      .from(turnLedger)
+      .innerJoin(shifts, eq(shifts.id, turnLedger.shiftId))
+      .where(
+        and(
+          eq(turnLedger.locationId, locationId),
+          sql`${shifts.date} between ${a}::date and ${b}::date`,
+        ),
+      )
+      .groupBy(turnLedger.technicianId),
+    db
+      .select({
+        id: turnCalls.technicianId,
+        penalty: sql<string>`count(*) filter (where ${turnCalls.kind} = 'turn' and ${turnCalls.response} = 'denied' and not ${turnCalls.autoExcused} and ${turnCalls.excusedAt} is null)`,
+        free: sql<string>`count(*) filter (where ${turnCalls.autoExcused})`,
+        declined: sql<string>`count(*) filter (where ${turnCalls.kind} <> 'turn' and ${turnCalls.response} = 'denied')`,
+      })
+      .from(turnCalls)
+      .where(and(eq(turnCalls.locationId, locationId), callRange))
+      .groupBy(turnCalls.technicianId),
+    db.execute(sql`select first.assigned_technician_id as id, count(*) as n
+      from visits rest join visits first on first.id = rest.split_from_visit_id
+      where rest.location_id = ${locationId}
+        and ${inLocalDays(sql`rest.arrived_at`, a, b, tz)}
+      group by first.assigned_technician_id`),
+    db.execute(sql`select orig.assigned_technician_id as id, count(*) as n
+      from visits fix join visits orig on orig.id = fix.fix_of_visit_id
+      where fix.location_id = ${locationId} and fix.is_fix
+        and ${inLocalDays(sql`fix.arrived_at`, a, b, tz)}
+      group by orig.assigned_technician_id`),
+    db
+      .select({
+        id: sql<string>`${auditLog.after}->>'technicianId'`,
+        marked: sql<string>`count(*) filter (where ${auditLog.action} = 'client_left_claimed' or (${auditLog.action} = 'client_left' and ${auditLog.after}->>'by' = 'technician'))`,
+        confirmed: sql<string>`count(*) filter (where ${auditLog.action} = 'client_left' and ${auditLog.after}->>'by' in ('technician', 'technician_confirmed'))`,
+      })
+      .from(auditLog)
+      .where(
+        and(
+          eq(auditLog.locationId, locationId),
+          inArray(auditLog.action, ['client_left_claimed', 'client_left']),
+          inLocalDays(auditLog.at, a, b, tz),
+        ),
+      )
+      .groupBy(sql`${auditLog.after}->>'technicianId'`),
+    // Everyone ahead of the one called, who was not eligible, and why.
+    db.execute(sql`select q.e->>'technicianId' as id, q.e->>'why' as why, count(*) as n
+      from turn_calls c
+      cross join lateral jsonb_array_elements(
+        case when jsonb_typeof(c.queue_snapshot) = 'array' then c.queue_snapshot else '[]'::jsonb end
+      ) with ordinality as q(e, i)
+      where c.location_id = ${locationId} and c.kind = 'turn'
+        and ${inLocalDays(sql`c.called_at`, a, b, tz)}
+        and coalesce((q.e->>'eligible')::boolean, false) = false
+        and q.i < (select min(p.i) from jsonb_array_elements(
+          case when jsonb_typeof(c.queue_snapshot) = 'array' then c.queue_snapshot else '[]'::jsonb end
+        ) with ordinality as p(e, i) where p.e->>'technicianId' = c.technician_id::text)
+      group by 1, 2`),
+  ]);
+  for (const d of done) {
+    const r = d.id ? row(d.id) : undefined;
+    if (r) r.visitsDone = Number(d.n);
+  }
+  for (const p of pts) if (row(p.id)) row(p.id)!.points = Math.round(Number(p.n) * 10) / 10;
+  for (const c of calls) {
+    const r = row(c.id);
+    if (!r) continue;
+    r.deniesPenalty = Number(c.penalty);
+    r.deniesFree = Number(c.free);
+    r.declined = Number(c.declined);
+  }
+  for (const s of splits as unknown as { id: string | null; n: string }[]) {
+    if (s.id && row(s.id)) row(s.id)!.splits = Number(s.n);
+  }
+  for (const f of fixes as unknown as { id: string | null; n: string }[]) {
+    if (f.id && row(f.id)) row(f.id)!.fixesOnHerWork = Number(f.n);
+  }
+  for (const m of marks) {
+    const r = m.id ? row(m.id) : undefined;
+    if (!r) continue;
+    r.clientLeftMarked = Number(m.marked);
+    r.clientLeftConfirmed = Number(m.confirmed);
+  }
+  for (const k of skips as unknown as { id: string | null; why: string | null; n: string }[]) {
+    const r = k.id ? row(k.id) : undefined;
+    if (!r || !k.why) continue;
+    r.skipped[k.why] = (r.skipped[k.why] ?? 0) + Number(k.n);
+  }
+  // Archived technicians appear only when they did something in the range.
+  const active = new Set(techs.filter((t) => t.active).map((t) => t.id));
+  return [...rows.values()].filter(
+    (r) =>
+      active.has(r.technicianId) ||
+      r.visitsDone + r.deniesPenalty + r.deniesFree + r.declined + r.clientLeftMarked > 0,
+  );
 }

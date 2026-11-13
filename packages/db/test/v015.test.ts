@@ -607,14 +607,15 @@ describe('E. a visit of several services goes by turn', () => {
     expect(await call(rest)).toMatchObject({ ok: false, reason: 'waits_for_first_part' });
     const row = (await waitingVisits(db, LOC)).find((w) => w.id === rest)!;
     expect(row.held).toEqual({ technician: 'E-Reg' });
-    expect(row.slip).toEqual([{ technician: 'E-Reg', services: ['Basic pedicure'] }]);
+    // v0.17.0: her part is not finished yet, so the slip says she is doing it.
+    expect(row.slip).toEqual([{ technician: 'E-Reg', services: ['Basic pedicure'], done: false }]);
 
     // She finishes: 1 point for the pedicure only.
     expect(await finish(reg)).toEqual({ ok: true, points: 1 });
     // Now the dip goes by turn: E-Acr (0, checked in before E-Dip).
     const second = await mustCall(rest, acr);
     const card = await openCallFor(db, acr.id);
-    expect(card!.slip).toEqual([{ technician: 'E-Reg', services: ['Basic pedicure'] }]);
+    expect(card!.slip).toEqual([{ technician: 'E-Reg', services: ['Basic pedicure'], done: true }]);
     expect(card!.services).toEqual(['Dip powder']);
     expect(card!.note).toBe('French tip on the dip');
     await accept(second, acr);

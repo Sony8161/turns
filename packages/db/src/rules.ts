@@ -100,6 +100,29 @@ export type RuleConfig = {
     /** Most people in one group check-in. Heavenly: 8. */
     max_people: number;
   };
+  /** v0.17.0 (FAIR-001): free ways to turn down a client. Missing in an older
+   *  config = the defaults. */
+  fairness: {
+    /** A technician's "Client left": 'ask_desk' keeps the visit called until
+     *  the desk confirms; 'direct' closes it at once (v0.16.0). Heavenly: ask_desk. */
+    client_left_by_tech: 'ask_desk' | 'direct';
+    /** The board flags a technician with this many free (auto-excused)
+     *  denies today. 0 = no flag. Heavenly: 3. */
+    free_deny_flag: number;
+    /** Free denies a day before the next one costs the deny penalty.
+     *  null = no limit (Duong: break and personal denies are free). */
+    free_deny_daily_limit: number | null;
+  };
+  /** v0.17.0 (DAY-001, WALK-001): closing what the day left open. */
+  closing: {
+    /** A visit still in service when the day ends: 'finish' posts its points
+     *  to that day's shift, marked auto-finished; 'close' closes it with no
+     *  points. Heavenly: finish. */
+    day_end_in_service: 'finish' | 'close';
+    /** The desk may mark a booked client a no-show this many minutes after
+     *  the start time. Heavenly: 0 (as soon as the time has passed). */
+    no_show_after_min: number;
+  };
 };
 
 /** v0.16.0 defaults, used when an older config has no such section. */
@@ -109,6 +132,19 @@ export const FIXES_DEFAULT: RuleConfig['fixes'] = {
   receptionist_needs_approval: true,
 };
 export const GROUPS_DEFAULT: RuleConfig['groups'] = { max_people: 8 };
+/** v0.17.0 defaults, used when an older config has no such section. */
+export const CLIENT_LEFT_BY_TECH = ['ask_desk', 'direct'] as const;
+export const DAY_END_IN_SERVICE = ['finish', 'close'] as const;
+export const FAIRNESS_DEFAULT: RuleConfig['fairness'] = {
+  client_left_by_tech: 'ask_desk',
+  free_deny_flag: 3,
+  free_deny_daily_limit: null,
+};
+export const CLOSING_DEFAULT: RuleConfig['closing'] = {
+  day_end_in_service: 'finish',
+  no_show_after_min: 0,
+};
+const FREE_DENY_MAX = 50;
 export const GROUP_MAX_LIMIT = 8;
 const FIX_WINDOW_MAX = 90;
 
@@ -295,7 +331,40 @@ export function validateRuleConfig(input: unknown): ValidationResult {
     },
     fixes: { ...FIXES_DEFAULT },
     groups: { ...GROUPS_DEFAULT },
+    fairness: { ...FAIRNESS_DEFAULT },
+    closing: { ...CLOSING_DEFAULT },
   };
+
+  // v0.17.0 sections: optional, so configs saved before v0.17.0 still validate.
+  if (input['fairness'] !== undefined) {
+    const f = c.section(input, 'fairness');
+    if (f) {
+      const mode = c.choice(f, 'fairness.client_left_by_tech', CLIENT_LEFT_BY_TECH);
+      if (mode !== undefined) out.fairness.client_left_by_tech = mode;
+      const flag = c.minutes(f, 'fairness.free_deny_flag');
+      if (flag !== undefined) {
+        if (flag > FREE_DENY_MAX) c.fail('fairness.free_deny_flag', 'not_allowed');
+        else out.fairness.free_deny_flag = flag;
+      }
+      if (f['free_deny_daily_limit'] === null) out.fairness.free_deny_daily_limit = null;
+      else {
+        const limit = c.minutes(f, 'fairness.free_deny_daily_limit');
+        if (limit !== undefined) {
+          if (limit > FREE_DENY_MAX) c.fail('fairness.free_deny_daily_limit', 'not_allowed');
+          else out.fairness.free_deny_daily_limit = limit;
+        }
+      }
+    }
+  }
+  if (input['closing'] !== undefined) {
+    const cl = c.section(input, 'closing');
+    if (cl) {
+      const mode = c.choice(cl, 'closing.day_end_in_service', DAY_END_IN_SERVICE);
+      if (mode !== undefined) out.closing.day_end_in_service = mode;
+      const after = c.minutes(cl, 'closing.no_show_after_min');
+      if (after !== undefined) out.closing.no_show_after_min = after;
+    }
+  }
 
   // v0.16.0 sections: optional, so configs saved before v0.16.0 still validate.
   if (input['fixes'] !== undefined) {
@@ -763,6 +832,8 @@ const STANDARD: Omit<RuleConfig, 'attention'> = {
   requests: { requested_tech_bypasses_queue: true, requested_counts_points: 1 },
   fixes: { ...FIXES_DEFAULT },
   groups: { ...GROUPS_DEFAULT },
+  fairness: { ...FAIRNESS_DEFAULT },
+  closing: { ...CLOSING_DEFAULT },
 };
 
 /** A template's config on top of the salon's current one. Pure. */
@@ -773,6 +844,9 @@ export function templateConfig(template: RuleTemplate, base: RuleConfig): RuleCo
     // v0.16.0: the salon's fix window and group size are kept, like its timers.
     fixes: base.fixes,
     groups: base.groups,
+    // v0.17.0: so are its fairness and closing choices.
+    fairness: base.fairness,
+    closing: base.closing,
   });
   if (base.points.by_category) standard.points.by_category = { ...base.points.by_category };
   if (base.points.by_service) standard.points.by_service = { ...base.points.by_service };

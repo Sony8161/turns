@@ -7,7 +7,7 @@
 import { and, asc, eq, isNull } from 'drizzle-orm';
 import type { ManagerActor } from './engine';
 import { consumeRateLimit } from './rate-limit';
-import { helpRequests, technicians } from './schema';
+import { helpRequests, technicianStatus, technicians } from './schema';
 import type { Db } from './server';
 import { writeAudit, type Actor } from './status';
 
@@ -42,7 +42,7 @@ export async function askForHelp(
   input: { technicianId: string; actor: Actor; reason?: unknown },
 ): Promise<
   | { ok: true; id: string; alreadyOpen: boolean }
-  | { ok: false; reason: 'unknown_technician' | 'too_many' }
+  | { ok: false; reason: 'unknown_technician' | 'too_many' | 'not_on_shift' }
 > {
   const limit = await consumeRateLimit(db, `help:tech:${input.technicianId}`, HELP_PER_HOUR, 3600);
   if (!limit.allowed) return { ok: false, reason: 'too_many' };
@@ -57,6 +57,14 @@ export async function askForHelp(
       .from(technicians)
       .where(and(eq(technicians.id, input.technicianId), eq(technicians.active, true)));
     if (!tech) return { ok: false as const, reason: 'unknown_technician' as const };
+    // v0.17.0 (review #12): only a technician on shift asks for help.
+    const [st] = await tx
+      .select({ status: technicianStatus.status })
+      .from(technicianStatus)
+      .where(eq(technicianStatus.technicianId, tech.id));
+    if (!st || st.status === 'off') {
+      return { ok: false as const, reason: 'not_on_shift' as const };
+    }
     const [open] = await tx
       .select({ id: helpRequests.id })
       .from(helpRequests)

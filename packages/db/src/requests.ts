@@ -261,6 +261,8 @@ export async function bookForLater(
       startAt: input.startAt,
       endAt: new Date(input.startAt.getTime() + minutes * 60_000),
       clientName,
+      // v0.17.0: the client page counts this booking's no-show, if it is one.
+      clientId: visit.clientId,
       now,
     });
     if (!made.ok) return made;

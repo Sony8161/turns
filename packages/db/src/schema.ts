@@ -77,6 +77,11 @@ export const locations = pgTable(
     // status, points, skills and restrictions. On by default; the owner turns
     // it off on Staff.
     receptionistEditsTechnicians: boolean('receptionist_edits_technicians').notNull().default(true),
+    // v0.17.0 (DESK-001): receptionists may accept, deny, start and finish for
+    // a technician from the desk. On by default; the owner turns it off on Staff.
+    receptionistActsForTechnicians: boolean('receptionist_acts_for_technicians')
+      .notNull()
+      .default(true),
     createdAt: createdAt(),
     updatedAt: updatedAt(),
   },
@@ -643,6 +648,14 @@ export const visits = pgTable(
     approvedAt: timestamp('approved_at', { withTimezone: true }),
     // v0.16.0: the client left after the call, before the service started.
     leftAt: timestamp('left_at', { withTimezone: true }),
+    // v0.17.0: why a visit closed without a finish: 'day_end' (closed at day
+    // end, status cancelled), 'walked_out' (left while waiting, status left),
+    // 'client_left' (left after the call, status left). null = as before.
+    closeReason: text('close_reason'),
+    // v0.17.0 (DAY-001): an in-service visit the day-end close-out finished.
+    autoFinished: boolean('auto_finished').notNull().default(false),
+    // v0.17.0 (DESK-001): the desk pressed Finished for the technician.
+    finishedBy: uuid('finished_by').references(() => profiles.id, { onDelete: 'restrict' }),
     confirmedBy: uuid('confirmed_by').references(() => profiles.id, { onDelete: 'restrict' }),
     confirmedAt: timestamp('confirmed_at', { withTimezone: true }),
     createdAt: createdAt(),
@@ -703,6 +716,14 @@ export const turnCalls = pgTable(
     // personal): no points were posted, and this technician is not called
     // again for this visit by turn.
     autoExcused: boolean('auto_excused').notNull().default(false),
+    // v0.17.0 (DESK-001): the desk answered for the technician (accept or deny).
+    answeredBy: uuid('answered_by').references(() => profiles.id, { onDelete: 'restrict' }),
+    // v0.17.0 (FAIR-001): the called technician said the client left. With
+    // the rule fairness.client_left_by_tech = ask_desk the call stays open
+    // until the desk answers: outcome 'confirmed' or 'client_here'; 'direct'
+    // when the rule let her close it herself.
+    leftClaimedAt: timestamp('left_claimed_at', { withTimezone: true }),
+    leftClaimOutcome: text('left_claim_outcome'),
     // Who was ahead and why, at that second: the row that settles arguments.
     queueSnapshot: jsonb('queue_snapshot').notNull(),
     createdAt: createdAt(),
@@ -780,6 +801,12 @@ export const appointments = pgTable(
     // holds its technician out of the queue (buffer filter).
     arrivedAt: timestamp('arrived_at', { withTimezone: true }),
     visitId: uuid('visit_id').references(() => visits.id, { onDelete: 'restrict' }),
+    // v0.17.0 (WALK-001): the desk marked the client a no-show after the start.
+    noShowAt: timestamp('no_show_at', { withTimezone: true }),
+    noShowBy: uuid('no_show_by').references(() => profiles.id, { onDelete: 'restrict' }),
+    // v0.17.0: the client, when the desk booked them (Book for later); a
+    // calendar row has none. The client page counts no-shows from it.
+    clientId: uuid('client_id').references(() => clients.id, { onDelete: 'restrict' }),
     createdBy: uuid('created_by').references(() => profiles.id, { onDelete: 'restrict' }),
     createdAt: createdAt(),
     updatedAt: updatedAt(),

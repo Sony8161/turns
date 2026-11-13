@@ -6,6 +6,7 @@
 // Every number comes from rule_config (geofence requirement) or the location
 // row (geofence centre and radius); nothing here is hard-coded.
 import { and, asc, eq, gte, isNull, lt, lte, ne, or, sql } from 'drizzle-orm';
+import { closeOutDay, type DayEndClosed } from './day-end';
 import { activeRules, type RuleConfig } from './rules';
 import {
   auditLog,
@@ -507,20 +508,32 @@ async function postOutOverIfDue(
  * left open from an earlier day (queue.reset daily_at_open): a technician who
  * forgot to check out is checked out, unless they are in service or have an
  * open call. Idempotent; every change is audited.
+ *
+ * v0.17.0 (DAY-001): first it runs the day-end close-out (day-end.ts), so
+ * yesterday's visits, calls and help requests are closed and nobody is left
+ * in service or called on a day that is over; then every old shift closes.
  */
 export async function sweepFloor(
   db: Db,
   locationId: string,
   now = new Date(),
-): Promise<{ outOverPosted: string[]; autoCheckedOut: string[] }> {
+): Promise<{ outOverPosted: string[]; autoCheckedOut: string[]; closed: DayEndClosed }> {
   return db.transaction(async (tx) => {
     const [loc] = await tx
       .select({ organizationId: locations.organizationId, timezone: locations.timezone })
       .from(locations)
       .where(eq(locations.id, locationId));
-    if (!loc) return { outOverPosted: [], autoCheckedOut: [] };
+    const none = { visits: 0, autoFinished: 0, calls: 0, help: 0 };
+    if (!loc) return { outOverPosted: [], autoCheckedOut: [], closed: none };
     const rules = await activeRules(tx, locationId);
     const today = localDate(now, loc.timezone);
+    const closed = await closeOutDay(
+      tx,
+      { id: locationId, organizationId: loc.organizationId, timezone: loc.timezone },
+      today,
+      rules,
+      now,
+    );
     const outCutoff = new Date(now.getTime() - rules.penalties.out_over_minutes * 60_000);
     // Scan without locks: a quiet floor touches nothing. Each candidate is
     // then locked in the order transition() uses (technicians, then
@@ -559,6 +572,9 @@ export async function sweepFloor(
           outStartedAt: technicianStatus.outStartedAt,
           shiftDate: shifts.date,
           openCall: sql<number>`(select count(*) from ${turnCalls} oc where oc.technician_id = ${technicianStatus.technicianId} and oc.responded_at is null)`,
+          // v0.17.0: in service on a visit that is still open (the close-out
+          // above closes yesterday's, so this is one from today).
+          openVisit: sql<number>`(select count(*) from ${visits} ov where ov.assigned_technician_id = ${technicianStatus.technicianId} and ov.status = 'in_service')`,
         })
         .from(technicianStatus)
         .leftJoin(shifts, eq(shifts.id, technicianStatus.shiftId))
@@ -568,7 +584,7 @@ export async function sweepFloor(
       const stale = r.shiftDate !== null && r.shiftDate < today;
       if (stale) {
         // Yesterday's shift: close it (no out-over on a day that is over).
-        if (r.status === 'in_service' || Number(r.openCall) > 0) continue;
+        if (Number(r.openVisit) > 0 || Number(r.openCall) > 0) continue;
         if (r.shiftId) {
           await tx
             .update(shifts)
@@ -594,7 +610,7 @@ export async function sweepFloor(
           entityId: c.technicianId,
           action: 'auto_check_out',
           before: { status: r.status, shiftId: r.shiftId, shiftDate: r.shiftDate },
-          after: { status: 'off' },
+          after: { status: 'off', forDay: r.shiftDate },
           reason: 'shift from an earlier day was still open',
         });
         autoCheckedOut.push(c.technicianId);
@@ -613,7 +629,7 @@ export async function sweepFloor(
         if (posted) outOverPosted.push(c.technicianId);
       }
     }
-    return { outOverPosted, autoCheckedOut };
+    return { outOverPosted, autoCheckedOut, closed };
   });
 }
 

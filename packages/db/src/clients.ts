@@ -2,7 +2,7 @@
 // (design doc). The phone, in E.164, is the match key so a later import of
 // Fresha's client list lands on the same rows (Duong, 2026-11-04). Server only.
 import { and, desc, eq, inArray, isNull, sql } from 'drizzle-orm';
-import { clients, services, technicians, visitServices, visits } from './schema';
+import { appointments, clients, services, technicians, visitServices, visits } from './schema';
 import type { Db } from './server';
 import { writeAudit } from './status';
 
@@ -249,6 +249,8 @@ export type ClientDetail = ClientHit & {
   notes: string | null;
   usualTechnician: string | null;
   recent: { at: Date; services: string[]; technician: string | null; status: string }[];
+  /** v0.17.0: booked appointments the desk marked a no-show. */
+  noShows: number;
 };
 
 /** One client at this location, or null (another location's client is not found). */
@@ -292,6 +294,16 @@ export async function clientDetail(
           ),
         )
     : [];
+  const [ns] = await db
+    .select({ n: sql<string>`count(*)` })
+    .from(appointments)
+    .where(
+      and(
+        eq(appointments.clientId, c.id),
+        eq(appointments.locationId, locationId),
+        sql`${appointments.noShowAt} is not null`,
+      ),
+    );
   const done = recent.filter((r) => r.status === 'completed');
   const tally = new Map<string, number>();
   for (const r of done)
@@ -316,6 +328,7 @@ export async function clientDetail(
       technician: r.technician,
       services: items.filter((i) => i.visitId === r.id).map((i) => i.name),
     })),
+    noShows: Number(ns?.n ?? 0),
   };
 }
 

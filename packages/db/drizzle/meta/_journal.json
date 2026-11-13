@@ -197,6 +197,13 @@
       "when": 1794469456115,
       "tag": "0027_v016_fixes_groups_help",
       "breakpoints": true
+    },
+    {
+      "idx": 28,
+      "version": "7",
+      "when": 1794546587442,
+      "tag": "0028_v017_first_week",
+      "breakpoints": true
     }
   ]
 }
