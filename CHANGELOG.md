@@ -37,7 +37,7 @@ confirm dialogs.
   it with no points); open calls expire with no penalty; help requests close;
   shifts check out. Every change is in the log with the day it belonged to,
   and the summary and Reports list the counts ("Closed at day end: …"); the
-  owner's board says "N left open were closed at day end". Tests: a day-two
+  owner's yesterday line adds "Closed at day end: N". Tests: a day-two
   test, and both 2026 clock-change days in the salon's zone (the reset, the
   late penalty, the out-over penalty and the appointment hold).
 - **Left without service.** **More** → **Left without service** on any
@@ -50,8 +50,7 @@ confirm dialogs.
   (an appointment booked for a known client: "Book for later" now keeps the
   client). A client marked a no-show who comes after all can still be
   "Client arrived", and the mark is cleared.
-- **Free-deny badge.** A small badge on the tech card, "Said no 3 times today
-  (free)", at Rules → Advanced "Badge after this many free no's in a day"
+- **Free-deny badge.** A small badge on the tech card, "Free no today: 3", at Rules → Advanced "Badge after this many free no's in a day"
   (Heavenly 3; 0 = never). A hard daily limit is a separate setting, blank
   for Heavenly (no limit); with one set, the next free no costs the deny
   penalty and the log says so.

@@ -128,7 +128,7 @@ export function Board({
                 <Points points={row.points} hadAppointmentLast={row.hadAppointmentLast} />
               </span>
               <span className="sr-only">
-                {formatPoints(row.points, row.hadAppointmentLast)} {t.board.points}
+                {pointsWord(row.points, row.hadAppointmentLast ?? false, t.board)}
               </span>
             </span>
             <span className="flex min-w-0 flex-1 flex-col">

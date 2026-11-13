@@ -61,7 +61,7 @@ start, and timers move on. Load again for a fresh copy.
 
 | Turn | Tech | Level | Status | Points | Checked in | How the points add up |
 | --- | --- | --- | --- | --- | --- | --- |
-| 1 | Thảo | dip | available | 0 | 5th | said no once ("need a break"): excused by the rules, no points; said no once ("personal"): excused by the rules, no points; said no once ("need a break"): excused by the rules, no points; card badge: said no 3 times today (free) |
+| 1 | Thảo | dip | available | 0 | 5th | said no once ("need a break"): excused by the rules, no points; said no once ("personal"): excused by the rules, no points; said no once ("need a break"): excused by the rules, no points; card badge "Free no today: 3" |
 | 2 | Linh | gel | available | 00 | 4th | +0 Gel fill (appointment) |
 | 3 | Tâm | gel | on break | ½ | 6th | +½ late start (17 min late) |
 | 4 | Vân | regular polish | available | 1 | 1st | +1 out over 60 min |

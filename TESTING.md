@@ -727,25 +727,25 @@ screen at iPad landscape (1366), iPad portrait (1024) and phone (390).
 5. **Left without service.** Any waiting row (including a kiosk check-in, a
    fix waiting for approval and a held second part) has **More** →
    **Left without service**. Press it on one: the row is gone, nobody's
-   points or place change. Reports → today: "3 left without service" (the
+   points or place change. Reports → today: "Left without service: 3" (the
    demo already has 2).
 6. **No-show.** Appointments: Tâm's calendar client from 40 minutes ago has
    **More** → **No-show**. Press it: the row says "no-show"; Tâm's card no
    longer mentions it. Thảo's desk appointment from 90 minutes ago already
-   says "no-show". Clients → search `813 555 0210` → Kim L.: "1 no-shows".
-7. **Free-deny badge.** Thảo's card shows "Said no 3 times today (free)".
+   says "no-show". Clients → search `813 555 0210` → Kim L.: "No-shows: 1".
+7. **Free-deny badge.** Thảo's card shows the badge "Free no today: 3".
    Rules → "Client left" → **Advanced**: the badge number (0 = never), a daily
    limit (blank = no limit), the minutes before No-show and what happens to a
    client still in the chair at day end. Set the limit to 3 and save: Thảo's
    next free no posts +1. Put it back to blank.
 8. **Fairness table.** As Phu or Vy: Reports → "Fairness, (dates)": tech,
-   visits, points and "Worth a look" (Thảo: "3 free no"; Linh: "1 client left
+   visits, points and "Worth a look" (Thảo: "Free no: 3"; Linh: "Client left: 1
    (1 confirmed)" after step 4). **Show details** opens every count, including
    skips by reason. No client names anywhere.
-9. **Day end.** The owner's board says "Yesterday (date): … 3 left open were
-   closed at day end." Reports → yesterday: "Closed at day end: 1 still
-   waiting or called (no points), 1 finished automatically (points kept), 0
-   calls, 1 help requests, 1 check-outs." Log, yesterday and today: "Closed at
+9. **Day end.** The owner's board says "Yesterday (date): … Closed at day
+   end: 3." Reports → yesterday: "Closed at day end: still waiting or called 1
+   (no points), finished automatically 1 (points kept), calls 0 (no penalty),
+   help requests 1, check-outs 1." Log, yesterday and today: "Closed at
    day end (no points)", "Finished at day end", "Help request closed at day
    end", "Checked out (left open)". The automated day-two and clock-change
    tests are in `packages/db/test/v017.test.ts`.

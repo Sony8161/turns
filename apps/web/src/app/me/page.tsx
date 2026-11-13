@@ -6,7 +6,7 @@ import { activeRules } from '@turn/db/rules';
 import { locationStatus, sweepFloor } from '@turn/db/status';
 import Link from 'next/link';
 import { AutoRefresh } from '@/components/AutoRefresh';
-import { formatPoints, secondsSince } from '@/components/Board';
+import { formatPoints, pointsWord, secondsSince } from '@/components/Board';
 import { Button } from '@/components/ui';
 import { fill } from '@/i18n/dictionary';
 import { LanguageToggle } from '@/i18n/LanguageToggle';
@@ -106,7 +106,7 @@ export default async function MePage() {
             <p className="points text-slate">
               <span aria-hidden>{formatPoints(me?.points ?? 0, me?.hadAppointmentLast)}</span>
               <span className="sr-only">
-                {formatPoints(me?.points ?? 0, me?.hadAppointmentLast)} {t.board.points}
+                {pointsWord(me?.points ?? 0, me?.hadAppointmentLast ?? false, t.board)}
               </span>
             </p>
             <p className="text-slate/70">{t.me.pointsToday}</p>

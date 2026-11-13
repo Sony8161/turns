@@ -525,6 +525,7 @@ const en = {
       changed: 'Appointment changed.',
       cancelled: 'Appointment cancelled.',
       arrived: 'Visit opened for {name}.',
+      no_show: 'Marked a no-show. The technician is free again.',
       feedSet: 'Calendar link saved. It will sync within 15 minutes, or press Sync now.',
       feedRemoved: 'Calendar link removed.',
       synced: 'Sync done.',
@@ -999,9 +1000,9 @@ const en = {
   reports: {
     // v0.17.0
     leftLine:
-      '{walkedOut} left without service, {clientLeft} left after the call, {noShows} no-shows. None of these count against a technician.',
+      'Left without service: {walkedOut}. Left after the call: {clientLeft}. No-shows: {noShows}. None of these count against a technician.',
     closedLine:
-      'Closed at day end: {visits} still waiting or called (no points), {autoFinished} finished automatically (points kept), {calls} calls (no penalty), {help} help requests, {shifts} check-outs.',
+      'Closed at day end: still waiting or called {visits} (no points), finished automatically {autoFinished} (points kept), calls {calls} (no penalty), help requests {help}, check-outs {shifts}.',
     fairness: {
       title: 'Fairness, {from} to {to}',
       lead: 'One row per technician over 7 days, counts only. "No for free" is a no the rules do not charge for (a break, personal). Open the details for the rest.',
@@ -1020,9 +1021,9 @@ const en = {
         fixes: 'Fixes on her work',
         skipped: 'Skipped, by reason',
       },
-      flagFree: '{n} free no',
-      flagLeft: '{n} client left ({confirmed} confirmed)',
-      flagFixes: '{n} fixes on her work',
+      flagFree: 'Free no: {n}',
+      flagLeft: 'Client left: {n} ({confirmed} confirmed)',
+      flagFixes: 'Fixes on her work: {n}',
       skipWhy: {
         checked_in: 'not ready',
         in_service: 'with a client',
@@ -1273,7 +1274,7 @@ const en = {
   },
   techBoard: {
     // v0.17.0: one small badge (rules: fairness.free_deny_flag).
-    freeDenies: 'Said no {n} times today (free)',
+    freeDenies: 'Free no today: {n}',
     title: 'Technicians',
     lead: 'In the order the next call goes. Open "Why this order?" for every point behind a total.',
     turn: 'Turn {n}',
@@ -1369,7 +1370,7 @@ const en = {
     receptionistSaved: 'Saved.',
   },
   clients: {
-    noShows: '{n} no-shows',
+    noShows: 'No-shows: {n}',
     title: 'Clients',
     lead: 'Find a client by phone number (any format) or by name (accents do not matter). For the front desk, managers and the owner only; there is no way to download the list.',
     searchLabel: 'Phone or name',
@@ -1470,7 +1471,7 @@ const en = {
     } as Record<string, string>,
   },
   admin: {
-    yesterdayClosed: '{n} left open were closed at day end.',
+    yesterdayClosed: 'Closed at day end: {n}.',
     yesterday: 'Yesterday ({date}): {visits} visits, {denies} denies, {overrides} overrides.',
     seeReport: 'See the report',
     today: '{visits} visits today, {denies} denies, {overrides} overrides',
@@ -1985,6 +1986,7 @@ const vi: Dictionary = {
     upcomingLine: '{time}, {name}',
     open: 'Tất cả lịch hẹn',
     done: {
+      no_show: 'Đã ghi khách không đến. Thợ được rảnh lại.',
       added: 'Đã thêm lịch hẹn.',
       changed: 'Đã sửa lịch hẹn.',
       cancelled: 'Đã hủy lịch hẹn.',
@@ -2479,9 +2481,9 @@ const vi: Dictionary = {
         fixes: 'Sửa móng do thợ làm',
         skipped: 'Bị bỏ qua, theo lý do',
       },
-      flagFree: '{n} lần từ chối miễn điểm',
-      flagLeft: '{n} lần báo khách về ({confirmed} đã xác nhận)',
-      flagFixes: '{n} lần sửa móng do thợ làm',
+      flagFree: 'Từ chối miễn điểm: {n}',
+      flagLeft: 'Báo khách về: {n} ({confirmed} đã xác nhận)',
+      flagFixes: 'Sửa móng do thợ làm: {n}',
       skipWhy: {
         checked_in: 'chưa sẵn sàng',
         in_service: 'đang làm khách',
@@ -2824,7 +2826,7 @@ const vi: Dictionary = {
     receptionistSaved: 'Đã lưu.',
   },
   clients: {
-    noShows: '{n} lần không đến',
+    noShows: 'Không đến: {n} lần',
     title: 'Khách',
     lead: 'Tìm khách theo số điện thoại (viết kiểu nào cũng được) hoặc theo tên (không cần dấu). Chỉ dành cho lễ tân, quản lý và chủ tiệm; không tải danh sách xuống được.',
     searchLabel: 'Số điện thoại hoặc tên',

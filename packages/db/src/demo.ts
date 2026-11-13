@@ -455,7 +455,7 @@ export async function buildDemoDay(db: Db, ctx: DemoContext): Promise<void> {
   await finish('Mai');
   // v0.17.0 (FAIR-001, WALK-001): two more clients come to Thảo (still the
   // lowest) and she says no for free both times, so her card gets the
-  // "Said no 3 times today (free)" badge. Both clients then walk out before
+  // "Free no today: 3" badge. Both clients then walk out before
   // anyone else is called: Left without service, no points for anyone.
   for (const [name, reason] of [
     ['Basic pedicure', 'personal'],
@@ -1401,9 +1401,7 @@ export function renderDemoExpected(r: DemoReport): string {
         (x) => `said no once ("${REASON[x] ?? x}"): excused by the rules, no points`,
       ),
       ...(r.freeDenyBadges.some((f) => f.name === b.name)
-        ? [
-            `card badge: said no ${r.freeDenyBadges.find((f) => f.name === b.name)!.n} times today (free)`,
-          ]
+        ? [`card badge "Free no today: ${r.freeDenyBadges.find((f) => f.name === b.name)!.n}"`]
         : []),
     ];
     const lines = parts.length ? parts.join('; ') : 'nothing yet';
