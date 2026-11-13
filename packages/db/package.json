@@ -32,7 +32,8 @@
     "./help": "./src/help.ts",
     "./party": "./src/party.ts",
     "./act-for": "./src/act-for.ts",
-    "./day-end": "./src/day-end.ts"
+    "./day-end": "./src/day-end.ts",
+    "./permissions": "./src/permissions.ts"
   },
   "scripts": {
     "typecheck": "tsc --noEmit",

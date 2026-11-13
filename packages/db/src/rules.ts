@@ -639,12 +639,15 @@ export async function saveRuleConfig(
   });
 }
 
-/** Points a visit is worth under a config. Pure, so tests and the preview can pin it. */
+/** Points a visit is worth under a config. Pure, so tests and the preview can pin it.
+ *  v0.17.1 (review #11): a nail fix is always 0, whatever the rules say (a
+ *  fix is on a visit of its own, so the whole visit is 0). */
 export function visitPointsUnder(
   rules: RuleConfig,
-  items: { isFillOrFullSet: boolean; categoryId: string; serviceId?: string }[],
+  items: { isFillOrFullSet: boolean; categoryId: string; serviceId?: string; isFix?: boolean }[],
   source: 'walk_in' | 'appointment' | 'request' | 'self_checkin',
 ): number {
+  if (items.some((s) => s.isFix)) return 0;
   const overrides = rules.points.by_category ?? {};
   const perService = rules.points.by_service ?? {};
   let total = items.reduce((sum, s) => {
@@ -731,6 +734,7 @@ export async function previewBoard(
           isFillOrFullSet: serviceCategories.isFillOrFullSet,
           categoryId: serviceCategories.id,
           serviceId: visitServices.serviceId,
+          isFix: services.isFix,
         })
         .from(visitServices)
         .innerJoin(visits, eq(visits.id, visitServices.visitId))

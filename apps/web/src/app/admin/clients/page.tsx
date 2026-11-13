@@ -1,5 +1,9 @@
-import { CLIENT_SEARCH_LIMIT, parseClientQuery, searchClients } from '@turn/db/clients';
-import { consumeRateLimit } from '@turn/db/rate-limit';
+import {
+  CLIENT_SEARCH_LIMIT,
+  findClients,
+  parseClientQuery,
+  type ClientHit,
+} from '@turn/db/clients';
 import Link from 'next/link';
 import { redirect } from 'next/navigation';
 import { AdminNav } from '@/components/AdminNav';
@@ -8,16 +12,15 @@ import { fill } from '@/i18n/dictionary';
 import { LanguageToggle } from '@/i18n/LanguageToggle';
 import { getDictionary } from '@/i18n/lang';
 import { membershipWith, requireActor } from '@/lib/auth';
-import { maskContact } from '@/lib/contact';
 import { db } from '@/lib/db';
 import { can } from '@/lib/permissions';
 import { signOut } from '../../login/actions';
 
 // Client search (v0.13.0, Duong 2026-11-12): by phone in any format, or by
 // name without accents. Owner, managers and the front desk; never a
-// technician. No export of the list (threat model T11); searches are rate
-// limited per person so the screen cannot be used to page through everyone.
-const SEARCH_LIMIT_PER_5_MIN = 60;
+// technician. No export of the list (threat model T11). v0.17.1 (review #4):
+// at least 4 digits or 3 letters, and every search, client page, fix lookup
+// and "Show" counts against one per-person limit (@turn/db/clients).
 
 export default async function ClientsPage({
   searchParams,
@@ -35,16 +38,19 @@ export default async function ClientsPage({
   const q = (Array.isArray(params.q) ? params.q[0] : params.q)?.slice(0, 60) ?? '';
   const parsed = q ? parseClientQuery(q) : null;
   let limited = false;
-  let hits: Awaited<ReturnType<typeof searchClients>> = [];
+  let hits: ClientHit[] = [];
   if (parsed) {
-    const rl = await consumeRateLimit(
-      db(),
-      `client-search:${actor.userId}`,
-      SEARCH_LIMIT_PER_5_MIN,
-      300,
-    );
-    if (rl.allowed) hits = await searchClients(db(), { locationId: m.locationId, query: q });
-    else limited = true;
+    const r = await findClients(db(), {
+      viewer: {
+        userId: actor.userId,
+        role: m.role,
+        organizationId: m.organizationId,
+        locationId: m.locationId,
+      },
+      query: q,
+    });
+    if (r.ok) hits = r.hits;
+    else limited = r.reason === 'too_many';
   }
   const day = new Intl.DateTimeFormat(lang === 'vi' ? 'vi-VN' : 'en-US', { dateStyle: 'medium' });
   return (
@@ -119,12 +125,10 @@ export default async function ClientsPage({
                       <span className="font-semibold">
                         {[h.firstName, h.lastName].filter(Boolean).join(' ') || tc.noName}
                       </span>
-                      <span className="text-small text-slate/70">
-                        {h.phone ? maskContact({ kind: 'phone', value: h.phone }) : tc.noPhone}
-                      </span>
+                      <span className="text-small text-slate/70">{h.phone ?? tc.noPhone}</span>
                     </span>
                     <span className="text-small text-slate/80">
-                      {fill(tc.visits, { n: h.visitCount })}
+                      {fill(h.visitCount === 1 ? tc.visitsOne : tc.visits, { n: h.visitCount })}
                       {h.lastVisitAt
                         ? ` · ${fill(tc.lastVisit, { date: day.format(h.lastVisitAt) })}`
                         : ''}

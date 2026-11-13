@@ -5,17 +5,21 @@ import type { Db } from './server';
 
 export type RateLimitResult = { allowed: boolean; remaining: number; retryAfterSeconds: number };
 
+/** `cost` (v0.17.1): how many this request counts as, e.g. each person in a
+ *  kiosk group. A whole number, 1 or more. */
 export async function consumeRateLimit(
   db: Db,
   key: string,
   limit: number,
   windowSeconds: number,
+  cost = 1,
 ): Promise<RateLimitResult> {
+  const n = Math.max(1, Math.floor(cost));
   const result = await db.execute<{ count: number; reset_at: Date }>(sql`
     insert into rate_limits (key, count, reset_at)
-    values (${key}, 1, now() + make_interval(secs => ${windowSeconds}))
+    values (${key}, ${n}, now() + make_interval(secs => ${windowSeconds}))
     on conflict (key) do update set
-      count = case when rate_limits.reset_at <= now() then 1 else rate_limits.count + 1 end,
+      count = case when rate_limits.reset_at <= now() then ${n} else rate_limits.count + ${n} end,
       reset_at = case when rate_limits.reset_at <= now()
                       then now() + make_interval(secs => ${windowSeconds})
                       else rate_limits.reset_at end

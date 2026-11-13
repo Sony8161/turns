@@ -9,7 +9,13 @@
 // phone (T11). Server only.
 import { and, asc, desc, eq, gte, inArray, isNull, lte, ne, sql } from 'drizzle-orm';
 import { alias } from 'drizzle-orm/pg-core';
-import { parseClientQuery, shortName, nameParts } from './clients';
+import {
+  consumeClientLookup,
+  nameParts,
+  parseClientQuery,
+  shortName,
+  type ClientViewer,
+} from './clients';
 import type { ManagerActor } from './engine';
 import { localDate } from './reports';
 import { activeRules } from './rules';
@@ -42,7 +48,7 @@ const likeSafe = (s: string) => s.replace(/[\\%_]/g, (c) => `\\${c}`);
 
 /**
  * The client's completed visits inside the fix window, newest first, for a
- * phone (3+ digits) or a name typed at the desk. Up to 10 rows. An empty list
+ * phone (4+ digits) or a name (3+ letters) typed at the desk. Up to 10 rows. An empty list
  * is the "no visit in the window" warning; the fix can still be entered.
  */
 export async function fixCandidates(
@@ -120,6 +126,37 @@ export async function fixCandidates(
       };
     }),
   };
+}
+
+/**
+ * v0.17.1 (review #4): the desk's fix lookup, counted against the same
+ * per-person budget as client search and client pages (clients.ts), so it
+ * cannot be used to page through the client list either.
+ */
+export async function findFixVisits(
+  db: Db,
+  input: { viewer: ClientViewer; query: string; now?: Date },
+): Promise<
+  | { ok: true; windowDays: number; visits: FixCandidate[] }
+  | { ok: false; reason: 'not_allowed' | 'too_many' }
+> {
+  if (!['owner', 'manager', 'receptionist'].includes(input.viewer.role)) {
+    return { ok: false, reason: 'not_allowed' };
+  }
+  // Too short to be a lookup: the window only, nothing counted.
+  if (!parseClientQuery(input.query)) {
+    const rules = await activeRules(db, input.viewer.locationId);
+    return { ok: true, windowDays: rules.fixes.window_days, visits: [] };
+  }
+  if (!(await consumeClientLookup(db, input.viewer.userId))) {
+    return { ok: false, reason: 'too_many' };
+  }
+  const found = await fixCandidates(db, {
+    locationId: input.viewer.locationId,
+    query: input.query,
+    ...(input.now ? { now: input.now } : {}),
+  });
+  return { ok: true, ...found };
 }
 
 export type FixDecision = 'approve' | 'decline';

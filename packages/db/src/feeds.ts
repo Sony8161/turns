@@ -10,6 +10,7 @@ import { request } from 'node:https';
 import { isIP, type LookupFunction } from 'node:net';
 import { and, asc, eq, isNull, lt, or, sql } from 'drizzle-orm';
 import { sameSlot } from './appointments';
+import { allowedAt } from './permissions';
 import { appointments, calendarFeeds, locations, memberships, technicians } from './schema';
 import type { Db } from './server';
 import type { StaffActor } from './staff';
@@ -232,6 +233,69 @@ export function urlHint(url: URL): string {
   return `${url.hostname} …${whole.slice(-4)}`;
 }
 
+// Calendar names (v0.11.0; here since v0.17.1) ------------------------------------
+
+const MAX_CAL_NAME = 120;
+
+/** X-WR-CALNAME, unfolded and unescaped, or null. Fresha names it
+ *  "Fresha - <TEAM MEMBER>  <Business>". */
+export function calendarName(text: string): string | null {
+  const unfolded = text.replace(/\r\n?/g, '\n').replace(/\n[ \t]/g, '');
+  const m = /^X-WR-CALNAME(?:;[^:\n]*)?:(.*)$/im.exec(unfolded);
+  if (!m) return null;
+  const value = m[1]!
+    .replace(/\\n/gi, ' ')
+    .replace(/\\([,;\\])/g, '$1')
+    .trim()
+    .slice(0, MAX_CAL_NAME);
+  return value || null;
+}
+
+/** Lower case, no accents (đ as d), letters and digits only, single spaces. */
+export function normalizeName(s: string): string {
+  return s
+    .normalize('NFD')
+    .replace(/\p{M}/gu, '')
+    .replace(/[đĐ]/g, 'd')
+    .toLowerCase()
+    .replace(/[^\p{L}\p{N}]+/gu, ' ')
+    .trim();
+}
+
+/**
+ * The technician a calendar most likely belongs to, or null. Every word of
+ * the technician's name must appear in the calendar's name; a longer match
+ * wins; a tie is no answer, because a wrong suggestion is worse than none.
+ * Only a suggestion: the owner confirms before anything is saved.
+ */
+export function suggestTechnician(
+  calName: string | null,
+  techs: { id: string; name: string }[],
+): string | null {
+  if (!calName) return null;
+  const words = new Set(
+    normalizeName(calName)
+      .split(' ')
+      .filter((w) => w && w !== 'fresha'),
+  );
+  let best: string | null = null;
+  let bestScore = 0;
+  let tie = false;
+  for (const t of techs) {
+    const parts = normalizeName(t.name).split(' ').filter(Boolean);
+    if (!parts.length || !parts.every((p) => words.has(p))) continue;
+    const score = parts.length;
+    if (score > bestScore) {
+      best = t.id;
+      bestScore = score;
+      tie = false;
+    } else if (score === bestScore) {
+      tie = true;
+    }
+  }
+  return tie ? null : best;
+}
+
 // Fetch ------------------------------------------------------------------------
 
 export type FetchResult = { ok: true; text: string } | { ok: false; error: string };
@@ -328,21 +392,24 @@ async function within<T>(p: Promise<T>, ms: number): Promise<T | typeof TIMED_OU
 
 /** The real fetch: every hop (redirects included) is re-checked. Each hop has
  *  FEED_TIMEOUT_MS for its DNS lookup and request together, and all hops share
- *  FEED_TOTAL_MS. Never throws. The options are for tests. */
+ *  FEED_TOTAL_MS. Never throws. With `hosts` (v0.17.1, review #7) every hop,
+ *  the first and each redirect, must also be on that list. The other options
+ *  are for tests. */
 export function safeFetchText(
   resolve: Resolve = systemResolve,
-  options: { timeoutMs?: number; totalMs?: number; get?: GetOnce } = {},
+  options: { timeoutMs?: number; totalMs?: number; get?: GetOnce; hosts?: string[] } = {},
 ): FetchText {
   const hopMs = options.timeoutMs ?? FEED_TIMEOUT_MS;
   const totalMs = options.totalMs ?? FEED_TOTAL_MS;
   const get = options.get ?? getOnce;
+  const hosts = options.hosts;
   return async (raw) => {
     const deadline = Date.now() + totalMs;
     let current = raw;
     for (let hop = 0; hop <= FEED_MAX_REDIRECTS; hop++) {
       const hopEnd = Math.min(deadline, Date.now() + hopMs);
       if (hopEnd <= Date.now()) return { ok: false, error: 'timeout' };
-      const checked = checkFeedUrl(current);
+      const checked = hosts ? checkFreshaUrl(current, hosts) : checkFeedUrl(current);
       if (!checked.ok) return { ok: false, error: checked.problem };
       const pinned = await within(resolvePublic(checked.url, resolve), hopEnd - Date.now());
       if (pinned === TIMED_OUT) return { ok: false, error: 'timeout' };
@@ -364,6 +431,17 @@ export function safeFetchText(
     }
     return { ok: false, error: 'too_many_redirects' };
   };
+}
+
+/** Test hooks for the fetch (a fake DNS answer, a fake request). */
+export type FetchOptions = { resolve?: Resolve; get?: GetOnce };
+
+/** The fetch the test and the poll use (v0.17.1): every hop on `hosts`. */
+export function feedFetcher(hosts: string[] = feedHosts(), options: FetchOptions = {}): FetchText {
+  return safeFetchText(options.resolve ?? systemResolve, {
+    hosts,
+    ...(options.get ? { get: options.get } : {}),
+  });
 }
 
 // ICS parsing --------------------------------------------------------------------
@@ -601,10 +679,74 @@ export async function feedTechnician(
   return member ? { id: tech.id } : { error: 'not_allowed' };
 }
 
+// A technician's own link (v0.17.1, review #6) -----------------------------------
+
+/** The owner's choice for a technician's own Fresha link (locations column). */
+export const TECH_CALENDAR_LINKS = ['owner_approves', 'name_must_match', 'open'] as const;
+export type TechCalendarLinks = (typeof TECH_CALENDAR_LINKS)[number];
+
+export async function techCalendarLinksAt(
+  db: Db | Tx,
+  locationId: string,
+): Promise<TechCalendarLinks> {
+  const [row] = await db
+    .select({ v: locations.techCalendarLinks })
+    .from(locations)
+    .where(eq(locations.id, locationId));
+  const v = row?.v as TechCalendarLinks | undefined;
+  return v && TECH_CALENDAR_LINKS.includes(v) ? v : 'owner_approves';
+}
+
+/** The owner sets it (audited, before and after; there is no URL in it). */
+export async function setTechCalendarLinks(
+  db: Db,
+  input: { actor: StaffActor; value: TechCalendarLinks },
+): Promise<{ ok: true } | { ok: false; reason: 'not_allowed' | 'bad_value' }> {
+  if (input.actor.role !== 'owner') return { ok: false, reason: 'not_allowed' };
+  if (!TECH_CALENDAR_LINKS.includes(input.value)) return { ok: false, reason: 'bad_value' };
+  return db.transaction(async (tx) => {
+    const [before] = await tx
+      .select({ v: locations.techCalendarLinks })
+      .from(locations)
+      .where(
+        and(
+          eq(locations.id, input.actor.locationId),
+          eq(locations.organizationId, input.actor.organizationId),
+        ),
+      )
+      .for('update');
+    if (!before) return { ok: false as const, reason: 'not_allowed' as const };
+    if (before.v === input.value) return { ok: true as const };
+    await tx
+      .update(locations)
+      .set({ techCalendarLinks: input.value, updatedAt: new Date() })
+      .where(eq(locations.id, input.actor.locationId));
+    await writeAudit(tx, {
+      organizationId: input.actor.organizationId,
+      locationId: input.actor.locationId,
+      actorUserId: input.actor.userId,
+      entityType: 'locations',
+      entityId: input.actor.locationId,
+      action: 'tech_calendar_links_setting',
+      before: { techCalendarLinks: before.v },
+      after: { techCalendarLinks: input.value },
+    });
+    return { ok: true as const };
+  });
+}
+
 /** The owner pastes a technician's calendar link (T13), or a technician
  *  their own (v0.11.0). Checked for syntax and for a public address before it
  *  is kept. A technician, and any caller passing `hosts`, may only use an
- *  allowed calendar host (Fresha). */
+ *  allowed calendar host (Fresha).
+ *
+ *  v0.17.1 (review #6): a technician's own link follows the owner's choice
+ *  (locations.tech_calendar_links). 'owner_approves' (Heavenly): it is kept
+ *  but waits (`pending`), is never fetched and so brings in nothing and holds
+ *  nobody, until the owner or a manager approves it (reviewFeed).
+ *  'name_must_match': the calendar is fetched now (every hop on the host
+ *  list) and its name must point at her and nobody else. 'open': as v0.11.0.
+ *  A link the owner pastes never waits. */
 export async function setFeed(
   db: Db,
   input: {
@@ -613,23 +755,52 @@ export async function setFeed(
     url: string;
     resolve?: Resolve;
     hosts?: string[];
+    /** For name_must_match: reads the calendar (tests pass their own). */
+    fetchText?: FetchText;
   },
-): Promise<{ ok: true; feedId: string; urlHint: string } | FeedError> {
+): Promise<{ ok: true; feedId: string; urlHint: string; pending: boolean } | FeedError> {
   if (input.actor.role !== 'owner' && input.actor.role !== 'technician') {
     return { ok: false, reason: 'not_allowed' };
   }
-  const freshaOnly = input.actor.role === 'technician' || input.hosts !== undefined;
-  const checked = freshaOnly
-    ? checkFreshaUrl(input.url, input.hosts ?? feedHosts())
-    : checkFeedUrl(input.url);
+  const self = input.actor.role === 'technician';
+  const freshaOnly = self || input.hosts !== undefined;
+  const hosts = input.hosts ?? feedHosts();
+  const checked = freshaOnly ? checkFreshaUrl(input.url, hosts) : checkFeedUrl(input.url);
   if (!checked.ok) return { ok: false, reason: checked.problem };
   const addr = await resolvePublic(checked.url, input.resolve);
   if (!addr.ok) return { ok: false, reason: addr.problem };
   const hint = urlHint(checked.url);
+  const mode = self ? await techCalendarLinksAt(db, input.actor.locationId) : 'open';
+  if (self && mode === 'name_must_match') {
+    // Her own row first, so nobody learns another technician's calendar name.
+    const mine = await feedTechnician(db, input.actor, input.technicianId);
+    if ('error' in mine) return { ok: false, reason: mine.error };
+    const fetched = await (
+      input.fetchText ?? feedFetcher(hosts, input.resolve ? { resolve: input.resolve } : {})
+    )(checked.url.toString());
+    if (!fetched.ok) return { ok: false, reason: fetched.error };
+    const techs = await db
+      .select({ id: technicians.id, name: technicians.displayName })
+      .from(technicians)
+      .where(
+        and(
+          eq(technicians.locationId, input.actor.locationId),
+          eq(technicians.organizationId, input.actor.organizationId),
+          eq(technicians.active, true),
+        ),
+      );
+    if (suggestTechnician(calendarName(fetched.text), techs) !== mine.id) {
+      return { ok: false, reason: 'calendar_name' };
+    }
+  }
+  const pending = self && mode === 'owner_approves';
   return db.transaction(async (tx) => {
     const tech = await feedTechnician(tx, input.actor, input.technicianId);
     if ('error' in tech) return { ok: false, reason: tech.error };
     const now = new Date();
+    const approval = pending
+      ? { needsApproval: true, approvedBy: null, approvedAt: null }
+      : { needsApproval: false };
     const [row] = await tx
       .insert(calendarFeeds)
       .values({
@@ -639,6 +810,7 @@ export async function setFeed(
         url: checked.url.toString(),
         urlHint: hint,
         createdBy: input.actor.userId,
+        ...approval,
       })
       .onConflictDoUpdate({
         target: calendarFeeds.technicianId,
@@ -648,6 +820,7 @@ export async function setFeed(
           archivedAt: null,
           lastError: null,
           lastAttemptAt: null,
+          ...approval,
           updatedAt: now,
         },
       })
@@ -661,10 +834,103 @@ export async function setFeed(
       entityId: row.id,
       action: 'feed_set',
       // The hint only: the URL is a secret (T14).
-      after: { technicianId: tech.id, urlHint: hint, by: input.actor.role },
+      after: {
+        technicianId: tech.id,
+        urlHint: hint,
+        by: input.actor.role,
+        ...(pending ? { pending: true } : {}),
+        ...(self && mode === 'name_must_match' ? { nameMatched: true } : {}),
+      },
     });
-    return { ok: true, feedId: row.id, urlHint: hint };
+    return { ok: true, feedId: row.id, urlHint: hint, pending };
   });
+}
+
+/**
+ * The owner or a manager approves a technician's waiting link (it is then
+ * fetched like any other) or declines it (removed, as by the owner). The
+ * audit row names the technician only: no URL, not even its hint.
+ */
+export async function reviewFeed(
+  db: Db,
+  input: { actor: StaffActor; technicianId: string; decision: 'approve' | 'decline' },
+): Promise<
+  { ok: true } | { ok: false; reason: 'not_allowed' | 'not_pending' | 'unknown_technician' }
+> {
+  if (!(await allowedAt(db, input.actor, 'approve_calendar_links'))) {
+    return { ok: false, reason: 'not_allowed' };
+  }
+  return db.transaction(async (tx) => {
+    const [feed] = await tx
+      .select({
+        id: calendarFeeds.id,
+        needsApproval: calendarFeeds.needsApproval,
+        archivedAt: calendarFeeds.archivedAt,
+      })
+      .from(calendarFeeds)
+      .where(
+        and(
+          eq(calendarFeeds.technicianId, input.technicianId),
+          eq(calendarFeeds.locationId, input.actor.locationId),
+          eq(calendarFeeds.organizationId, input.actor.organizationId),
+        ),
+      )
+      .for('update');
+    if (!feed) return { ok: false as const, reason: 'unknown_technician' as const };
+    if (!feed.needsApproval || feed.archivedAt) {
+      return { ok: false as const, reason: 'not_pending' as const };
+    }
+    const now = new Date();
+    if (input.decision === 'approve') {
+      await tx
+        .update(calendarFeeds)
+        .set({
+          needsApproval: false,
+          approvedBy: input.actor.userId,
+          approvedAt: now,
+          updatedAt: now,
+        })
+        .where(eq(calendarFeeds.id, feed.id));
+    } else {
+      await tx
+        .update(calendarFeeds)
+        .set({ needsApproval: false, url: '', archivedAt: now, updatedAt: now })
+        .where(eq(calendarFeeds.id, feed.id));
+    }
+    await writeAudit(tx, {
+      organizationId: input.actor.organizationId,
+      locationId: input.actor.locationId,
+      actorUserId: input.actor.userId,
+      entityType: 'calendar_feeds',
+      entityId: feed.id,
+      action: input.decision === 'approve' ? 'feed_approved' : 'feed_declined',
+      after: { technicianId: input.technicianId },
+    });
+    return { ok: true as const };
+  });
+}
+
+/** Links waiting for the owner or a manager, oldest first (names, never URLs). */
+export async function pendingFeeds(
+  db: Db,
+  locationId: string,
+): Promise<{ technicianId: string; technicianName: string; since: Date }[]> {
+  return db
+    .select({
+      technicianId: calendarFeeds.technicianId,
+      technicianName: technicians.displayName,
+      since: calendarFeeds.updatedAt,
+    })
+    .from(calendarFeeds)
+    .innerJoin(technicians, eq(technicians.id, calendarFeeds.technicianId))
+    .where(
+      and(
+        eq(calendarFeeds.locationId, locationId),
+        eq(calendarFeeds.needsApproval, true),
+        isNull(calendarFeeds.archivedAt),
+      ),
+    )
+    .orderBy(asc(calendarFeeds.updatedAt));
 }
 
 /** The owner removes a feed, or a technician their own: the URL is blanked,
@@ -759,12 +1025,22 @@ async function recordFailure(
  */
 export async function syncFeed(
   db: Db,
-  input: { feedId: string; fetchText?: FetchText; actorUserId?: string | null; now?: Date },
+  input: {
+    feedId: string;
+    fetchText?: FetchText;
+    /** v0.17.1: test hooks for the real fetch (every hop on the host list). */
+    fetchOptions?: FetchOptions;
+    actorUserId?: string | null;
+    now?: Date;
+  },
 ): Promise<SyncResult> {
   const now = input.now ?? new Date();
   const actorUserId = input.actorUserId ?? null;
   const [feed] = await db.select().from(calendarFeeds).where(eq(calendarFeeds.id, input.feedId));
   if (!feed || feed.archivedAt || !feed.url) return { ok: false, error: 'no_feed' };
+  // v0.17.1 (review #6): a technician's link waiting for approval is never
+  // fetched, so it brings in nothing and holds nobody out of the line.
+  if (feed.needsApproval) return { ok: false, error: 'pending' };
   const zone = await locationZone(db, feed.locationId);
 
   // The demo seed's calendar rows (v0.12.0) carry a reserved .invalid name:
@@ -781,7 +1057,9 @@ export async function syncFeed(
     return { ok: true, added: 0, changed: 0, cancelled: 0, events: feed.lastEventCount ?? 0 };
   }
 
-  const fetched = await (input.fetchText ?? safeFetchText())(feed.url);
+  // v0.17.1 (review #7): the poll checks the host list on every hop, the
+  // saved link and each redirect, as the screens' test does.
+  const fetched = await (input.fetchText ?? feedFetcher(feedHosts(), input.fetchOptions))(feed.url);
   if (!fetched.ok) return recordFailure(db, feed, fetched.error, actorUserId, now);
   const from = new Date(now.getTime() - FEED_PAST_HOURS * 3_600_000);
   const to = new Date(now.getTime() + FEED_AHEAD_DAYS * 86_400_000);
@@ -957,6 +1235,7 @@ export async function pollFeeds(
     locationId?: string;
     force?: boolean;
     fetchText?: FetchText;
+    fetchOptions?: FetchOptions;
     actorUserId?: string | null;
     now?: Date;
     concurrency?: number;
@@ -970,6 +1249,8 @@ export async function pollFeeds(
     .where(
       and(
         isNull(calendarFeeds.archivedAt),
+        // v0.17.1: a link waiting for approval is never polled.
+        eq(calendarFeeds.needsApproval, false),
         input.locationId ? eq(calendarFeeds.locationId, input.locationId) : undefined,
         or(isNull(calendarFeeds.lastAttemptAt), lt(calendarFeeds.lastAttemptAt, since)),
       ),
@@ -988,6 +1269,7 @@ export async function pollFeeds(
         const r = await syncFeed(db, {
           feedId: f.id,
           fetchText: input.fetchText,
+          fetchOptions: input.fetchOptions,
           actorUserId,
           now,
         });
@@ -1021,6 +1303,8 @@ export type FeedState = {
   lastError: string | null;
   lastEventCount: number | null;
   stale: boolean;
+  /** v0.17.1: a technician's link waiting for the owner or a manager. */
+  pending: boolean;
 };
 
 /** Every open feed at a location, without the URL. */
@@ -1038,6 +1322,7 @@ export async function feedStates(
       lastAttemptAt: calendarFeeds.lastAttemptAt,
       lastError: calendarFeeds.lastError,
       lastEventCount: calendarFeeds.lastEventCount,
+      pending: calendarFeeds.needsApproval,
     })
     .from(calendarFeeds)
     .innerJoin(technicians, eq(technicians.id, calendarFeeds.technicianId))
@@ -1046,7 +1331,8 @@ export async function feedStates(
   const staleBefore = now.getTime() - FEED_STALE_MIN * 60_000;
   return rows.map((r) => ({
     ...r,
-    stale: !r.lastSyncedAt || r.lastSyncedAt.getTime() < staleBefore,
+    // Waiting for approval is not stale: it is not meant to sync yet.
+    stale: !r.pending && (!r.lastSyncedAt || r.lastSyncedAt.getTime() < staleBefore),
   }));
 }
 
@@ -1060,8 +1346,12 @@ export async function feedSummary(
   lastSyncedAt: Date | null;
   failing: { technicianName: string; error: string; since: Date | null }[];
   stale: string[];
+  /** v0.17.1: technicians whose own link waits for approval. */
+  pending: string[];
 }> {
-  const states = await feedStates(db, locationId, now);
+  const all = await feedStates(db, locationId, now);
+  // Only links that are meant to sync count for the board's line.
+  const states = all.filter((s) => !s.pending);
   const synced = states.map((s) => s.lastSyncedAt).filter((d): d is Date => d !== null);
   return {
     feeds: states.length,
@@ -1078,5 +1368,6 @@ export async function feedSummary(
         since: s.lastAttemptAt,
       })),
     stale: states.filter((s) => s.stale && !s.lastError).map((s) => s.technicianName),
+    pending: all.filter((s) => s.pending).map((s) => s.technicianName),
   };
 }

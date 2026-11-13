@@ -9,6 +9,7 @@
 import { and, asc, eq, gte, inArray, sql } from 'drizzle-orm';
 import { finishVisit, respondToCall, type EngineError } from './engine';
 import type { Role } from './invites';
+import { allowedAt } from './permissions';
 import type { DenyReason } from './rules';
 import { auditLog, locations, profiles, technicians, turnCalls, visits } from './schema';
 import type { Db } from './server';
@@ -18,18 +19,13 @@ import { writeAudit } from './status';
 type Tx = Parameters<Parameters<Db['transaction']>[0]>[0];
 type Refused = { ok: false; reason: 'not_allowed' | 'wrong_location' };
 
-/** Owners and managers always; receptionists when the location allows it. */
+/** Owners and managers always; receptionists when the location allows it.
+ *  v0.17.1: the shared permissions table decides (permissions.ts). */
 export async function mayActForTechnicians(
   db: Db | Tx,
   actor: { role: Role; locationId: string },
 ): Promise<boolean> {
-  if (actor.role === 'owner' || actor.role === 'manager') return true;
-  if (actor.role !== 'receptionist') return false;
-  const [row] = await db
-    .select({ on: locations.receptionistActsForTechnicians })
-    .from(locations)
-    .where(eq(locations.id, actor.locationId));
-  return row?.on ?? false;
+  return allowedAt(db, actor, 'act_for_technician');
 }
 
 /** Does this location let receptionists act for technicians? (Default yes.) */

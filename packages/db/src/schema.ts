@@ -82,6 +82,11 @@ export const locations = pgTable(
     receptionistActsForTechnicians: boolean('receptionist_acts_for_technicians')
       .notNull()
       .default(true),
+    // v0.17.1 (review #6): what happens when a technician saves her own
+    // Fresha link. 'owner_approves' (default): it waits, holding nothing,
+    // until the owner or a manager approves it on Appointments.
+    // 'name_must_match': the calendar's name must be hers. 'open': as v0.11.0.
+    techCalendarLinks: text('tech_calendar_links').notNull().default('owner_approves'),
     createdAt: createdAt(),
     updatedAt: updatedAt(),
   },
@@ -666,6 +671,11 @@ export const visits = pgTable(
     index('visits_location_status').on(t.locationId, t.status),
     index('visits_client').on(t.clientId),
     index('visits_party').on(t.partyId),
+    // v0.17.1: the open visit on a technician (the queue's double-booking
+    // guard on every board load, Finish, the desk's status change).
+    index('visits_assigned_open')
+      .on(t.assignedTechnicianId)
+      .where(sql`${t.status} in ('called', 'in_service')`),
   ],
 ).enableRLS();
 
@@ -734,6 +744,8 @@ export const turnCalls = pgTable(
     index('turn_calls_technician').on(t.technicianId),
     // Open calls at a location (attention strip) and today's answered calls.
     index('turn_calls_location_responded').on(t.locationId, t.respondedAt),
+    // v0.17.1: reports and the fairness table read calls by the day they were made.
+    index('turn_calls_location_called').on(t.locationId, t.calledAt),
   ],
 ).enableRLS();
 
@@ -763,6 +775,12 @@ export const calendarFeeds = pgTable(
     // Removed by the owner: the URL is blanked, the row stays for the
     // appointments that came from it. Setting a feed again re-opens the row.
     archivedAt: timestamp('archived_at', { withTimezone: true }),
+    // v0.17.1 (review #6): a technician's own link waits for the owner or a
+    // manager (locations.tech_calendar_links = owner_approves). While it
+    // waits it is never fetched, so it brings in nothing and holds nobody.
+    needsApproval: boolean('needs_approval').notNull().default(false),
+    approvedBy: uuid('approved_by').references(() => profiles.id, { onDelete: 'restrict' }),
+    approvedAt: timestamp('approved_at', { withTimezone: true }),
     createdBy: uuid('created_by').references(() => profiles.id, { onDelete: 'restrict' }),
     createdAt: createdAt(),
     updatedAt: updatedAt(),

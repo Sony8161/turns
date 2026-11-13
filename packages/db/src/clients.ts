@@ -2,6 +2,9 @@
 // (design doc). The phone, in E.164, is the match key so a later import of
 // Fresha's client list lands on the same rows (Duong, 2026-11-04). Server only.
 import { and, desc, eq, inArray, isNull, sql } from 'drizzle-orm';
+import type { Role } from './invites';
+import { can } from './permissions';
+import { consumeRateLimit } from './rate-limit';
 import { appointments, clients, services, technicians, visitServices, visits } from './schema';
 import type { Db } from './server';
 import { writeAudit } from './status';
@@ -193,15 +196,22 @@ export const CLIENT_SEARCH_LIMIT = 25;
 
 const likeSafe = (s: string) => s.replace(/[\\%_]/g, (c) => `\\${c}`);
 
-/** What a search box string asks for: digits (3 or more, a phone) or a name (2+ letters). */
+/** v0.17.1 (review #4): the shortest search that is not a page through
+ *  everyone: 4 digits of a phone, or 3 letters of a name. */
+export const CLIENT_QUERY_MIN_DIGITS = 4;
+export const CLIENT_QUERY_MIN_LETTERS = 3;
+
+/** What a search box string asks for: digits (4 or more, a phone) or a name (3+ letters). */
 export function parseClientQuery(raw: string): { phone: string } | { name: string } | null {
   const q = raw.trim().slice(0, 60);
   const digits = q.replace(/\D/g, '');
-  if (digits.length >= 3 && /^[\d\s().+-]+$/.test(q)) {
+  if (/^[\d\s().+-]+$/.test(q) && /\d/.test(q)) {
+    if (digits.length < CLIENT_QUERY_MIN_DIGITS) return null;
     return { phone: digits.length === 11 && digits.startsWith('1') ? digits.slice(1) : digits };
   }
   const name = searchKey(q);
-  return name.length >= 2 && /\p{L}/u.test(name) ? { name } : null;
+  const letters = name.replace(/[^\p{L}]/gu, '').length;
+  return letters >= CLIENT_QUERY_MIN_LETTERS ? { name } : null;
 }
 
 export async function searchClients(
@@ -330,6 +340,126 @@ export async function clientDetail(
     })),
     noShows: Number(ns?.n ?? 0),
   };
+}
+
+// v0.17.1 (review #4): one budget per person for everything that shows a
+// client: a search, a client's page, the fix lookup and "Show" on a phone.
+// The same key the search used since v0.13.0, so nothing resets on upgrade.
+
+export const CLIENT_LOOKUPS = { limit: 60, windowS: 5 * 60 } as const;
+
+/** Someone at the desk (the role and location come from their membership). */
+export type ClientViewer = {
+  userId: string;
+  role: Role;
+  organizationId: string;
+  locationId: string;
+};
+
+const DESK_ROLES: readonly Role[] = ['owner', 'manager', 'receptionist'];
+
+/** One lookup against the person's budget; false once it is spent. */
+export async function consumeClientLookup(db: Db, userId: string): Promise<boolean> {
+  const r = await consumeRateLimit(
+    db,
+    `client-search:${userId}`,
+    CLIENT_LOOKUPS.limit,
+    CLIENT_LOOKUPS.windowS,
+  );
+  return r.allowed;
+}
+
+/** "(•••) •••-0199": the last four digits only. */
+export function maskPhone(phone: string): string {
+  return `(•••) •••-${phone.slice(-4)}`;
+}
+
+/** Search for the desk. Too short costs nothing; every search counts. The
+ *  list never shows a whole phone, whoever is looking. */
+export async function findClients(
+  db: Db,
+  input: { viewer: ClientViewer; query: string },
+): Promise<
+  { ok: true; hits: ClientHit[] } | { ok: false; reason: 'not_allowed' | 'too_short' | 'too_many' }
+> {
+  if (!DESK_ROLES.includes(input.viewer.role)) return { ok: false, reason: 'not_allowed' };
+  if (!parseClientQuery(input.query)) return { ok: false, reason: 'too_short' };
+  if (!(await consumeClientLookup(db, input.viewer.userId))) {
+    return { ok: false, reason: 'too_many' };
+  }
+  const hits = await searchClients(db, {
+    locationId: input.viewer.locationId,
+    query: input.query,
+  });
+  return {
+    ok: true,
+    hits: hits.map((h) => ({ ...h, phone: h.phone ? maskPhone(h.phone) : null })),
+  };
+}
+
+/** A client's page: counted like a search. Owners and managers see the full
+ *  phone; everyone else the last four digits, with "Show". */
+export async function viewClient(
+  db: Db,
+  input: { viewer: ClientViewer; clientId: string },
+): Promise<
+  | { ok: true; client: ClientDetail & { phoneMasked: boolean } }
+  | { ok: false; reason: 'not_allowed' | 'too_many' | 'unknown_client' }
+> {
+  if (!DESK_ROLES.includes(input.viewer.role)) return { ok: false, reason: 'not_allowed' };
+  if (!(await consumeClientLookup(db, input.viewer.userId))) {
+    return { ok: false, reason: 'too_many' };
+  }
+  const c = await clientDetail(db, input.viewer.locationId, input.clientId);
+  if (!c) return { ok: false, reason: 'unknown_client' };
+  const full = can(input.viewer.role, 'see_client_phone');
+  return {
+    ok: true,
+    client: {
+      ...c,
+      phone: c.phone && !full ? maskPhone(c.phone) : c.phone,
+      phoneMasked: !!c.phone && !full,
+    },
+  };
+}
+
+/** "Show" on a masked phone: counted like a search and audited, never with
+ *  the number (threat model T11). */
+export async function revealClientPhone(
+  db: Db,
+  input: { viewer: ClientViewer; clientId: string },
+): Promise<
+  | { ok: true; phone: string | null }
+  | { ok: false; reason: 'not_allowed' | 'too_many' | 'unknown_client' }
+> {
+  if (!DESK_ROLES.includes(input.viewer.role)) return { ok: false, reason: 'not_allowed' };
+  if (!(await consumeClientLookup(db, input.viewer.userId))) {
+    return { ok: false, reason: 'too_many' };
+  }
+  return db.transaction(async (tx) => {
+    const [c] = await tx
+      .select({ id: clients.id, phone: clients.phone })
+      .from(clients)
+      .where(
+        and(
+          eq(clients.id, input.clientId),
+          eq(clients.locationId, input.viewer.locationId),
+          eq(clients.organizationId, input.viewer.organizationId),
+          isNull(clients.anonymisedAt),
+        ),
+      );
+    if (!c) return { ok: false as const, reason: 'unknown_client' as const };
+    await writeAudit(tx, {
+      organizationId: input.viewer.organizationId,
+      locationId: input.viewer.locationId,
+      actorUserId: input.viewer.userId,
+      entityType: 'clients',
+      entityId: c.id,
+      action: 'client_phone_shown',
+      after: { by: input.viewer.role },
+    });
+    return { ok: true as const, phone: c.phone };
+  });
 }
 
 export const CLIENT_NOTES_MAX = 500;

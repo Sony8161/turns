@@ -8,12 +8,15 @@ import {
   FEED_AHEAD_DAYS,
   FEED_PAST_HOURS,
   FEED_STALE_MIN,
+  calendarName,
   checkFreshaUrl,
+  feedFetcher,
   feedHosts,
   feedTechnician,
   locationZone,
   parseIcs,
-  safeFetchText,
+  suggestTechnician,
+  type FetchOptions,
   type FetchText,
 } from './feeds';
 import { appointments, calendarFeeds, technicians } from './schema';
@@ -21,66 +24,9 @@ import type { Db } from './server';
 import type { StaffActor } from './staff';
 import { writeAudit } from './status';
 
-const MAX_CAL_NAME = 120;
-
-/** X-WR-CALNAME, unfolded and unescaped, or null. Fresha names it
- *  "Fresha - <TEAM MEMBER>  <Business>". */
-export function calendarName(text: string): string | null {
-  const unfolded = text.replace(/\r\n?/g, '\n').replace(/\n[ \t]/g, '');
-  const m = /^X-WR-CALNAME(?:;[^:\n]*)?:(.*)$/im.exec(unfolded);
-  if (!m) return null;
-  const value = m[1]!
-    .replace(/\\n/gi, ' ')
-    .replace(/\\([,;\\])/g, '$1')
-    .trim()
-    .slice(0, MAX_CAL_NAME);
-  return value || null;
-}
-
-/** Lower case, no accents (đ as d), letters and digits only, single spaces. */
-export function normalizeName(s: string): string {
-  return s
-    .normalize('NFD')
-    .replace(/\p{M}/gu, '')
-    .replace(/[đĐ]/g, 'd')
-    .toLowerCase()
-    .replace(/[^\p{L}\p{N}]+/gu, ' ')
-    .trim();
-}
-
-/**
- * The technician a calendar most likely belongs to, or null. Every word of
- * the technician's name must appear in the calendar's name; a longer match
- * wins; a tie is no answer, because a wrong suggestion is worse than none.
- * Only a suggestion: the owner confirms before anything is saved.
- */
-export function suggestTechnician(
-  calName: string | null,
-  techs: { id: string; name: string }[],
-): string | null {
-  if (!calName) return null;
-  const words = new Set(
-    normalizeName(calName)
-      .split(' ')
-      .filter((w) => w && w !== 'fresha'),
-  );
-  let best: string | null = null;
-  let bestScore = 0;
-  let tie = false;
-  for (const t of techs) {
-    const parts = normalizeName(t.name).split(' ').filter(Boolean);
-    if (!parts.length || !parts.every((p) => words.has(p))) continue;
-    const score = parts.length;
-    if (score > bestScore) {
-      best = t.id;
-      bestScore = score;
-      tie = false;
-    } else if (score === bestScore) {
-      tie = true;
-    }
-  }
-  return tie ? null : best;
-}
+// v0.17.1: the calendar name helpers live with the feeds now (a technician's
+// own link may have to carry her name, feeds.setFeed); re-exported here.
+export { calendarName, normalizeName, suggestTechnician } from './feeds';
 
 export type FeedTestResult =
   | {
@@ -106,6 +52,8 @@ export async function testFeedLink(
     url: string;
     technicianId?: string;
     fetchText?: FetchText;
+    /** v0.17.1: test hooks for the real fetch (every hop checked). */
+    fetchOptions?: FetchOptions;
     hosts?: string[];
     now?: Date;
   },
@@ -145,12 +93,22 @@ export async function testFeedLink(
 
 async function runTest(
   db: Db,
-  input: { actor: StaffActor; url: string; fetchText?: FetchText; hosts?: string[] },
+  input: {
+    actor: StaffActor;
+    url: string;
+    fetchText?: FetchText;
+    fetchOptions?: FetchOptions;
+    hosts?: string[];
+  },
   now: Date,
 ): Promise<FeedTestResult> {
-  const checked = checkFreshaUrl(input.url, input.hosts ?? feedHosts());
+  const hosts = input.hosts ?? feedHosts();
+  const checked = checkFreshaUrl(input.url, hosts);
   if (!checked.ok) return { ok: false, reason: checked.problem };
-  const fetched = await (input.fetchText ?? safeFetchText())(checked.url.toString());
+  // v0.17.1 (review #7): every redirect hop must stay on the host list too.
+  const fetched = await (input.fetchText ?? feedFetcher(hosts, input.fetchOptions))(
+    checked.url.toString(),
+  );
   if (!fetched.ok) return { ok: false, reason: fetched.error };
   const zone = await locationZone(db, input.actor.locationId);
   const from = new Date(now.getTime() - FEED_PAST_HOURS * 3_600_000);
@@ -179,6 +137,8 @@ async function runTest(
 
 export type OwnFeedState = {
   connected: boolean;
+  /** v0.17.1: her link waits for the owner or a manager; nothing is fetched. */
+  pending: boolean;
   lastSyncedAt: Date | null;
   lastAttemptAt: Date | null;
   lastError: string | null;
@@ -200,12 +160,14 @@ export async function feedStateFor(
       lastSyncedAt: calendarFeeds.lastSyncedAt,
       lastAttemptAt: calendarFeeds.lastAttemptAt,
       lastError: calendarFeeds.lastError,
+      needsApproval: calendarFeeds.needsApproval,
     })
     .from(calendarFeeds)
     .where(and(eq(calendarFeeds.technicianId, technicianId), isNull(calendarFeeds.archivedAt)));
   if (!f) {
     return {
       connected: false,
+      pending: false,
       lastSyncedAt: null,
       lastAttemptAt: null,
       lastError: null,
@@ -227,10 +189,11 @@ export async function feedStateFor(
   const staleBefore = now.getTime() - FEED_STALE_MIN * 60_000;
   return {
     connected: true,
+    pending: f.needsApproval,
     lastSyncedAt: f.lastSyncedAt,
     lastAttemptAt: f.lastAttemptAt,
     lastError: f.lastError,
     upcoming: f.lastSyncedAt ? Number(open?.n ?? 0) : null,
-    stale: !f.lastSyncedAt || f.lastSyncedAt.getTime() < staleBefore,
+    stale: !f.needsApproval && (!f.lastSyncedAt || f.lastSyncedAt.getTime() < staleBefore),
   };
 }

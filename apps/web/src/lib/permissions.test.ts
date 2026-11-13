@@ -1,6 +1,6 @@
 // The roles table as Duong set it on 2026-11-04 is a test matrix.
 import { describe, expect, it } from 'vitest';
-import { can, canInvite, type Capability } from './permissions';
+import { allowedWith, can, canInvite, type Capability } from './permissions';
 
 type Role = 'owner' | 'manager' | 'receptionist' | 'technician';
 const ROLES: Role[] = ['owner', 'manager', 'receptionist', 'technician'];
@@ -15,13 +15,16 @@ const TABLE: Record<Capability, Record<Role, boolean>> = {
   manage_rules: O,
   manage_locations: O,
   invite_staff: OM,
-  edit_technicians: OM,
+  // v0.17.1: receptionists while the owner's switch is on (the server checks
+  // it with allowedAt; @turn/db test v0171 holds the switch side).
+  edit_technicians: OMR,
+  manage_levels: OM,
   view_board: OMR,
   enter_walkins: OMR,
   call_technician: OMR,
   override_queue: OM,
   reassign_visit: OM,
-  adjust_points: OM,
+  adjust_points: OMR,
   archive_records: OM,
   view_archived: OM,
   message_technicians: OM,
@@ -30,6 +33,10 @@ const TABLE: Record<Capability, Record<Role, boolean>> = {
   manage_kiosks: OM,
   // v0.16.0 (Duong): a receptionist's fix waits for a manager or owner.
   approve_fixes: OM,
+  // v0.17.1: a technician's own Fresha link waits for one of these.
+  approve_calendar_links: OM,
+  // v0.17.1: receptionists see the last four digits and tap Show (audited).
+  see_client_phone: OM,
   // v0.17.0: the desk accepts, denies and finishes for a technician. A
   // receptionist only while the owner's switch is on (act-for.ts checks it).
   act_for_technician: OMR,
@@ -53,16 +60,38 @@ describe('principles', () => {
     for (const r of ROLES) expect(can(r, 'delete_records')).toBe(false);
     expect(can('owner', 'archive_records')).toBe(true);
   });
-  it('receptionists only run the queue', () => {
+  it('receptionists run the queue, and what the owner switches allow', () => {
     const allowed = (Object.keys(TABLE) as Capability[]).filter((c) => can('receptionist', c));
     // v0.17.0: answering a call or finishing for a tech is part of running the
-    // queue (on by default; the owner can switch it off for receptionists).
+    // queue. v0.17.1: the table now says what the owner's two switches allow
+    // (both on by default); with a switch off, allowedWith says no.
     expect(allowed.sort()).toEqual([
       'act_for_technician',
+      'adjust_points',
       'call_technician',
+      'edit_technicians',
       'enter_walkins',
       'view_board',
     ]);
+  });
+  it("a receptionist's switched rights follow the owner's switches", () => {
+    const on = { receptionistEditsTechnicians: true, receptionistActsForTechnicians: true };
+    const off = { receptionistEditsTechnicians: false, receptionistActsForTechnicians: false };
+    for (const c of ['edit_technicians', 'adjust_points', 'act_for_technician'] as const) {
+      expect(allowedWith('receptionist', c, on)).toBe(true);
+      expect(allowedWith('receptionist', c, off)).toBe(false);
+      expect(allowedWith('manager', c, off)).toBe(true);
+      expect(allowedWith('technician', c, on)).toBe(false);
+    }
+    expect(
+      allowedWith('receptionist', 'adjust_points', { ...off, receptionistEditsTechnicians: true }),
+    ).toBe(true);
+    expect(
+      allowedWith('receptionist', 'act_for_technician', {
+        ...off,
+        receptionistEditsTechnicians: true,
+      }),
+    ).toBe(false);
   });
   it('technicians never see the board or the archive', () => {
     expect(can('technician', 'view_board')).toBe(false);

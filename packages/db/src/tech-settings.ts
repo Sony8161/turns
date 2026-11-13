@@ -7,6 +7,7 @@
 import { and, eq } from 'drizzle-orm';
 import { adjustPoints, type EngineError } from './engine';
 import type { Role } from './invites';
+import { allowedAt } from './permissions';
 import { locations, technicianStatus, technicians, visits } from './schema';
 import type { Db } from './server';
 import type { StaffActor } from './staff';
@@ -30,14 +31,13 @@ export async function receptionistMayEdit(db: Db | Tx, locationId: string): Prom
   return row?.on ?? false;
 }
 
-/** Owners and managers always; receptionists when the location allows it. */
+/** Owners and managers always; receptionists when the location allows it.
+ *  v0.17.1: the shared permissions table decides (permissions.ts). */
 export async function mayEditTechnicians(
   db: Db | Tx,
   actor: { role: Role; locationId: string },
 ): Promise<boolean> {
-  if (actor.role === 'owner' || actor.role === 'manager') return true;
-  if (actor.role === 'receptionist') return receptionistMayEdit(db, actor.locationId);
-  return false;
+  return allowedAt(db, actor, 'edit_technicians');
 }
 
 /** The owner switches receptionist edits on or off for their location. */
@@ -154,7 +154,9 @@ export async function staffAdjustPoints(
   db: Db,
   input: { actor: StaffActor; technicianId: string; delta: number; reason: string },
 ): Promise<{ ok: true } | EngineError | Refused> {
-  if (!(await mayEditTechnicians(db, input.actor))) return { ok: false, reason: 'not_allowed' };
+  if (!(await allowedAt(db, input.actor, 'adjust_points'))) {
+    return { ok: false, reason: 'not_allowed' };
+  }
   return adjustPoints(db, {
     technicianId: input.technicianId,
     delta: input.delta,

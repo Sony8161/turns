@@ -134,6 +134,7 @@ export async function closeOutDay(
           isFillOrFullSet: serviceCategories.isFillOrFullSet,
           categoryId: serviceCategories.id,
           serviceId: visitServices.serviceId,
+          isFix: services.isFix,
         })
         .from(visitServices)
         .innerJoin(services, eq(services.id, visitServices.serviceId))

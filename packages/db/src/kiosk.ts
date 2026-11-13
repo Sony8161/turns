@@ -21,6 +21,7 @@ import { createWalkIn, floorAttention, type ClientAttributes, type ManagerActor 
 import { generateCode, hashCode } from './invites';
 import { loadLevels } from './levels';
 import { doesEverything, loadProfiles } from './profile';
+import { consumeRateLimit } from './rate-limit';
 import { activeRules } from './rules';
 import {
   kioskDevices,
@@ -593,6 +594,41 @@ export async function kioskNotice(
   };
 }
 
+// Limits (T7, T25): a stolen or scripted kiosk cannot flood the queue, and the
+// PIN and pairing code cannot be guessed. Generous for a real front desk.
+// v0.17.1 (review #5): every person in a group counts against the device and
+// the address; the group's one phone still counts once (Duong, v0.16.0).
+export const KIOSK_LIMITS = {
+  perDevice: { limit: 30, windowS: 10 * 60 },
+  perPhone: { limit: 3, windowS: 30 * 60 },
+  perIp: { limit: 60, windowS: 10 * 60 },
+  pinTries: { limit: 5, windowS: 15 * 60 },
+  pairTries: { limit: 10, windowS: 15 * 60 },
+} as const;
+
+/** True when this check-in (of `people` people) is over a limit. The answer
+ *  is the same whether or not the phone is known. */
+export async function kioskCheckInLimited(
+  db: Db,
+  input: { device: KioskDevice; ip: string; phone: string | null; people: number },
+): Promise<boolean> {
+  const people = Math.max(1, Math.floor(input.people));
+  const over = async (key: string, rule: { limit: number; windowS: number }, cost: number) =>
+    !(await consumeRateLimit(db, key, rule.limit, rule.windowS, cost)).allowed;
+  if (await over(`kiosk:device:${input.device.deviceId}`, KIOSK_LIMITS.perDevice, people)) {
+    return true;
+  }
+  if (await over(`kiosk:ip:${input.ip}`, KIOSK_LIMITS.perIp, people)) return true;
+  // Per phone, so one number cannot be checked in over and over.
+  if (
+    input.phone &&
+    (await over(`kiosk:phone:${input.device.locationId}:${input.phone}`, KIOSK_LIMITS.perPhone, 1))
+  ) {
+    return true;
+  }
+  return false;
+}
+
 export type KioskCheckInError =
   'bad_name' | 'bad_phone' | 'bad_age' | 'no_services' | 'unknown_service' | 'unknown_technician';
 
@@ -867,21 +903,26 @@ export async function reviewKioskVisit(
       return { ok: true as const, visitIds: ids };
     }
 
-    // v0.16.0: in a group every person is their own client. The group's phone
-    // (on the first person's visit) goes with that person; the others get a
-    // client row with the name they typed. One at a time works the same way.
+    // v0.16.0: in a group every person is their own visit. The group's phone
+    // (on the first person's visit) goes with that person, who becomes a
+    // client. v0.17.1 (review #5): the others, who typed no phone, get no
+    // client row, exactly like a single kiosk check-in without a phone.
     if (group.some((g) => g.partyId)) {
       for (const g of group) {
-        const c = await upsertClient(tx, {
-          organizationId: visit.organizationId,
-          locationId: visit.locationId,
-          firstName: g.kioskName ?? null,
-          lastName: g.kioskLastName ?? null,
-          phone: g.kioskPhone ?? null,
-          gender: null,
-          fillBlanks: false,
-        });
-        await confirmOne(tx, g, input, now, c.ok ? c.clientId : null);
+        let clientId: string | null = null;
+        if (g.kioskPhone) {
+          const c = await upsertClient(tx, {
+            organizationId: visit.organizationId,
+            locationId: visit.locationId,
+            firstName: g.kioskName ?? null,
+            lastName: g.kioskLastName ?? null,
+            phone: g.kioskPhone,
+            gender: null,
+            fillBlanks: false,
+          });
+          clientId = c.ok ? c.clientId : null;
+        }
+        await confirmOne(tx, g, input, now, clientId);
       }
       return { ok: true as const, visitIds: ids };
     }

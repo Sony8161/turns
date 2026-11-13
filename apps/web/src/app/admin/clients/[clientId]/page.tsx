@@ -1,9 +1,9 @@
-import { clientDetail } from '@turn/db/clients';
+import { viewClient } from '@turn/db/clients';
 import Link from 'next/link';
 import { notFound, redirect } from 'next/navigation';
 import { AdminNav } from '@/components/AdminNav';
 import { Button } from '@/components/ui';
-import { fill } from '@/i18n/dictionary';
+import { fill, type Dictionary } from '@/i18n/dictionary';
 import { LanguageToggle } from '@/i18n/LanguageToggle';
 import { getDictionary } from '@/i18n/lang';
 import { membershipWith, requireActor } from '@/lib/auth';
@@ -12,20 +12,33 @@ import { isUuid } from '@/lib/ids';
 import { can } from '@/lib/permissions';
 import { signOut } from '../../../login/actions';
 import { ClientForm } from './ClientForm';
+import { ShowPhone } from './ShowPhone';
 
 // One client (v0.13.0): full name, phone, visits, usual technician, notes;
 // the desk edits first and last name and notes. Same roles as search.
+// v0.17.1 (review #4): a page view counts against the same per-person limit
+// as search; the full phone is for owners and managers, a receptionist sees
+// the last four digits and taps Show (counted and audited, no number).
 export default async function ClientPage({ params }: { params: Promise<{ clientId: string }> }) {
   const { clientId } = await params;
   if (!isUuid(clientId)) notFound();
   const [{ lang, t }, actor] = await Promise.all([getDictionary(), requireActor()]);
   const m = membershipWith(actor, 'view_board');
   if (!m) redirect(actor.memberships.some((x) => x.role === 'technician') ? '/me' : '/admin');
-  const c = await clientDetail(db(), m.locationId, clientId);
-  if (!c) notFound();
+  const viewed = await viewClient(db(), {
+    viewer: {
+      userId: actor.userId,
+      role: m.role,
+      organizationId: m.organizationId,
+      locationId: m.locationId,
+    },
+    clientId,
+  });
+  if (!viewed.ok && viewed.reason !== 'too_many') notFound();
   const tc = t.clients;
   const day = new Intl.DateTimeFormat(lang === 'vi' ? 'vi-VN' : 'en-US', { dateStyle: 'medium' });
-  const full = [c.firstName, c.lastName].filter(Boolean).join(' ') || tc.noName;
+  const c = viewed.ok ? viewed.client : null;
+  const full = c ? [c.firstName, c.lastName].filter(Boolean).join(' ') || tc.noName : '';
   return (
     <main className="mx-auto flex w-full max-w-5xl flex-1 flex-col gap-8 px-4 py-6 sm:px-8">
       <header className="flex flex-wrap items-center justify-between gap-3">
@@ -53,18 +66,48 @@ export default async function ClientPage({ params }: { params: Promise<{ clientI
         canLog={can(m.role, 'view_audit')}
         canKiosk={can(m.role, 'manage_kiosks')}
       />
+      {!c ? (
+        <section className="flex flex-col gap-2">
+          <Link href="/admin/clients" className="text-small underline">
+            {tc.back}
+          </Link>
+          <p role="alert" className="font-semibold text-polish">
+            {tc.tooMany}
+          </p>
+        </section>
+      ) : (
+        <ClientBody c={c} full={full} day={day} t={t} />
+      )}
+    </main>
+  );
+}
+
+function ClientBody({
+  c,
+  full,
+  day,
+  t,
+}: {
+  c: Extract<Awaited<ReturnType<typeof viewClient>>, { ok: true }>['client'];
+  full: string;
+  day: Intl.DateTimeFormat;
+  t: Dictionary;
+}) {
+  const tc = t.clients;
+  return (
+    <>
       <section className="flex flex-col gap-2">
         <Link href="/admin/clients" className="text-small underline">
           {tc.back}
         </Link>
         <h1 className="text-heading font-semibold">{full}</h1>
-        <p className="text-lead">
-          {c.phone?.match(/^\+1(\d{3})(\d{3})(\d{4})$/)
-            ? c.phone.replace(/^\+1(\d{3})(\d{3})(\d{4})$/, '($1) $2-$3')
-            : (c.phone ?? tc.noPhone)}
-        </p>
+        {c.phoneMasked && c.phone ? (
+          <ShowPhone clientId={c.id} masked={c.phone} t={tc} />
+        ) : (
+          <p className="text-lead">{c.phone ? formatPhone(c.phone) : tc.noPhone}</p>
+        )}
         <p className="text-slate/80">
-          {fill(tc.visits, { n: c.visitCount })}
+          {fill(c.visitCount === 1 ? tc.visitsOne : tc.visits, { n: c.visitCount })}
           {c.lastVisitAt ? ` · ${fill(tc.lastVisit, { date: day.format(c.lastVisitAt) })}` : ''}
           {c.usualTechnician ? ` · ${fill(tc.usual, { name: c.usualTechnician })}` : ''}
           {c.noShows > 0 ? ` · ${fill(tc.noShows, { n: c.noShows })}` : ''}
@@ -100,6 +143,11 @@ export default async function ClientPage({ params }: { params: Promise<{ clientI
           </ul>
         )}
       </section>
-    </main>
+    </>
   );
+}
+
+/** +18135550199 as (813) 555-0199. */
+function formatPhone(phone: string): string {
+  return phone.replace(/^\+1(\d{3})(\d{3})(\d{4})$/, '($1) $2-$3');
 }

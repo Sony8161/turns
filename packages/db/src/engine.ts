@@ -142,8 +142,13 @@ export async function createWalkIn(
     if (isFix && (input.kiosk || !input.fix)) return { ok: false, reason: 'unknown_service' };
     if (isFix && rows.length > 1) return { ok: false, reason: 'fix_alone' };
     if (!isFix && input.fix) return { ok: false, reason: 'not_a_fix' };
+    const rules = await activeRules(tx, input.locationId);
     let fixOf: { id: string; clientId: string | null } | null = null;
     if (isFix && input.fix?.ofVisitId) {
+      // v0.17.1 (review #10): checked here, not only in the desk's lookup: a
+      // completed visit at this location, not itself a fix, inside the fix
+      // window (rules: fixes.window_days), as the lookup lists them.
+      const since = new Date(Date.now() - rules.fixes.window_days * 24 * 60 * 60_000);
       const [orig] = await tx
         .select({ id: visits.id, clientId: visits.clientId })
         .from(visits)
@@ -153,6 +158,8 @@ export async function createWalkIn(
             eq(visits.locationId, input.locationId),
             eq(visits.organizationId, input.organizationId),
             eq(visits.status, 'completed'),
+            eq(visits.isFix, false),
+            gt(visits.arrivedAt, since),
           ),
         );
       if (!orig) return { ok: false, reason: 'unknown_fix_visit' };
@@ -199,7 +206,6 @@ export async function createWalkIn(
           });
     if (!client.ok) return { ok: false, reason: client.reason };
 
-    const rules = await activeRules(tx, input.locationId);
     const source = input.source ?? 'walk_in';
     // v0.16.0: a receptionist's fix waits for a manager or owner (rules);
     // a manager's or owner's is approved as it is entered.
@@ -259,7 +265,7 @@ export async function createWalkIn(
           serviceId: s.id,
           pointsValueSnapshot: visitPointsUnder(
             rules,
-            [{ ...s, serviceId: s.id }],
+            [{ ...s, serviceId: s.id, isFix: s.isFix }],
             'walk_in',
           ).toFixed(1),
         })),
@@ -342,6 +348,8 @@ export type Candidate = {
   /** For no_skill: the category or service names missing. For appointment_soon:
    *  minutes until it. For not_by_turn: the services that are not this level's by turn. */
   detail?: string;
+  /** v0.17.1, for appointment_soon: when it starts (ISO), for "Held: 2:30 appt". */
+  appointmentAt?: string;
   /** v0.14.0: the technician's level, when one is set. */
   level?: SkillLevel;
   /** v0.15.0, a visit of several services: the ones she does, when that is
@@ -569,7 +577,10 @@ export async function queueFor(
       // one on their book follows it, it does not block it.
       if (appointment && ctx.bookedTechnicianId !== r.technicianId) {
         const minutes = Math.max(0, Math.ceil((appointment.getTime() - now.getTime()) / 60_000));
-        return skip('appointment_soon', String(minutes));
+        return {
+          ...skip('appointment_soon', String(minutes)),
+          appointmentAt: appointment.toISOString(),
+        };
       }
       // Last on purpose: a technician skipped as not_by_turn is held out by
       // the level rule alone, so the desk may ask her (offerToHigherLevel).
@@ -825,6 +836,20 @@ export async function respondToCall(
   },
 ): Promise<{ ok: true; splitVisitId?: string } | EngineError> {
   return db.transaction(async (tx) => {
+    // v0.17.1 (review #9): one lock order everywhere, the visit first, then
+    // its call (then the technician's status), as clientLeft, expireCall,
+    // reassignVisit and the day-end close-out take them. Locking the call
+    // first here could deadlock with the desk's "Client left".
+    const [found] = await tx
+      .select({ visitId: turnCalls.visitId })
+      .from(turnCalls)
+      .where(eq(turnCalls.id, input.callId));
+    if (!found) return { ok: false, reason: 'unknown_call' };
+    await tx
+      .select({ id: visits.id })
+      .from(visits)
+      .where(eq(visits.id, found.visitId))
+      .for('update');
     const [call] = await tx
       .select()
       .from(turnCalls)
@@ -1184,6 +1209,8 @@ export type DeskOption = {
   status: string;
   /** Free right now: the desk may call her for this visit. */
   canCall: boolean;
+  /** v0.17.1: status 'held': her appointment that holds her out of the line. */
+  appointmentAt?: Date;
 };
 
 /**
@@ -1222,8 +1249,13 @@ export async function deskOptions(
         turn: i + 1,
         points: c.points,
         // v0.17.0 (LEFT-001): she has an open call: "Called", not "available".
-        status: c.why === 'already_called' ? 'called' : c.status,
+        // v0.17.1: held for her appointment: "Held: 2:30 appt", not "available".
+        status:
+          c.why === 'already_called' ? 'called' : c.why === 'appointment_soon' ? 'held' : c.status,
         canCall: c.eligible || c.why === 'not_by_turn',
+        ...(c.why === 'appointment_soon' && c.appointmentAt
+          ? { appointmentAt: new Date(c.appointmentAt) }
+          : {}),
       });
       const technicians = queue
         .map((c, i) => ({ c, o: option(c, i) }))
@@ -1292,6 +1324,7 @@ export async function finishVisit(
         isFillOrFullSet: serviceCategories.isFillOrFullSet,
         categoryId: serviceCategories.id,
         serviceId: visitServices.serviceId,
+        isFix: services.isFix,
       })
       .from(visitServices)
       .innerJoin(services, eq(services.id, visitServices.serviceId))
@@ -1386,7 +1419,9 @@ export async function reassignVisit(
     ) {
       return { ok: false, reason: 'wrong_location' };
     }
-    if (visit.status === 'completed' || visit.status === 'cancelled') {
+    // v0.17.1 (review #8): only an open visit moves: never one the client
+    // left (after the call or while waiting), nor one closed at day end.
+    if (!['waiting', 'called', 'in_service'].includes(visit.status) || visit.closeReason !== null) {
       return { ok: false, reason: 'visit_closed' };
     }
     // Part 9: the desk confirms a kiosk check-in first (the call trigger would
