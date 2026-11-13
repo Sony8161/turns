@@ -356,8 +356,6 @@ export type ClientViewer = {
   locationId: string;
 };
 
-const DESK_ROLES: readonly Role[] = ['owner', 'manager', 'receptionist'];
-
 /** One lookup against the person's budget; false once it is spent. */
 export async function consumeClientLookup(db: Db, userId: string): Promise<boolean> {
   const r = await consumeRateLimit(
@@ -382,7 +380,7 @@ export async function findClients(
 ): Promise<
   { ok: true; hits: ClientHit[] } | { ok: false; reason: 'not_allowed' | 'too_short' | 'too_many' }
 > {
-  if (!DESK_ROLES.includes(input.viewer.role)) return { ok: false, reason: 'not_allowed' };
+  if (!can(input.viewer.role, 'view_board')) return { ok: false, reason: 'not_allowed' };
   if (!parseClientQuery(input.query)) return { ok: false, reason: 'too_short' };
   if (!(await consumeClientLookup(db, input.viewer.userId))) {
     return { ok: false, reason: 'too_many' };
@@ -406,7 +404,7 @@ export async function viewClient(
   | { ok: true; client: ClientDetail & { phoneMasked: boolean } }
   | { ok: false; reason: 'not_allowed' | 'too_many' | 'unknown_client' }
 > {
-  if (!DESK_ROLES.includes(input.viewer.role)) return { ok: false, reason: 'not_allowed' };
+  if (!can(input.viewer.role, 'view_board')) return { ok: false, reason: 'not_allowed' };
   if (!(await consumeClientLookup(db, input.viewer.userId))) {
     return { ok: false, reason: 'too_many' };
   }
@@ -432,7 +430,7 @@ export async function revealClientPhone(
   | { ok: true; phone: string | null }
   | { ok: false; reason: 'not_allowed' | 'too_many' | 'unknown_client' }
 > {
-  if (!DESK_ROLES.includes(input.viewer.role)) return { ok: false, reason: 'not_allowed' };
+  if (!can(input.viewer.role, 'view_board')) return { ok: false, reason: 'not_allowed' };
   if (!(await consumeClientLookup(db, input.viewer.userId))) {
     return { ok: false, reason: 'too_many' };
   }

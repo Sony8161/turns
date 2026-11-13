@@ -1029,13 +1029,14 @@ describe('clock-change days: the sweep and the tech card too', () => {
 
 // ---------------------------------------------------------------------------
 describe('indexes, checked against the queries that use them', () => {
-  it('the open visit on a technician and calls by day have indexes', async () => {
+  it('the open visit on a technician, calls and visits by day have indexes', async () => {
     const rows = await sql<{ indexname: string; indexdef: string }[]>`
       select indexname, indexdef from pg_indexes where schemaname = 'public'
-        and indexname in ('visits_assigned_open', 'turn_calls_location_called')`;
+        and indexname in ('visits_assigned_open', 'turn_calls_location_called', 'visits_location_arrived')`;
     expect(rows.map((r) => r.indexname).sort()).toEqual([
       'turn_calls_location_called',
       'visits_assigned_open',
+      'visits_location_arrived',
     ]);
     expect(rows.find((r) => r.indexname === 'visits_assigned_open')!.indexdef).toMatch(
       /WHERE .*status.*called.*in_service/,

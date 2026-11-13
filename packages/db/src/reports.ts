@@ -472,7 +472,8 @@ export type ReadableCode =
   | 'by'
   | 'role'
   | 'geofence'
-  | 'call_kind';
+  | 'call_kind'
+  | 'tech_calendar_links';
 
 export type ReadableValue =
   | { kind: 'text'; text: string }
@@ -532,6 +533,8 @@ const CODE_KEYS: Record<string, [string, ReadableCode]> = {
   choice: ['choice', 'choice'],
   by: ['by', 'by'],
   role: ['role', 'role'],
+  // v0.17.1: the owner's choice for a technician's own Fresha link.
+  techCalendarLinks: ['tech_calendar_links', 'tech_calendar_links'],
 };
 const SERVICE_KEYS: Record<string, string> = {
   serviceIds: 'services',
@@ -556,6 +559,9 @@ const BOOL_KEYS: Record<string, string> = {
   inWindow: 'in_window',
   needsApproval: 'needs_approval',
   isKid: 'kid',
+  // v0.17.1: a technician's own calendar link waits for approval / matched her name.
+  pending: 'link_pending',
+  nameMatched: 'name_matched',
 };
 const TIME_KEYS: Record<string, string> = {
   startAt: 'start',

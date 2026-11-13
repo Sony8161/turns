@@ -105,13 +105,14 @@ export function KioskAdmin({
           autoComplete="new-password"
           className={`${field} w-32`}
         />
-        <span className="text-small text-slate/70">{t.pinHint}</span>
       </label>
     </>
   );
 
   return (
     <div className="flex flex-col gap-8">
+      {/* v0.17.1: said once for both forms, not under each PIN box. */}
+      <p className="max-w-[70ch] text-slate/80">{t.pinHint}</p>
       <div className="grid gap-8 md:grid-cols-2">
         <form action={register} className="flex flex-col gap-4 bg-board p-5">
           <h2 className="text-heading font-semibold">{t.registerTitle}</h2>

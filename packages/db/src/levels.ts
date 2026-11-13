@@ -10,6 +10,7 @@
 // acrylic technician keeps her place and is only asked by the desk. A service
 // with desk_picks is never called by turn: the desk picks the technician.
 import { and, asc, eq, isNull } from 'drizzle-orm';
+import { can } from './permissions';
 import { services, technicianServices, technicianSkills, technicians } from './schema';
 import type { Db } from './server';
 import type { StaffActor } from './staff';
@@ -98,7 +99,8 @@ export type LevelError =
   | 'no_services'
   | 'no_levels';
 
-const mayManage = (actor: StaffActor) => actor.role === 'owner' || actor.role === 'manager';
+// v0.17.1: the shared permissions table (owners and managers).
+const mayManage = (actor: StaffActor) => can(actor.role, 'manage_levels');
 
 /**
  * Sets a technician's level and the services ticked for them. `serviceIds`

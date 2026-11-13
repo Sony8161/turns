@@ -3,7 +3,7 @@
 // visit (partial unique indexes), and every move writes the audit log.
 // Every number comes from rule_config (rules.ts); nothing here is hard-coded.
 import { randomUUID } from 'node:crypto';
-import { and, asc, desc, eq, gt, inArray, isNull, lt, sql } from 'drizzle-orm';
+import { and, asc, desc, eq, gt, gte, inArray, isNull, lt, sql } from 'drizzle-orm';
 import { normalizePhone, upsertClient, type ClientGender, type ClientInput } from './clients';
 import { byTurn, loadLevels, type SkillLevel } from './levels';
 import { doesEverything, loadProfiles, restrictionOf, type TechnicianProfile } from './profile';
@@ -159,7 +159,7 @@ export async function createWalkIn(
             eq(visits.organizationId, input.organizationId),
             eq(visits.status, 'completed'),
             eq(visits.isFix, false),
-            gt(visits.arrivedAt, since),
+            gte(visits.arrivedAt, since),
           ),
         );
       if (!orig) return { ok: false, reason: 'unknown_fix_visit' };

@@ -311,6 +311,7 @@ export default async function AdminPage() {
                     turn: number;
                     status: string;
                     canCall: boolean;
+                    appointmentAt?: Date;
                   }) => ({
                     technicianId: o.technicianId,
                     ...(o.original ? { original: true } : {}),
@@ -319,6 +320,8 @@ export default async function AdminPage() {
                     turn: o.turn,
                     status: o.status,
                     canCall: o.canCall,
+                    // v0.17.1: "Held: 2:30 appt", not "available".
+                    ...(o.appointmentAt ? { heldAt: clock.format(o.appointmentAt) } : {}),
                   }),
                 ),
               }))}
@@ -377,6 +380,7 @@ export default async function AdminPage() {
             timezone={loc?.timezone ?? 'America/New_York'}
             canEdit={await mayEditTechnicians(db(), membership)}
             canActFor={canActFor}
+            showFairness={can(membership.role, 'view_audit')}
             sort={rules?.queue.sort}
           />
         </>

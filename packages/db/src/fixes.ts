@@ -17,6 +17,7 @@ import {
   type ClientViewer,
 } from './clients';
 import type { ManagerActor } from './engine';
+import { can } from './permissions';
 import { localDate } from './reports';
 import { activeRules } from './rules';
 import {
@@ -140,9 +141,7 @@ export async function findFixVisits(
   | { ok: true; windowDays: number; visits: FixCandidate[] }
   | { ok: false; reason: 'not_allowed' | 'too_many' }
 > {
-  if (!['owner', 'manager', 'receptionist'].includes(input.viewer.role)) {
-    return { ok: false, reason: 'not_allowed' };
-  }
+  if (!can(input.viewer.role, 'enter_walkins')) return { ok: false, reason: 'not_allowed' };
   // Too short to be a lookup: the window only, nothing counted.
   if (!parseClientQuery(input.query)) {
     const rules = await activeRules(db, input.viewer.locationId);

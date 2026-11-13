@@ -669,6 +669,9 @@ export const visits = pgTable(
   (t) => [
     locationFk(t, 'visits_location_fk'),
     index('visits_location_status').on(t.locationId, t.status),
+    // v0.17.1: reports, the fairness table and the fix lookup read a
+    // location's visits by the day they arrived.
+    index('visits_location_arrived').on(t.locationId, t.arrivedAt),
     index('visits_client').on(t.clientId),
     index('visits_party').on(t.partyId),
     // v0.17.1: the open visit on a technician (the queue's double-booking

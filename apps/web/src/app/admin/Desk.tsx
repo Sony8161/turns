@@ -22,6 +22,7 @@ import {
   setNotice,
   type DeskState,
 } from './actions';
+import { calledText } from './called-text';
 import { skipText, visitChips } from './chips';
 import { FixLookup } from './FixLookup';
 import { GroupWalkIn } from './GroupWalkIn';
@@ -95,6 +96,8 @@ export type Waiting = {
     turn: number;
     status: string;
     canCall: boolean;
+    /** v0.17.1: status 'held': her appointment's time ("2:30 PM"). */
+    heldAt?: string;
   }[];
 };
 export type Attention = {
@@ -183,7 +186,10 @@ export function Desk({
     fill(t.optionLine, {
       level: o.level ? (levelNames[o.level] ?? o.level) : '–',
       turn: o.turn,
-      status: statusNames[o.status] ?? o.status,
+      status:
+        o.status === 'held' && o.heldAt
+          ? fill(t.heldLine, { time: o.heldAt })
+          : (statusNames[o.status] ?? o.status),
     });
   const field = 'min-h-12 rounded-control border-2 border-slate/30 bg-board px-3 text-lead';
 
@@ -663,17 +669,7 @@ export function Desk({
                     ) : null}
                     <span className="text-small text-slate/70">
                       {v.status === 'called' && v.calledTechnician
-                        ? fill(
-                            v.callKind === 'offer'
-                              ? t.offeredLine
-                              : v.callKind === 'desk_pick'
-                                ? t.pickedLine
-                                : t.calledLine,
-                            {
-                              name: v.calledTechnician,
-                              time: formatClock(v.calledSeconds ?? 0),
-                            },
-                          )
+                        ? calledText(t, v.callKind, v.calledTechnician, v.calledSeconds ?? 0)
                         : v.status === 'in_service'
                           ? `${t.inService}${v.assignedTechnician ? `, ${v.assignedTechnician}` : ''}`
                           : fill(t.waitingLine, { time: formatClock(v.waitSeconds) })}

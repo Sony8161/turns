@@ -31,9 +31,13 @@ export function TechCards({
   lang,
   canEdit,
   canActFor = false,
+  showFairness = false,
   sort,
 }: {
   cards: TechCard[];
+  /** v0.17.1: the free-no badge is the manager's flag, like the fairness
+   *  table in Reports (owner and manager); a receptionist does not see it. */
+  showFairness?: boolean;
   /** v0.17.0: show Accept / Finish for her on her current visit. */
   canActFor?: boolean;
   /** The rules' queue.sort: whether an appointment counts at zero only (v0.15.0). */
@@ -135,7 +139,7 @@ export function TechCards({
                     {tag}
                   </li>
                 ))}
-                {c.freeDenyFlag ? (
+                {showFairness && c.freeDenyFlag ? (
                   // v0.17.0 (FAIR-001): one small badge, for the manager to notice.
                   <li className={`${chip} border-2 border-polish font-semibold text-slate`}>
                     {fill(tb.freeDenies, { n: c.freeDenies })}
