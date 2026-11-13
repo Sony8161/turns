@@ -2,6 +2,106 @@
 
 One version per delivered part. Tags point at the commits.
 
+## v0.17.1, 2026-11-13: Review fixes
+
+Release 2 of `17-Next-Build-Plan.md`: findings #4 to #11 of the independent
+review of v0.11.0 to v0.16.1, the permissions mismatch, and the parts the
+review had not reached. Started by an earlier run that was cut off; its work
+was saved as a WIP commit, checked and finished here. Heavenly's defaults
+below; plain words, EN/VI, one new setting in view (Appointments).
+
+- **Client list harvesting (review #4).** One per-person budget (60 in 5
+  minutes, the same key search used since v0.13.0) now counts every client
+  search, every client page, every fix lookup and every **Show** tap. A search
+  needs at least 4 digits of a phone or 3 letters of a name (a two-letter
+  surname is searched with the first name: "ngoc vo"); a search too short
+  costs nothing. Still at most 25 results. The search list never shows a
+  whole phone. On a client's page owners and managers see the full number; a
+  receptionist sees "(•••) •••-0199" and taps **Show**: counted against her
+  budget and written to the log as "Client phone shown in full" with no
+  number in it. The results list no longer prefetches client pages, so only a
+  real tap counts.
+- **Kiosk groups (review #5).** Every person in a group counts against the
+  device limit (30 per 10 minutes) and the address limit; the group's one
+  phone still counts once (Duong, v0.16.0). **Confirm all** makes a client
+  row only for the person with the group's phone, exactly like a single
+  check-in without a phone. The limits moved to `@turn/db/kiosk`.
+- **A technician's own Fresha link (review #6).** New owner setting on
+  Appointments, "When a technician adds her own Fresha calendar": **The owner
+  or a manager approves it first** (Heavenly), **Only if the calendar has her
+  name**, or **Use it right away** (the v0.11.0 way). While a link waits it is
+  never fetched, so it brings in nothing and holds her out of nothing; her
+  phone says "Waiting for the owner or a manager to approve". Owners and
+  managers see "Calendar links to approve" on Appointments (and a line on the
+  board) with **Approve** (it syncs at once) and **Decline** (the link is
+  removed; she can add it again). A new link from her waits again; a link the
+  owner pastes never waits. Audited (set, approved, declined, the setting),
+  never with the link or its hint.
+- **Every redirect hop is checked (review #7).** The link test and the poll
+  check the Fresha host list on the saved link and on every redirect. A link
+  the owner pasted under "Other calendar link" (Part 7) keeps the
+  public-address check on every hop, as before.
+- **Reassign refuses a closed visit (review #8):** one the client left after
+  the call, a walk-out, or one closed at day end.
+- **One lock order (review #9):** visit first, then its call, then the
+  technician, in `respondToCall` (the one that differed), `clientLeft`,
+  `expireCall`, `reassignVisit`, the day-end close-out and the desk's act-for.
+  A test runs the risky pairs at the same moment three times each and expects
+  no error; with the old order it hit 13 deadlocks.
+- **A fix is checked on the server (review #10):** it must point at a
+  completed visit at this location that is not itself a fix, inside the fix
+  window, whatever the screen sent.
+- **A fix is always 0 points (review #11)**, whatever the rules say, at
+  entry, at Finish and at the day-end close-out. The rules page shows "0
+  points, always" for the fix instead of a box.
+- **One permissions table (the mismatch).** `@turn/db/permissions` is the
+  table; the web app re-exports it. Receptionists' edit techs, adjust points
+  and act for a tech are in it as "the most she may have", and
+  `allowedAt` adds the owner's switches on the server next to every write.
+  Skill levels are their own right (`manage_levels`, owners and managers), so
+  the receptionist switch never opens the levels pages.
+- **Read-only checks, fixed what was found:** a new index for visits by day
+  (`visits_location_arrived`, used by reports, fairness and the fix lookup)
+  next to the run's two (`visits_assigned_open`, `turn_calls_location_called`);
+  every server action since v0.11.0 is `guarded()` with a permission check;
+  the free-no badge on the tech cards is the manager's flag and now shows to
+  owners and managers only, like the fairness table; Reports (fixes and
+  fairness) is owners and managers at their own location; the clock-change
+  tests now cover the out-over penalty in the sweep and the tech card's
+  appointment hold.
+- **Small things:** "1 visit" on the client pages; a call just made says
+  "Linh called just now" for the first minute, not "no answer for 0:00";
+  **Pick a tech** shows a tech held for her appointment as "Held: 2:30 PM
+  appt", not "available"; Admin → Kiosk says the PIN hint once, not under
+  both PIN boxes.
+- **Demo day** adds Vân's own calendar link waiting for approval.
+  `docs/DEMO-EXPECTED.md` regenerated (Pick a tech: "held for her
+  appointment").
+- Database: migration 0029 (`calendar_feeds.needs_approval`, `approved_by`,
+  `approved_at`; `locations.tech_calendar_links` with its check; three
+  indexes). New module `permissions.ts`.
+
+Tests: TESTS_LINE
+
+Readings taken where the brief left room (say if any is wrong):
+
+- "3 characters of name" counts letters (spaces and dots do not count);
+  "4 digits" counts digits in a phone-shaped search.
+- The budget is shared by search, client page, fix lookup and Show, 60 in 5
+  minutes per person, as search had.
+- The owner chooses `tech_calendar_links` (it is a salon setting), on
+  Appointments next to Connect Fresha; managers approve links but do not
+  change the setting.
+- `name_must_match` reads the calendar when she saves and needs her name,
+  and nobody else's, in the calendar name (the owner card's suggestion rule).
+- Approving syncs the link at once; declining removes it, as the owner's
+  Disconnect does.
+- The poll keeps the public-address check (not the Fresha list) for a link
+  the owner pasted under "Other calendar link"; every Fresha link, and every
+  link a technician saved, is held to the list on every hop.
+- The free-no badge is shown to owners and managers only (the plan calls it
+  the manager's flag); receptionists still see the points.
+
 ## v0.17.0, 2026-11-13: First-week gaps
 
 Release 1 of `17-Next-Build-Plan.md`, with review findings #1, #12 and #13.

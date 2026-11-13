@@ -16,7 +16,7 @@ export type FeedReviewState = {
   error?: string;
   ref?: string;
 };
-export type TechLinksState = { saved?: boolean; error?: string; ref?: string };
+export type TechLinksState = { saved?: boolean; value?: string; error?: string; ref?: string };
 
 function refresh() {
   for (const p of ['/admin/appointments', '/admin', '/me', '/me/calendar']) revalidatePath(p);
@@ -80,6 +80,6 @@ export async function techLinksAction(
       value,
     });
     refresh();
-    return r.ok ? { saved: true } : { error: r.reason };
+    return r.ok ? { saved: true, value } : { error: r.reason };
   });
 }

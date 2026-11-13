@@ -429,6 +429,47 @@ client_here`). `freeDeniesToday` counts her excused denies since check-in:
 - Review #1: `staffSetStatus` refuses a tech in service. Review #12:
   `askForHelp` needs her on shift. Migration 0028.
 
+### Review fixes (v0.17.1)
+
+Release 2 of `../17-Next-Build-Plan.md`: the review of v0.11.0 to v0.16.1.
+
+- **Permissions** (`packages/db/src/permissions.ts`): one table for the web
+  app and the server. `can(role, capability)` is the most a role may ever
+  have; `allowedAt(db, actor, capability)` adds the owner's two receptionist
+  switches (`receptionist_edits_technicians` for edit techs and adjust
+  points, `receptionist_acts_for_technicians` for act for a tech) and is
+  what `mayEditTechnicians`, `mayActForTechnicians` and `staffAdjustPoints`
+  call. New rights: `manage_levels`, `approve_calendar_links`,
+  `see_client_phone` (owners and managers).
+- **Client lookups** (`clients.ts`): `findClients`, `viewClient`,
+  `revealClientPhone` and `fixes.findFixVisits` each spend one from
+  `client-search:<user>` (60 per 5 minutes, `CLIENT_LOOKUPS`).
+  `parseClientQuery` wants 4 digits or 3 letters. Lists mask the phone
+  (`maskPhone`); a page shows it whole only with `see_client_phone`; Show is
+  audited as `client_phone_shown` with the role only.
+- **Kiosk** (`kiosk.ts`): `kioskCheckInLimited` charges the device and the
+  address one per person (`consumeRateLimit` takes a cost) and the phone once.
+  `reviewKioskVisit` upserts a client only for a person with a phone.
+- **A technician's own link** (`feeds.ts`): `locations.tech_calendar_links`
+  [`owner_approves`]. `setFeed` by a technician then stores the link with
+  `needs_approval`; `syncFeed` and `pollFeeds` skip it; `reviewFeed`
+  (approve or decline, `approve_calendar_links`) clears it or archives the
+  row; `pendingFeeds` lists names. `name_must_match` fetches the calendar on
+  save and needs `suggestTechnician` to name her. `feedFetcher(hosts)` holds
+  every hop to the host list (`safeFetchText` with `hosts`); the test and the
+  poll use it for every Fresha link.
+- **Engine**: `respondToCall` locks the visit before the call, the order
+  every other writer uses. `reassignVisit` moves only a waiting, called or
+  in-service visit with no `close_reason`. `createWalkIn` checks a fix's
+  original visit (completed, not a fix, this location, `fixes.window_days`).
+  `visitPointsUnder` returns 0 for any item marked `isFix`, so entry, Finish,
+  the day-end close-out and the rules preview agree. `deskOptions` marks a
+  tech held for her appointment as `held` with `appointmentAt`.
+- Migration 0029: the calendar approval columns, `tech_calendar_links` with
+  its check, and the indexes `visits_location_arrived`,
+  `visits_assigned_open` (partial: called or in service) and
+  `turn_calls_location_called`.
+
 ## How the pieces talk to each other
 
 ```

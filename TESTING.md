@@ -733,7 +733,8 @@ screen at iPad landscape (1366), iPad portrait (1024) and phone (390).
    **More** → **No-show**. Press it: the row says "no-show"; Tâm's card no
    longer mentions it. Thảo's desk appointment from 90 minutes ago already
    says "no-show". Clients → search `813 555 0210` → Kim L.: "No-shows: 1".
-7. **Free-deny badge.** Thảo's card shows the badge "Free no today: 3".
+7. **Free-deny badge.** As Phu or Vy (v0.17.1: not for receptionists),
+   Thảo's card shows the badge "Free no today: 3".
    Rules → "Client left" → **Advanced**: the badge number (0 = never), a daily
    limit (blank = no limit), the minutes before No-show and what happens to a
    client still in the chair at day end. Set the limit to 3 and save: Thảo's
@@ -760,6 +761,55 @@ screen at iPad landscape (1366), iPad portrait (1024) and phone (390).
     call as "called", not "available".
 12. **Vietnamese.** Switch to Tiếng Việt on the desk, the phone, Reports and
     Rules: every new button and line has a Vietnamese string.
+
+## 8q. Review fixes (v0.17.1)
+
+Load the demo (`npm run up -- -Demo`). Sign in as Hạnh (0102, receptionist)
+unless a step says otherwise. iPad landscape (1366), portrait (1024), phone (390).
+
+1. **Client search.** Clients: type `ng` or `019`: "Type at least 4 digits of a
+   phone number, or 3 letters of a name." Type `0210`: Kim L., phone shown as
+   "(•••) •••-0210". A client with one visit says "1 visit".
+2. **The phone on a client's page.** Open Kim L.: the phone is masked with
+   **Show**. Tap it: the full number. As Phu (0100) or Vy (0101): the full
+   number, no Show. As Phu: Log → "Client phone shown in full", by Hạnh, with
+   no number in the details.
+3. **One budget.** Searches, client pages, fix lookups and Show share 60 per 5
+   minutes per person. After that each says "Too many client searches and
+   pages in a short time." (The automated test in `v0171.test.ts` counts it;
+   by hand, only if you want to.)
+4. **Fix lookup.** New walk-in → tick Nail fix / repair → type `ng` → Look up:
+   the same "at least 4 digits or 3 letters" line.
+5. **A technician's own calendar.** As Phu or Vy: Appointments → "Calendar
+   links to approve": "Vân added her own Fresha calendar (time)." The board's
+   calendar box says "Calendar link to approve: Vân". As Vân (0112): /me says
+   "Calendar: Waiting for the owner or a manager to approve". Back as Vy:
+   **Approve**: the line goes away; Vân's phone now says "Connected, last
+   synced (time)" (the demo link is a placeholder, so nothing is fetched).
+   Log: "Calendar link approved", Vân, no link. **Decline** instead removes
+   the link and she can add it again.
+6. **The setting.** As Phu: Appointments → under Connect Fresha, "When a
+   technician adds her own Fresha calendar": three choices, Heavenly "The owner
+   or a manager approves it first". Change and Save: "Saved."; Log "Technicians'
+   own calendar links changed: … → …". Put it back. Vy does not see it.
+7. **Pick a tech.** As Vy, **Approve fix: Trang H.**, then that row's **Pick a
+   tech**: Thảo reads "Dip, turn 1, Held: (time) appt", not "available".
+8. **Just now.** Press **Call next** on any waiting row: the row says "Vân
+   called just now"; a minute later "no answer for 1:00".
+9. **Rules.** As Phu: Rules → Points per service: Nail fix / repair says "0
+   points, always" (no box).
+10. **Kiosk admin.** As Phu: Admin → Kiosk: the PIN hint is said once above the
+    two forms.
+11. **The free-no badge** ("Free no today: 3" on Thảo's card) shows for Phu and
+    Vy; Hạnh does not see it.
+12. **Levels.** Hạnh cannot open /admin/levels (receptionists never set levels,
+    even with the owner's edit switch on).
+13. **Automated:** `packages/db/test/v0171.test.ts` (harvesting, kiosk groups,
+    calendar approval and the three choices, every redirect hop, reassign,
+    the lock-order race, fixes, the permissions table, held, clock changes,
+    indexes) and `apps/web/src/app/admin/v0171.test.ts`.
+14. **Vietnamese.** Switch to Tiếng Việt on Clients, Appointments, Rules, the
+    desk and the phone: every new line has a Vietnamese string.
 
 ## 9. If something is off
 

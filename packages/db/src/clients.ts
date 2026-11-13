@@ -453,8 +453,8 @@ export async function revealClientPhone(
       actorUserId: input.viewer.userId,
       entityType: 'clients',
       entityId: c.id,
+      // Who and when are the row itself; nothing about the number.
       action: 'client_phone_shown',
-      after: { by: input.viewer.role },
     });
     return { ok: true as const, phone: c.phone };
   });

@@ -9,7 +9,7 @@ export async function LocationSwitch({ t }: { t: Dictionary['nav'] }) {
   const places = actor ? locationsOf(actor) : [];
   if (places.length < 2) return null;
   return (
-    <form action={switchLocation} className="ml-auto flex items-center gap-2">
+    <form action={switchLocation} className="ml-auto flex flex-wrap items-center gap-2">
       <label className="flex items-center gap-2">
         <span className="text-small font-medium">{t.location}</span>
         <select
