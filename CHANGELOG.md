@@ -81,7 +81,7 @@ below; plain words, EN/VI, one new setting in view (Appointments).
   `approved_at`; `locations.tech_calendar_links` with its check; three
   indexes). New module `permissions.ts`.
 
-Tests: TESTS_LINE
+Tests: 467 database (48 new in `v0171.test.ts`; `demo`, `fresha`, `v013` and `v016` follow the new rules), 202 web (22 new).
 
 Readings taken where the brief left room (say if any is wrong):
 
