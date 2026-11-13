@@ -4,6 +4,8 @@ const nextConfig: NextConfig = {
   // SEC-001: never publish browser source maps (also the default).
   productionBrowserSourceMaps: false,
   poweredByHeader: false,
+  // v0.18.0: no dev badge over the board's corner (screenshots, iPad tests).
+  devIndicators: false,
   // Every screen depends on the session cookie and the language cookie, so
   // nothing here is prerenderable. Cache components off keeps pages simple.
   cacheComponents: false,

@@ -4,7 +4,8 @@
 // Written before the code they test.
 import { randomUUID } from 'node:crypto';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
-import { plainQueue } from '../src/board';
+import { needsYouCount, plainQueue } from '../src/board';
+import { askForHelp } from '../src/help';
 import { checkOutVisit, setCheckoutList, toCheckOut } from '../src/checkout';
 import {
   findClients,
@@ -426,6 +427,25 @@ describe('the Next banner reads the line for a plain call', () => {
       eligible: false,
       why: 'already_called',
     });
+    await clearFloor();
+  });
+
+  it('the Board tab counts what waits for the desk, on every page', async () => {
+    await clearFloor();
+    await sql`update help_requests set acknowledged_at = now() where acknowledged_at is null`;
+    expect(await needsYouCount(db, LOC, true)).toBe(0);
+    const t = await newTech('Q Help', 'gel');
+    await onFloor(t, 20);
+    const h = await askForHelp(db, { technicianId: t.id, actor: { userId: t.userId } });
+    expect(h.ok).toBe(true);
+    const v = await walkIn(['Gel manicure']);
+    // A call nobody has answered for longer than the rules' minutes.
+    const c = await callNext(db, { visitId: v.visitId, actor: nobody, locationId: LOC });
+    expect(c.ok).toBe(true);
+    await sql`update turn_calls set called_at = now() - interval '2 hours' where responded_at is null`;
+    expect(await needsYouCount(db, LOC, false)).toBe(2);
+    expect(await needsYouCount(db, LOC, true)).toBe(2);
+    await sql`update help_requests set acknowledged_at = now() where acknowledged_at is null`;
     await clearFloor();
   });
 

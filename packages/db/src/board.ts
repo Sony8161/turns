@@ -325,11 +325,11 @@ export async function needsYouCount(
   const [row] = await db.execute<{ n: number }>(sql`
     select
       (select count(*) from ${visits} v where v.location_id = ${locationId} and v.status = 'waiting' and v.needs_confirm)
-      + (case when ${approver} then (select count(*) from ${visits} v where v.location_id = ${locationId} and v.status = 'waiting' and v.needs_approval) else 0 end)
+      + (case when ${approver}::boolean then (select count(*) from ${visits} v where v.location_id = ${locationId} and v.status = 'waiting' and v.needs_approval) else 0 end)
       + (select count(*) from ${helpRequests} h where h.location_id = ${locationId} and h.acknowledged_at is null)
       + (select count(*) from ${turnCalls} c where c.location_id = ${locationId} and c.responded_at is null
-           and (c.left_claimed_at is not null and c.left_claim_outcome is null or c.called_at <= ${unansweredBefore}))
-      + (case when ${approver} then (select count(*) from ${calendarFeeds} f where f.location_id = ${locationId} and f.needs_approval and f.archived_at is null) else 0 end)
+           and (c.left_claimed_at is not null and c.left_claim_outcome is null or c.called_at <= ${unansweredBefore.toISOString()}::timestamptz))
+      + (case when ${approver}::boolean then (select count(*) from ${calendarFeeds} f where f.location_id = ${locationId} and f.needs_approval and f.archived_at is null) else 0 end)
       as n`);
   return Number(row?.n ?? 0);
 }
