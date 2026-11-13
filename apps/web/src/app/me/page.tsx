@@ -169,20 +169,22 @@ export default async function MePage() {
               {calendar?.connected
                 ? stateLine(
                     t.fresha,
-                    calendar.lastError
-                      ? {
-                          kind: 'failing',
-                          error:
-                            t.fresha.errors[calendar.lastError] ??
-                            t.appointments.feedErrors[calendar.lastError] ??
-                            calendar.lastError,
-                        }
-                      : calendar.lastSyncedAt
+                    calendar.pending
+                      ? { kind: 'pending' }
+                      : calendar.lastError
                         ? {
-                            kind: calendar.stale ? 'stale' : 'ok',
-                            time: timeOf.format(calendar.lastSyncedAt),
+                            kind: 'failing',
+                            error:
+                              t.fresha.errors[calendar.lastError] ??
+                              t.appointments.feedErrors[calendar.lastError] ??
+                              calendar.lastError,
                           }
-                        : { kind: 'never' },
+                        : calendar.lastSyncedAt
+                          ? {
+                              kind: calendar.stale ? 'stale' : 'ok',
+                              time: timeOf.format(calendar.lastSyncedAt),
+                            }
+                          : { kind: 'never' },
                   )
                 : t.fresha.stateNone}
             </p>

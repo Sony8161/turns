@@ -20,7 +20,7 @@ export default async function LevelsPage() {
   const onlyTechnician =
     actor.memberships.length > 0 && actor.memberships.every((m) => m.role === 'technician');
   if (onlyTechnician) redirect('/me');
-  const m = membershipWith(actor, 'edit_technicians');
+  const m = membershipWith(actor, 'manage_levels');
   const any = actor.memberships[0];
   const services = m ? await menuLevels(db(), m.locationId) : [];
 

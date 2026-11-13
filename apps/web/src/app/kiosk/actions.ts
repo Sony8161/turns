@@ -3,7 +3,14 @@
 // Kiosk actions (Part 9). The device is always the one behind this browser's
 // cookie, never an id from the form; a staff session on the same browser is
 // refused, so the kiosk never acts as a person (threat model T20).
-import { checkKioskPin, kioskCheckIn, kioskGroupCheckIn, pairKiosk } from '@turn/db/kiosk';
+import {
+  checkKioskPin,
+  KIOSK_LIMITS,
+  kioskCheckIn,
+  kioskCheckInLimited,
+  kioskGroupCheckIn,
+  pairKiosk,
+} from '@turn/db/kiosk';
 import { consumeRateLimit } from '@turn/db/rate-limit';
 import { normalizePhone } from '@turn/db/clients';
 import { revalidatePath } from 'next/cache';
@@ -24,12 +31,11 @@ export type KioskState = {
 };
 
 // Limits (T7, T25): a stolen or scripted kiosk cannot flood the queue, and the
-// PIN and pairing code cannot be guessed. Generous for a real front desk.
-const CHECKINS_PER_DEVICE = { limit: 30, windowS: 10 * 60 };
-const CHECKINS_PER_PHONE = { limit: 3, windowS: 30 * 60 };
-const CHECKINS_PER_IP = { limit: 60, windowS: 10 * 60 };
-const PIN_TRIES = { limit: 5, windowS: 15 * 60 };
-const PAIR_TRIES = { limit: 10, windowS: 15 * 60 };
+// PIN and pairing code cannot be guessed. Generous for a real front desk. The
+// numbers live in @turn/db/kiosk (v0.17.1), where each person in a group
+// counts against the device and the address (review #5).
+const PIN_TRIES = KIOSK_LIMITS.pinTries;
+const PAIR_TRIES = KIOSK_LIMITS.pairTries;
 
 async function limited(key: string, rule: { limit: number; windowS: number }): Promise<boolean> {
   const r = await consumeRateLimit(db(), key, rule.limit, rule.windowS);
@@ -67,19 +73,14 @@ async function checkInActionRun(_prev: KioskState, formData: FormData): Promise<
   const device = await currentKiosk();
   if (!device) return { error: 'not_paired' };
   const ip = await clientIp();
-  if (
-    (await limited(`kiosk:device:${device.deviceId}`, CHECKINS_PER_DEVICE)) ||
-    (await limited(`kiosk:ip:${ip}`, CHECKINS_PER_IP))
-  ) {
-    return { error: 'too_many' };
-  }
   const form = kioskFromForm(formData);
   if (!form.ok) return { error: form.reason };
   const phone = form.phone ? normalizePhone(form.phone) : null;
   if (form.phone && !phone) return { error: 'bad_phone' };
-  // Per phone, so one number cannot be checked in over and over. The message
-  // is the generic one: it says nothing about whether the number is known.
-  if (phone && (await limited(`kiosk:phone:${device.locationId}:${phone}`, CHECKINS_PER_PHONE))) {
+  // The device, the address and the phone (so one number cannot be checked
+  // in over and over). The message is the generic one: it says nothing about
+  // whether the number is known.
+  if (await kioskCheckInLimited(db(), { device, ip, phone, people: 1 })) {
     return { error: 'too_many' };
   }
   const r = await kioskCheckIn(db(), {
@@ -102,8 +103,9 @@ async function checkInActionRun(_prev: KioskState, formData: FormData): Promise<
 
 /**
  * v0.16.0: a group checks in ("We're a group"). The same guards as one
- * person; the group counts once against the device, the address and the
- * phone limits. Nothing about a stored client comes back.
+ * person. v0.17.1 (review #5): every person counts against the device and
+ * the address limits; the group's one phone counts once (Duong, v0.16.0).
+ * Nothing about a stored client comes back.
  */
 export async function groupCheckInAction(
   prev: KioskState,
@@ -119,18 +121,11 @@ async function groupCheckInActionRun(_prev: KioskState, formData: FormData): Pro
   const device = await currentKiosk();
   if (!device) return { error: 'not_paired' };
   const ip = await clientIp();
-  if (
-    (await limited(`kiosk:device:${device.deviceId}`, CHECKINS_PER_DEVICE)) ||
-    (await limited(`kiosk:ip:${ip}`, CHECKINS_PER_IP))
-  ) {
-    return { error: 'too_many' };
-  }
   const form = kioskGroupFromForm(formData);
   if (!form.ok) return { error: form.reason };
   const phone = form.phone ? normalizePhone(form.phone) : null;
   if (form.phone && !phone) return { error: 'bad_phone' };
-  // Once for the whole group (Duong: a group counts once against the per-phone limit).
-  if (phone && (await limited(`kiosk:phone:${device.locationId}:${phone}`, CHECKINS_PER_PHONE))) {
+  if (await kioskCheckInLimited(db(), { device, ip, phone, people: form.people.length })) {
     return { error: 'too_many' };
   }
   const r = await kioskGroupCheckIn(db(), {

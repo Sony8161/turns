@@ -101,10 +101,17 @@ async function rulesActionRun(_prev: RulesState, formData: FormData): Promise<Ru
       .from(serviceCategories)
       .where(eq(serviceCategories.locationId, m.locationId)),
     // v0.16.0: the services the form shows (not archived), for points per service.
+    // v0.17.1 (review #11): a nail fix has no field: it is always 0.
     db()
       .select({ id: services.id })
       .from(services)
-      .where(and(eq(services.locationId, m.locationId), isNull(services.archivedAt))),
+      .where(
+        and(
+          eq(services.locationId, m.locationId),
+          isNull(services.archivedAt),
+          eq(services.isFix, false),
+        ),
+      ),
   ]);
   const { candidate, tierSlots } = configFromForm(
     formData,

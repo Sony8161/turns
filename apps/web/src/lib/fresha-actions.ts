@@ -28,7 +28,14 @@ export type CalendarTestState =
   | { ok: false; error: string; ref?: string };
 
 export type CalendarSaveState =
-  { ok: true; synced: boolean; upcoming: number } | { ok: false; error: string; ref?: string };
+  | {
+      ok: true;
+      synced: boolean;
+      upcoming: number;
+      /** v0.17.1: her own link waits for the owner or a manager (nothing synced). */
+      pending?: boolean;
+    }
+  | { ok: false; error: string; ref?: string };
 
 export type CalendarRemoveState = { ok: true } | { ok: false; error: string; ref?: string };
 
@@ -126,6 +133,11 @@ export async function saveCalendarLink(input: {
         hosts: feedHosts(),
       });
       if (!r.ok) return { ok: false, error: r.reason };
+      // v0.17.1 (review #6): waiting for the owner or a manager: nothing to sync.
+      if (r.pending) {
+        refresh();
+        return { ok: true, synced: false, upcoming: 0, pending: true };
+      }
       // Sync now, so the appointments are there when the screen comes back; the
       // cron keeps it in step after that. A failed first sync is not a failed save.
       let synced = false;

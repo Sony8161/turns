@@ -82,7 +82,12 @@ export default async function RulesPage() {
   ]);
   // v0.16.0: points per service (polish change, fix).
   const menu = await db()
-    .select({ id: services.id, name: services.name, categoryId: services.categoryId })
+    .select({
+      id: services.id,
+      name: services.name,
+      categoryId: services.categoryId,
+      isFix: services.isFix,
+    })
     .from(services)
     .where(and(eq(services.locationId, m.locationId), isNull(services.archivedAt)))
     .orderBy(services.name);
@@ -136,6 +141,7 @@ export default async function RulesPage() {
             id: s.id,
             name: s.name,
             category: categories.find((c) => c.id === s.categoryId)?.name ?? '',
+            isFix: s.isFix,
           }))}
           version={history[0]?.version ?? current.version}
           t={t.rules}

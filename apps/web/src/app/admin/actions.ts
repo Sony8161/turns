@@ -14,7 +14,8 @@ import {
   setVisitNote,
   type DenyReason,
 } from '@turn/db/engine';
-import { fixCandidates, reviewFix } from '@turn/db/fixes';
+import { parseClientQuery } from '@turn/db/clients';
+import { findFixVisits, reviewFix } from '@turn/db/fixes';
 import { acknowledgeHelp } from '@turn/db/help';
 import { reviewKioskVisit } from '@turn/db/kiosk';
 import { createParty } from '@turn/db/party';
@@ -114,8 +115,12 @@ export async function lookupFixVisits(query: string): Promise<FixLookup | { erro
     'lookupFixVisits',
     { error: 'server' },
     async () => {
-      const m = await deskMembership();
+      const actor = await requireActor();
+      const m = membershipWith(actor, 'enter_walkins');
       if (!m) return { error: 'not_allowed' };
+      const text = String(query ?? '').slice(0, 60);
+      // v0.17.1 (review #4): too short is not a lookup (nothing counted).
+      if (!parseClientQuery(text)) return { error: 'lookup_too_short' };
       const [{ lang }, loc] = await Promise.all([
         getDictionary(),
         db()
@@ -124,10 +129,19 @@ export async function lookupFixVisits(query: string): Promise<FixLookup | { erro
           .where(eq(locations.id, m.locationId))
           .then((r) => r[0]),
       ]);
-      const found = await fixCandidates(db(), {
-        locationId: m.locationId,
-        query: String(query ?? '').slice(0, 60),
+      // Counted against the same per-person budget as client search and
+      // client pages, so the lookup cannot page through the client list.
+      const r = await findFixVisits(db(), {
+        viewer: {
+          userId: actor.userId,
+          role: m.role,
+          organizationId: m.organizationId,
+          locationId: m.locationId,
+        },
+        query: text,
       });
+      if (!r.ok) return { error: r.reason };
+      const found = r;
       const day = new Intl.DateTimeFormat(lang === 'vi' ? 'vi-VN' : 'en-US', {
         timeZone: loc?.timezone ?? 'America/New_York',
         weekday: 'short',

@@ -1,6 +1,12 @@
 import { appointmentsBetween } from '@turn/db/appointments';
 import { activeRules } from '@turn/db/rules';
-import { feedStates, feedSummary, FEED_STALE_MIN } from '@turn/db/feeds';
+import {
+  feedStates,
+  feedSummary,
+  FEED_STALE_MIN,
+  pendingFeeds,
+  techCalendarLinksAt,
+} from '@turn/db/feeds';
 import { locations, serviceCategories, services, technicians } from '@turn/db';
 import { and, asc, eq, isNull } from 'drizzle-orm';
 import { redirect } from 'next/navigation';
@@ -17,7 +23,9 @@ import { ownerRows } from '@/lib/fresha-rows';
 import { can } from '@/lib/permissions';
 import { signOut } from '../../login/actions';
 import { AppointmentsPanel } from './AppointmentsPanel';
+import { FeedApprovals } from './FeedApprovals';
 import { salonInput } from './form';
+import { TechLinksSetting } from './TechLinksSetting';
 
 const WEEK = 7 * 86_400_000;
 
@@ -71,7 +79,9 @@ export default async function AppointmentsPage() {
   const now = new Date();
   const from = new Date(now.getTime() - 12 * 3_600_000);
   const isOwner = can(m.role, 'manage_rules');
-  const [loc, rows, menu, techs, summary, feeds] = await Promise.all([
+  // v0.17.1 (review #6): a technician's own link waits for one of these.
+  const mayApprove = can(m.role, 'approve_calendar_links');
+  const [loc, rows, menu, techs, summary, feeds, waiting, techLinks] = await Promise.all([
     db()
       .select({ timezone: locations.timezone })
       .from(locations)
@@ -91,6 +101,8 @@ export default async function AppointmentsPage() {
       .orderBy(asc(technicians.displayName)),
     feedSummary(db(), m.locationId, now),
     isOwner ? feedStates(db(), m.locationId, now) : Promise.resolve([]),
+    mayApprove ? pendingFeeds(db(), m.locationId) : Promise.resolve([]),
+    isOwner ? techCalendarLinksAt(db(), m.locationId) : Promise.resolve('owner_approves'),
   ]);
   const timezone = loc?.timezone ?? 'America/New_York';
   // v0.17.0: No-show is offered once the start time plus these minutes has passed.
@@ -131,6 +143,16 @@ export default async function AppointmentsPage() {
         </h1>
         <p className="max-w-[70ch] text-slate/80">{t.appointments.lead}</p>
       </section>
+      {waiting.length > 0 ? (
+        <FeedApprovals
+          t={t.fresha}
+          rows={waiting.map((w) => ({
+            technicianId: w.technicianId,
+            name: w.technicianName,
+            since: when.format(w.since),
+          }))}
+        />
+      ) : null}
       {isOwner ? (
         <section className="flex flex-col gap-3" aria-labelledby="fresha-title">
           <h2 id="fresha-title" className="text-heading font-semibold">
@@ -142,6 +164,7 @@ export default async function AppointmentsPage() {
           ) : (
             <p className="max-w-[70ch]">{t.fresha.noTechs}</p>
           )}
+          <TechLinksSetting t={t.fresha} value={techLinks} />
         </section>
       ) : null}
       <AppointmentsPanel

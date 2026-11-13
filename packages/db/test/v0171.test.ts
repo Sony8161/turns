@@ -468,7 +468,7 @@ describe("#6 a technician's own Fresha link", () => {
     }
     expect(
       await reviewFeed(db, { actor: manager, technicianId: linh.id, decision: 'approve' }),
-    ).toEqual({ ok: true });
+    ).toMatchObject({ ok: true });
     const [f] =
       await sql`select id, needs_approval, approved_by from calendar_feeds where technician_id = ${linh.id}`;
     expect(f).toMatchObject({ needs_approval: false, approved_by: manager.userId });
@@ -506,7 +506,7 @@ describe("#6 a technician's own Fresha link", () => {
     await save(linh, LINK2);
     expect(
       await reviewFeed(db, { actor: owner, technicianId: linh.id, decision: 'decline' }),
-    ).toEqual({ ok: true });
+    ).toMatchObject({ ok: true });
     const [f] =
       await sql`select url, archived_at from calendar_feeds where technician_id = ${linh.id}`;
     expect(f!['url']).toBe('');
@@ -586,6 +586,34 @@ describe('#7 every redirect hop is checked against the Fresha host list', () => 
     expect(polled.failed).toBeGreaterThanOrEqual(1);
     const [f] = await sql`select last_error from calendar_feeds where id = ${r.feedId}`;
     expect(f!['last_error']).toBe('not_fresha');
+    await sql`update calendar_feeds set archived_at = now(), url = '' where id = ${r.feedId}`;
+  });
+
+  it("an owner's other (not Fresha) link keeps the public-address check on every hop", async () => {
+    const t = await newTech('Other link');
+    const r = await setFeed(db, {
+      actor: owner,
+      technicianId: t.id,
+      url: 'https://calendar.example.org/me.ics',
+      resolve: PUBLIC,
+    });
+    if (!r.ok) throw new Error(r.reason);
+    // A redirect to another public host is followed, as in Part 7 ...
+    const elsewhere: GetOnce = async (url) =>
+      url.hostname === 'calendar.example.org'
+        ? { status: 302, location: 'https://cdn.example.net/me.ics' }
+        : { status: 200, body: okBody };
+    expect(
+      await syncFeed(db, { feedId: r.feedId, fetchOptions: { resolve: PUBLIC, get: elsewhere } }),
+    ).toMatchObject({ ok: true });
+    // ... and a hop to a private address is still refused.
+    const inside: Resolve = async (host) =>
+      host === 'calendar.example.org'
+        ? [{ address: '93.184.216.34', family: 4 }]
+        : [{ address: '10.0.0.5', family: 4 }];
+    expect(
+      await syncFeed(db, { feedId: r.feedId, fetchOptions: { resolve: inside, get: elsewhere } }),
+    ).toEqual({ ok: false, error: 'private_address' });
     await sql`update calendar_feeds set archived_at = now(), url = '' where id = ${r.feedId}`;
   });
 });

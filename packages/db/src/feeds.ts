@@ -685,6 +685,10 @@ export async function feedTechnician(
 export const TECH_CALENDAR_LINKS = ['owner_approves', 'name_must_match', 'open'] as const;
 export type TechCalendarLinks = (typeof TECH_CALENDAR_LINKS)[number];
 
+export function isTechCalendarLinks(v: unknown): v is TechCalendarLinks {
+  return typeof v === 'string' && (TECH_CALENDAR_LINKS as readonly string[]).includes(v);
+}
+
 export async function techCalendarLinksAt(
   db: Db | Tx,
   locationId: string,
@@ -855,7 +859,8 @@ export async function reviewFeed(
   db: Db,
   input: { actor: StaffActor; technicianId: string; decision: 'approve' | 'decline' },
 ): Promise<
-  { ok: true } | { ok: false; reason: 'not_allowed' | 'not_pending' | 'unknown_technician' }
+  | { ok: true; feedId: string }
+  | { ok: false; reason: 'not_allowed' | 'not_pending' | 'unknown_technician' }
 > {
   if (!(await allowedAt(db, input.actor, 'approve_calendar_links'))) {
     return { ok: false, reason: 'not_allowed' };
@@ -906,7 +911,7 @@ export async function reviewFeed(
       action: input.decision === 'approve' ? 'feed_approved' : 'feed_declined',
       after: { technicianId: input.technicianId },
     });
-    return { ok: true as const };
+    return { ok: true as const, feedId: feed.id };
   });
 }
 
@@ -1057,9 +1062,22 @@ export async function syncFeed(
     return { ok: true, added: 0, changed: 0, cancelled: 0, events: feed.lastEventCount ?? 0 };
   }
 
-  // v0.17.1 (review #7): the poll checks the host list on every hop, the
-  // saved link and each redirect, as the screens' test does.
-  const fetched = await (input.fetchText ?? feedFetcher(feedHosts(), input.fetchOptions))(feed.url);
+  // v0.17.1 (review #7): a Fresha link (every link a technician saves, and
+  // the Connect Fresha card's) must stay on the host list on every hop, the
+  // saved link and each redirect, as the screens' test does. A link the owner
+  // pasted under "Other calendar link" (Part 7) is not on the list; it keeps
+  // the public-address check on every hop, as before.
+  const hosts = feedHosts();
+  const onList = checkFreshaUrl(feed.url, hosts).ok;
+  const fetcher =
+    input.fetchText ??
+    (onList
+      ? feedFetcher(hosts, input.fetchOptions)
+      : safeFetchText(
+          input.fetchOptions?.resolve ?? systemResolve,
+          input.fetchOptions?.get ? { get: input.fetchOptions.get } : {},
+        ));
+  const fetched = await fetcher(feed.url);
   if (!fetched.ok) return recordFailure(db, feed, fetched.error, actorUserId, now);
   const from = new Date(now.getTime() - FEED_PAST_HOURS * 3_600_000);
   const to = new Date(now.getTime() + FEED_AHEAD_DAYS * 86_400_000);

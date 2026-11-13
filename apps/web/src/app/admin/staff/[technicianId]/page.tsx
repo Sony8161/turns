@@ -98,7 +98,7 @@ export default async function TechnicianProfilePage({
     technicianLevel(db(), tech.id),
   ]);
   // v0.14.0: levels are set by an owner or a manager only.
-  const mayLevel = can(m.role, 'edit_technicians');
+  const mayLevel = can(m.role, 'manage_levels');
   const today = floor.find((r) => r.technicianId === tech.id);
 
   return (

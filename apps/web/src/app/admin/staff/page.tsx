@@ -14,7 +14,7 @@ import { getDictionary } from '@/i18n/lang';
 import { membershipWith, requireActor } from '@/lib/auth';
 import { maskContact } from '@/lib/contact';
 import { db } from '@/lib/db';
-import { can } from '@/lib/permissions';
+import { allowedAt, can } from '@/lib/permissions';
 import { signOut } from '../../login/actions';
 import { ReceptionistToggle } from './ReceptionistToggle';
 import { StaffPanel } from './StaffPanel';
@@ -150,7 +150,7 @@ export default async function StaffPage() {
         t={t.staff}
         roles={t.roles}
         statuses={t.board.status}
-        editProfile={can(m.role, 'edit_technicians') ? t.profile.edit : null}
+        editProfile={(await allowedAt(db(), m, 'edit_technicians')) ? t.profile.edit : null}
       />
     </main>
   );

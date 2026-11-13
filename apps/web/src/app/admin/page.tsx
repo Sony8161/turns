@@ -107,6 +107,11 @@ export default async function AdminPage() {
   });
   const nextAppointments = upcoming.filter((a) => !a.arrivedAt && !a.cancelledAt).slice(0, 4);
   const owner = !!membership && can(membership.role, 'manage_rules');
+  // v0.17.1 (review #6): technicians' own links waiting for the owner or a manager.
+  const toApprove =
+    membership && calendar && can(membership.role, 'approve_calendar_links')
+      ? calendar.pending
+      : [];
   // v0.17.0: may this person accept, deny and finish for a technician?
   const canActFor =
     !!membership &&
@@ -190,7 +195,8 @@ export default async function AdminPage() {
               </p>
             ) : null}
           </section>
-          {calendar && (calendar.feeds > 0 || nextAppointments.length > 0) ? (
+          {calendar &&
+          (calendar.feeds > 0 || nextAppointments.length > 0 || toApprove.length > 0) ? (
             <section
               aria-live="polite"
               className={`flex flex-col gap-1 border-l-[12px] bg-board p-4 ${
@@ -219,6 +225,11 @@ export default async function AdminPage() {
                     minutes: FEED_STALE_MIN,
                     names: calendar.stale.join(', '),
                   })}
+                </p>
+              ) : null}
+              {toApprove.length ? (
+                <p className="font-semibold">
+                  {fill(t.appointments.toApprove, { names: toApprove.join(', ') })}
                 </p>
               ) : null}
               {nextAppointments.length ? (

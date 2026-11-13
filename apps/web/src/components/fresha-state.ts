@@ -4,6 +4,8 @@ import { fill, type Dictionary } from '@/i18n/dictionary';
 export type FreshaRowState =
   | { kind: 'none' }
   | { kind: 'never' }
+  /** v0.17.1: a technician's own link, waiting for the owner or a manager. */
+  | { kind: 'pending' }
   | { kind: 'ok'; time: string }
   | { kind: 'stale'; time: string }
   | { kind: 'failing'; error: string };
@@ -18,6 +20,8 @@ export function stateLine(t: T, s: FreshaRowState): string {
       return t.stateNone;
     case 'never':
       return t.stateNever;
+    case 'pending':
+      return t.statePending;
     case 'ok':
       return fill(t.stateOk, { time: s.time });
     case 'stale':

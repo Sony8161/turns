@@ -81,11 +81,13 @@ function FreshaRow({
       setUrl('');
       setTested(null);
       setMessage({
-        text: !r.synced
-          ? t.savedLater
-          : r.upcoming > 0
-            ? fill(t.saved, { count: r.upcoming })
-            : t.savedNone,
+        text: r.pending
+          ? t.savedPending
+          : !r.synced
+            ? t.savedLater
+            : r.upcoming > 0
+              ? fill(t.saved, { count: r.upcoming })
+              : t.savedNone,
         error: false,
       });
       router.refresh();

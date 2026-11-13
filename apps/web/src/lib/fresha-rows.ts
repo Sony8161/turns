@@ -10,10 +10,12 @@ import type { FreshaRowItem, FreshaRowState } from '@/components/fresha-state';
 import type { Dictionary, Lang } from '@/i18n/dictionary';
 import { db } from './db';
 
-type Feedish = Pick<OwnFeedState, 'lastSyncedAt' | 'lastError' | 'stale'>;
+type Feedish = Pick<OwnFeedState, 'lastSyncedAt' | 'lastError' | 'stale' | 'pending'>;
 
 function stateOf(f: Feedish | null, t: Dictionary, format: (d: Date) => string): FreshaRowState {
   if (!f) return { kind: 'none' };
+  // v0.17.1: her own link waits for the owner or a manager; nothing is fetched.
+  if (f.pending) return { kind: 'pending' };
   if (f.lastError) {
     return {
       kind: 'failing',

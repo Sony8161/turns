@@ -9,7 +9,7 @@ import { rulesAction, type RulesState } from './actions';
 import { DENY_REASONS, FIX_WINDOW_CHOICES, placesMoved, TIER_SLOTS } from './form';
 
 type Category = { id: string; name: string; isFillOrFullSet: boolean };
-type Service = { id: string; name: string; category: string };
+type Service = { id: string; name: string; category: string; isFix?: boolean };
 
 /** The rule builder: one field per value, Preview and Save. Values are
  *  strings in and out; the server validates and names each problem. */
@@ -158,7 +158,20 @@ export function RulesForm({
         <div className="flex flex-col gap-3">
           <p className="max-w-[70ch] text-slate/80">{t.servicesLead}</p>
           <div className="flex flex-wrap gap-5">
-            {services.map((s) => number(`service.${s.id}`, s.name, s.category))}
+            {services.map((s) =>
+              s.isFix ? (
+                // v0.17.1 (review #11): a fix is always 0, whatever is stored.
+                <div key={`service.${s.id}`} className="flex flex-col gap-1">
+                  <span className="font-medium">{s.name}</span>
+                  <span className="text-small text-slate/70">{s.category}</span>
+                  <span className="flex min-h-12 w-40 items-center text-lead">
+                    {t.fixAlwaysZero}
+                  </span>
+                </div>
+              ) : (
+                number(`service.${s.id}`, s.name, s.category)
+              ),
+            )}
           </div>
           {err('points.by_service') ? (
             <span className="text-polish">{err('points.by_service')}</span>

@@ -20,7 +20,7 @@ export type LevelState = { error?: LevelError | 'server'; saved?: boolean; ref?:
  *  the role again (levels.ts), so no screen can skip it. */
 async function staffActor(): Promise<StaffActor | null> {
   const actor = await requireActor();
-  const m = membershipWith(actor, 'edit_technicians');
+  const m = membershipWith(actor, 'manage_levels');
   if (!m) return null;
   return {
     userId: actor.userId,
