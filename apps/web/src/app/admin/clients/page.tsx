@@ -117,8 +117,10 @@ export default async function ClientsPage({
             <ul className="flex flex-col gap-2">
               {hits.map((h) => (
                 <li key={h.id}>
+                  {/* v0.17.1: no prefetch, so only a real tap counts as a page view. */}
                   <Link
                     href={`/admin/clients/${h.id}`}
+                    prefetch={false}
                     className="flex min-h-14 flex-wrap items-center justify-between gap-3 bg-board px-4 py-3 hover:bg-pumice"
                   >
                     <span className="flex flex-col">

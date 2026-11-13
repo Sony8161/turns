@@ -11,6 +11,7 @@ import {
   feedStates,
   removeFeed,
   setFeed,
+  setTechCalendarLinks,
   syncFeed,
   type FetchText,
   type Resolve,
@@ -253,6 +254,13 @@ describe('test a link without saving it', () => {
 });
 
 describe('a technician connects their own calendar (T13, T14)', () => {
+  // v0.17.1: Heavenly's default makes her link wait for approval (v0171.test.ts);
+  // these tests pin the v0.11.0 path, which is the "Use it right away" choice.
+  beforeAll(async () => {
+    const r = await setTechCalendarLinks(db, { actor: owner, value: 'open' });
+    if (!r.ok) throw new Error(r.reason);
+  });
+
   it('saves for their own row, Fresha links only', async () => {
     expect(
       await setFeed(db, {

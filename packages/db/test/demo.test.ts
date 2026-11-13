@@ -350,8 +350,10 @@ describe('demo day', () => {
     });
     expect(fetched).toBe(0);
     const rows =
-      await sql`select last_error, last_synced_at from calendar_feeds where location_id = ${LOC}`;
-    expect(rows.length).toBe(3);
+      await sql`select last_error, last_synced_at, needs_approval from calendar_feeds where location_id = ${LOC}`;
+    // v0.17.1: three connected, and Vân's own link waiting for approval.
+    expect(rows.length).toBe(4);
+    expect(rows.filter((r) => r.needs_approval).length).toBe(1);
     for (const r of rows) expect(r.last_error).toBeNull();
   });
 });

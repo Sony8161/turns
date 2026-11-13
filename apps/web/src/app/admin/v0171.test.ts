@@ -28,8 +28,8 @@ describe('a call just made says "just now", not "no answer for 0:00"', () => {
 
 describe('Pick a tech: a tech held for her appointment says so', () => {
   it('"Held: 2:30 PM appt", not "available"', () => {
-    expect(fill(dictionaries.en.desk.heldLine, { time: '2:30 PM' })).toBe('Held: 2:30 PM appt');
-    expect(fill(dictionaries.vi.desk.heldLine, { time: '14:30' })).toContain('14:30');
+    expect(fill(dictionaries.en.desk.heldForAppt, { time: '2:30 PM' })).toBe('Held: 2:30 PM appt');
+    expect(fill(dictionaries.vi.desk.heldForAppt, { time: '14:30' })).toContain('14:30');
   });
 });
 

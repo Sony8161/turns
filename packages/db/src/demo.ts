@@ -736,7 +736,7 @@ export async function buildDemoDay(db: Db, ctx: DemoContext): Promise<void> {
 async function demoFeeds(
   db: Db,
   ctx: DemoContext,
-  tech: Record<DemoTechName, { id: string }>,
+  tech: Record<DemoTechName, { id: string; userId: string }>,
   now: Date,
 ): Promise<Map<DemoTechName, string>> {
   const out = new Map<DemoTechName, string>();
@@ -757,6 +757,17 @@ async function demoFeeds(
       .returning({ id: calendarFeeds.id });
     out.set(n, row!.id);
   }
+  // v0.17.1 (review #6): Vân added her own Fresha calendar; it waits for the
+  // owner or a manager on Appointments and holds nothing until then.
+  await db.insert(calendarFeeds).values({
+    organizationId: ctx.organizationId,
+    locationId: ctx.locationId,
+    technicianId: tech['Vân'].id,
+    url: demoFeedUrl('Vân'),
+    urlHint: 'demo calendar',
+    needsApproval: true,
+    createdBy: tech['Vân'].userId,
+  });
   return out;
 }
 
@@ -1262,6 +1273,8 @@ const STATUS: Record<string, string> = {
   break: 'on break',
   out: 'out',
   checked_in: 'checked in, not ready',
+  // v0.17.1: Pick a tech says "Held: 2:30 PM appt".
+  held: 'held for her appointment',
 };
 
 const WHY: Record<string, (detail?: string) => string> = {

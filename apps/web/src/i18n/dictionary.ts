@@ -271,7 +271,7 @@ const en = {
       'This service is never called by turn. Pick who does it; they may say no without a penalty.',
     pickButton: 'Pick {name}',
     optionLine: '{level}, turn {turn}, {status}',
-    heldLine: 'Held: {time} appt',
+    heldForAppt: 'Held: {time} appt',
     noneCanDo: 'Nobody on shift does this service.',
     splitRest: 'Rest of a split visit',
     // v0.15.0: the slip, the hold behind the first part, the busy requested tech.
@@ -1795,7 +1795,7 @@ const vi: Dictionary = {
     pickLead: 'Dịch vụ này không gọi theo lượt. Hãy chọn thợ; thợ có thể từ chối mà không bị phạt.',
     pickButton: 'Chọn {name}',
     optionLine: '{level}, lượt {turn}, {status}',
-    heldLine: 'Giữ chỗ: hẹn {time}',
+    heldForAppt: 'Giữ chỗ: hẹn {time}',
     noneCanDo: 'Không có thợ nào đang làm việc nhận dịch vụ này.',
     splitRest: 'Phần còn lại của lượt khách đã chia',
     slipLine: 'Phiếu: {parts}',

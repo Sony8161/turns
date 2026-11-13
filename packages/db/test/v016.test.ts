@@ -681,11 +681,22 @@ describe('D. groups', () => {
     });
     expect(rest.ok && rest.visitIds.length).toBe(2);
     const after = await sql<
-      { needs_confirm: boolean; client_id: string | null; kiosk_phone: string | null }[]
+      {
+        kiosk_name: string;
+        needs_confirm: boolean;
+        client_id: string | null;
+        kiosk_phone: string | null;
+      }[]
     >`
-      select needs_confirm, client_id, kiosk_phone from visits where party_id = ${r.partyId}`;
-    expect(after.every((x) => !x.needs_confirm && x.client_id && !x.kiosk_phone)).toBe(true);
-    expect(new Set(after.map((x) => x.client_id)).size).toBe(3);
+      select kiosk_name, needs_confirm, client_id, kiosk_phone from visits where party_id = ${r.partyId} order by kiosk_name`;
+    expect(after.every((x) => !x.needs_confirm && !x.kiosk_phone)).toBe(true);
+    // v0.17.1 (review #5): only the person with the group's phone becomes a
+    // client; the others typed no phone, so no client row (as one check-in).
+    expect(after.map((x) => [x.kiosk_name, x.client_id !== null])).toEqual([
+      ['Quinn', true],
+      ['Rae', false],
+      ['Sky', false],
+    ]);
     const withPhone =
       await sql`select count(*)::int as n from clients where phone = '+18135559100'`;
     expect(withPhone[0]!['n']).toBe(1);

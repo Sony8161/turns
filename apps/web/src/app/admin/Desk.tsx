@@ -188,7 +188,7 @@ export function Desk({
       turn: o.turn,
       status:
         o.status === 'held' && o.heldAt
-          ? fill(t.heldLine, { time: o.heldAt })
+          ? fill(t.heldForAppt, { time: o.heldAt })
           : (statusNames[o.status] ?? o.status),
     });
   const field = 'min-h-12 rounded-control border-2 border-slate/30 bg-board px-3 text-lead';

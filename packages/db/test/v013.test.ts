@@ -254,8 +254,11 @@ describe('client names and search', () => {
     expect(
       (await searchClients(db, { locationId: LOC, query: 'ngoc' })).map((h) => h.lastName),
     ).toEqual(['Võ']);
+    // v0.17.1 (review #4): 3 letters at least, so a two-letter surname is
+    // searched with the first name.
+    expect(await searchClients(db, { locationId: LOC, query: 'vo' })).toEqual([]);
     expect(
-      (await searchClients(db, { locationId: LOC, query: 'vo' })).map((h) => h.firstName),
+      (await searchClients(db, { locationId: LOC, query: 'ngoc vo' })).map((h) => h.firstName),
     ).toEqual(['Ngọc']);
     expect(
       (await searchClients(db, { locationId: LOC, query: 'NGUYEN' })).map((h) => h.firstName),
