@@ -15,6 +15,7 @@ import { and, asc, eq, inArray, isNull, sql } from 'drizzle-orm';
 import { actedForToday, deskAnswerCall } from './act-for';
 import { addAppointment, appointmentArrived, markNoShow } from './appointments';
 import { techBoard } from './board';
+import { checkOutVisit, toCheckOut } from './checkout';
 import { upsertClient } from './clients';
 import { DAY_END_ACTIONS } from './day-end';
 import {
@@ -664,6 +665,8 @@ export async function buildDemoDay(db: Db, ctx: DemoContext): Promise<void> {
       arrivedAt: fixDay,
       startedAt: fixDay,
       completedAt: plus(fixDay, 45),
+      // v0.18.0: that day's desk checked her out.
+      checkedOutAt: plus(fixDay, 50),
       pointsPosted: '1.0',
     })
     .returning({ id: visits.id });
@@ -729,6 +732,21 @@ export async function buildDemoDay(db: Db, ctx: DemoContext): Promise<void> {
     }),
     'Mai asks for help',
   );
+
+  // v0.18.0 (F1): the desk checked out everyone finished today except the
+  // last two, who wait on "To check out".
+  const front = {
+    userId: ctx.receptionistUserId,
+    role: 'receptionist' as const,
+    organizationId: ctx.organizationId,
+    locationId: ctx.locationId,
+  };
+  const finished = await toCheckOut(db, front);
+  if (finished.ok) {
+    for (const row of finished.rows.slice(0, -2)) {
+      must(await checkOutVisit(db, { actor: front, visitId: row.visitId }), 'checked out');
+    }
+  }
 }
 
 /** One calendar row per demo technician who has calendar appointments:
@@ -890,6 +908,8 @@ export type DemoReport = {
   walkOuts: number;
   /** v0.17.0: what the morning sweep closed for yesterday. */
   closedYesterday: Record<string, number>;
+  /** v0.18.0: finished today, waiting on "To check out". */
+  toCheckOut: string[];
 };
 
 class Rollback extends Error {}
@@ -1219,6 +1239,7 @@ export async function demoReport(db: Db, locationId: string): Promise<DemoReport
     freeDenyBadges,
     walkOuts: Number(walked?.n ?? 0),
     closedYesterday,
+    toCheckOut: await waitingCheckout(db, locationId),
     servicePoints: menu
       .filter((m) => rules.points.by_service?.[m.id] !== undefined)
       .map((m) => ({ name: m.name, points: rules.points.by_service![m.id]! })),
@@ -1547,7 +1568,15 @@ export function renderDemoExpected(r: DemoReport): string {
     '## Walk-outs, no-shows and yesterday',
     '',
     `- Today ${r.walkOuts} waiting ${r.walkOuts === 1 ? 'client' : 'clients'} left without service (Reports counts them; no points for anyone).`,
-    `- Yesterday's leftovers, closed by the first board load this morning: ${r.closedYesterday['visit_closed_day_end'] ?? 0} waiting (no points), ${r.closedYesterday['visit_auto_finished'] ?? 0} still in the chair (finished, its point on yesterday's shift), ${r.closedYesterday['call_closed_day_end'] ?? 0} open calls, ${r.closedYesterday['help_closed_day_end'] ?? 0} help request, ${r.closedYesterday['auto_check_out'] ?? 0} check-out. The owner's board and Reports for yesterday list them.`,
+    `- Yesterday's leftovers, closed by the first board load this morning: ${r.closedYesterday['visit_closed_day_end'] ?? 0} waiting (no points), ${r.closedYesterday['visit_auto_finished'] ?? 0} still in the chair (finished, its point on yesterday's shift), ${r.closedYesterday['call_closed_day_end'] ?? 0} open calls, ${r.closedYesterday['help_closed_day_end'] ?? 0} help request, ${r.closedYesterday['auto_check_out'] ?? 0} check-out. Reports lists them (the Today block for the owner, and yesterday's report).`,
+  );
+  out.push(
+    '',
+    '## To check out',
+    '',
+    r.toCheckOut.length
+      ? `Finished today and waiting for the desk to tap **Checked out** (oldest first): ${r.toCheckOut.join('; ')}. Everyone else finished today is already checked out.`
+      : 'Nobody is waiting to check out.',
   );
   out.push(
     '',
@@ -1574,4 +1603,23 @@ export function renderDemoExpected(r: DemoReport): string {
   }
   out.push('');
   return out.join('\n');
+}
+
+/** v0.18.0: the "To check out" rows as the desk reads them (no ids). */
+async function waitingCheckout(db: Db, locationId: string): Promise<string[]> {
+  const [loc] = await db
+    .select({ organizationId: locations.organizationId })
+    .from(locations)
+    .where(eq(locations.id, locationId));
+  if (!loc) return [];
+  const r = await toCheckOut(db, {
+    userId: '00000000-0000-0000-0000-000000000000',
+    role: 'receptionist',
+    organizationId: loc.organizationId,
+    locationId,
+  });
+  if (!r.ok) return [];
+  return r.rows.map((row) =>
+    row.parts.map((p) => `${p.services.join(' + ')} by ${p.technician ?? 'nobody'}`).join(', '),
+  );
 }

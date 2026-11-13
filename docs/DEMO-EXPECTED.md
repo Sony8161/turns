@@ -116,7 +116,11 @@ Only techs who are in today and do every chosen service, names only, with **Anyo
 ## Walk-outs, no-shows and yesterday
 
 - Today 2 waiting clients left without service (Reports counts them; no points for anyone).
-- Yesterday's leftovers, closed by the first board load this morning: 1 waiting (no points), 1 still in the chair (finished, its point on yesterday's shift), 0 open calls, 1 help request, 1 check-out. The owner's board and Reports for yesterday list them.
+- Yesterday's leftovers, closed by the first board load this morning: 1 waiting (no points), 1 still in the chair (finished, its point on yesterday's shift), 0 open calls, 1 help request, 1 check-out. Reports lists them (the Today block for the owner, and yesterday's report).
+
+## To check out
+
+Finished today and waiting for the desk to tap **Checked out** (oldest first): Dip powder by Mai; Gel fill by Linh. Everyone else finished today is already checked out.
 
 ## Appointments today
 

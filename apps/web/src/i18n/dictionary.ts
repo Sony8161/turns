@@ -494,7 +494,8 @@ const en = {
   appointments: {
     // v0.17.0
     more: 'More',
-    noShow: 'No-show',
+    // v0.18.0 (C2): one wording for every client who is not here.
+    noShow: "Client isn't here",
     noShowLead: 'The client did not come. No points for anyone; the technician is free again.',
     noShowState: 'no-show',
     title: 'Appointments',
@@ -696,7 +697,7 @@ const en = {
       client_left_direct: 'It closes right away',
       free_deny_flag: "Badge after this many free no's in a day (0 = never)",
       free_deny_daily_limit: "Free no's a day before the next one costs points (blank = no limit)",
-      no_show_after_min: 'Minutes after the start time before "No-show" shows',
+      no_show_after_min: 'Minutes after the start time before "Client isn\'t here" shows',
       day_end_in_service: 'A client still in the chair when the day ends',
       day_end_finish: 'Finish the visit; the points count',
       day_end_close: 'Close it with no points',
@@ -1445,7 +1446,8 @@ const en = {
     searchLabel: 'Phone or name',
     searchPlaceholder: '813 555 0201 or Lan',
     search: 'Search',
-    tooShort: 'Type at least 4 digits of a phone number, or 3 letters of a name.',
+    tooShort:
+      'Type at least 4 digits of a phone number, or 3 letters of a name. A two-letter name like Võ or Lê works when it is the whole first or last name.',
     tooMany:
       'Too many client searches and pages in a short time. Wait a few minutes and try again.',
     none: 'No client found.',
@@ -2218,7 +2220,7 @@ const vi: Dictionary = {
   },
   appointments: {
     more: 'Thêm',
-    noShow: 'Khách không đến',
+    noShow: 'Khách không có ở đây',
     noShowLead: 'Khách không đến. Không ai bị tính điểm; thợ được rảnh lại.',
     noShowState: 'khách không đến',
     title: 'Lịch hẹn',
@@ -2419,7 +2421,7 @@ const vi: Dictionary = {
       free_deny_flag: 'Hiện huy hiệu sau số lần từ chối miễn điểm trong ngày (0 = không bao giờ)',
       free_deny_daily_limit:
         'Số lần từ chối miễn điểm mỗi ngày trước khi lần sau bị tính điểm (để trống = không giới hạn)',
-      no_show_after_min: 'Số phút sau giờ hẹn thì hiện "Khách không đến"',
+      no_show_after_min: 'Số phút sau giờ hẹn thì hiện "Khách không có ở đây"',
       day_end_in_service: 'Khách còn trên ghế khi hết ngày',
       day_end_finish: 'Bấm xong; giữ điểm',
       day_end_close: 'Đóng, không tính điểm',
@@ -3154,7 +3156,8 @@ const vi: Dictionary = {
     searchLabel: 'Số điện thoại hoặc tên',
     searchPlaceholder: '813 555 0201 hoặc Lan',
     search: 'Tìm',
-    tooShort: 'Gõ ít nhất 4 số của số điện thoại, hoặc 3 chữ của tên.',
+    tooShort:
+      'Gõ ít nhất 4 số của số điện thoại, hoặc 3 chữ của tên. Tên hai chữ như Võ hay Lê được khi gõ đủ cả họ hoặc tên.',
     tooMany: 'Tìm và mở trang khách quá nhiều trong thời gian ngắn. Đợi vài phút rồi thử lại.',
     none: 'Không tìm thấy khách.',
     found: 'Tìm thấy {n}.',

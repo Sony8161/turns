@@ -273,6 +273,8 @@ describe('demo day', () => {
       call_closed_day_end: 0,
       help_closed_day_end: 1,
       auto_check_out: 1,
+      // v0.18.0: nothing finished yesterday was left on "To check out".
+      checkout_closed_day_end: 0,
     });
     // Tâm's pedicure point stays on yesterday's shift; today she starts with her late ½.
     const [y] = await sql`select coalesce(sum(l.delta), 0)::float as n from turn_ledger l
