@@ -211,6 +211,13 @@
       "when": 1794564054752,
       "tag": "0029_v0171_review_fixes",
       "breakpoints": true
+    },
+    {
+      "idx": 30,
+      "version": "7",
+      "when": 1794569287359,
+      "tag": "0030_v018_checkout_phone",
+      "breakpoints": true
     }
   ]
 }

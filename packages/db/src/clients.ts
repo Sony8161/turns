@@ -3,9 +3,17 @@
 // Fresha's client list lands on the same rows (Duong, 2026-11-04). Server only.
 import { and, desc, eq, inArray, isNull, sql } from 'drizzle-orm';
 import type { Role } from './invites';
-import { can } from './permissions';
+import { allowedAt, can, switchesAt } from './permissions';
 import { consumeRateLimit } from './rate-limit';
-import { appointments, clients, services, technicians, visitServices, visits } from './schema';
+import {
+  appointments,
+  clients,
+  locations,
+  services,
+  technicians,
+  visitServices,
+  visits,
+} from './schema';
 import type { Db } from './server';
 import { writeAudit } from './status';
 
@@ -201,8 +209,15 @@ const likeSafe = (s: string) => s.replace(/[\\%_]/g, (c) => `\\${c}`);
 export const CLIENT_QUERY_MIN_DIGITS = 4;
 export const CLIENT_QUERY_MIN_LETTERS = 3;
 
-/** What a search box string asks for: digits (4 or more, a phone) or a name (3+ letters). */
-export function parseClientQuery(raw: string): { phone: string } | { name: string } | null {
+/** v0.18.0: two letters are enough when they are a whole first or last name
+ *  ("Võ", "Lê", "Vũ", "Hà", "Lý"), matched exactly, never as the start of one. */
+export const CLIENT_QUERY_EXACT_LETTERS = 2;
+
+/** What a search box string asks for: digits (4 or more, a phone), a name
+ *  (3+ letters, the start of a word) or, v0.18.0, a two-letter whole name. */
+export function parseClientQuery(
+  raw: string,
+): { phone: string } | { name: string; exact?: true } | null {
   const q = raw.trim().slice(0, 60);
   const digits = q.replace(/\D/g, '');
   if (/^[\d\s().+-]+$/.test(q) && /\d/.test(q)) {
@@ -211,7 +226,22 @@ export function parseClientQuery(raw: string): { phone: string } | { name: strin
   }
   const name = searchKey(q);
   const letters = name.replace(/[^\p{L}]/gu, '').length;
-  return letters >= CLIENT_QUERY_MIN_LETTERS ? { name } : null;
+  if (letters >= CLIENT_QUERY_MIN_LETTERS) return { name };
+  // One word of exactly two letters: a whole-name match only.
+  if (letters === CLIENT_QUERY_EXACT_LETTERS && /^\p{L}{2}$/u.test(name)) {
+    return { name, exact: true };
+  }
+  return null;
+}
+
+/** The name part of a client search, on clients.search_name ("first last",
+ *  accents removed): the start of any word, or for a two-letter name the
+ *  whole word only. */
+export function clientNameMatch(parsed: { name: string; exact?: true }) {
+  const n = likeSafe(parsed.name);
+  return parsed.exact
+    ? sql`(${clients.searchName} = ${parsed.name} or ${clients.searchName} like ${`${n} %`} or ${clients.searchName} like ${`% ${n}`} or ${clients.searchName} like ${`% ${n} %`})`
+    : sql`(${clients.searchName} like ${`${n}%`} or ${clients.searchName} like ${`% ${n}%`})`;
 }
 
 export async function searchClients(
@@ -223,7 +253,7 @@ export async function searchClients(
   const match =
     'phone' in parsed
       ? sql`${clients.phone} like ${`%${likeSafe(parsed.phone)}%`}`
-      : sql`(${clients.searchName} like ${`${likeSafe(parsed.name)}%`} or ${clients.searchName} like ${`% ${likeSafe(parsed.name)}%`})`;
+      : clientNameMatch(parsed);
   const lastVisit = sql<Date | null>`(select max(v.arrived_at) from ${visits} v where v.client_id = ${clients.id} and v.status <> 'cancelled')`;
   const rows = await db
     .select({
@@ -372,7 +402,9 @@ export function maskPhone(phone: string): string {
   return `(•••) •••-${phone.slice(-4)}`;
 }
 
-/** Search for the desk. Too short costs nothing; every search counts. The
+/** Search for the desk. Too short costs nothing; every search counts.
+ *  v0.18.0 (Duong, 2026-11-13): the list shows the whole phone to the desk
+ *  while the owner's switch is on (default); with it off, as v0.17.1, the
  *  list never shows a whole phone, whoever is looking. */
 export async function findClients(
   db: Db,
@@ -389,14 +421,18 @@ export async function findClients(
     locationId: input.viewer.locationId,
     query: input.query,
   });
+  const full =
+    (await switchesAt(db, input.viewer.locationId)).receptionistSeesClientPhone &&
+    can(input.viewer.role, 'see_client_phone');
   return {
     ok: true,
-    hits: hits.map((h) => ({ ...h, phone: h.phone ? maskPhone(h.phone) : null })),
+    hits: hits.map((h) => ({ ...h, phone: h.phone && !full ? maskPhone(h.phone) : h.phone })),
   };
 }
 
 /** A client's page: counted like a search. Owners and managers see the full
- *  phone; everyone else the last four digits, with "Show". */
+ *  phone, and v0.18.0 receptionists too while the owner's switch is on
+ *  (default); with it off a receptionist sees the last four digits, with "Show". */
 export async function viewClient(
   db: Db,
   input: { viewer: ClientViewer; clientId: string },
@@ -410,7 +446,7 @@ export async function viewClient(
   }
   const c = await clientDetail(db, input.viewer.locationId, input.clientId);
   if (!c) return { ok: false, reason: 'unknown_client' };
-  const full = can(input.viewer.role, 'see_client_phone');
+  const full = await allowedAt(db, input.viewer, 'see_client_phone');
   return {
     ok: true,
     client: {
@@ -457,6 +493,49 @@ export async function revealClientPhone(
       action: 'client_phone_shown',
     });
     return { ok: true as const, phone: c.phone };
+  });
+}
+
+/** Is the whole phone shown to receptionists here? (Default yes, v0.18.0.) */
+export async function receptionistSeesPhoneAt(db: Db | Tx, locationId: string): Promise<boolean> {
+  return (await switchesAt(db, locationId)).receptionistSeesClientPhone;
+}
+
+/** v0.18.0: the owner switches whether receptionists see whole client phone
+ *  numbers (audited; never a number in the row). */
+export async function setReceptionistSeesPhone(
+  db: Db,
+  input: { actor: ClientViewer; on: boolean },
+): Promise<{ ok: true } | { ok: false; reason: 'not_allowed' }> {
+  if (input.actor.role !== 'owner') return { ok: false, reason: 'not_allowed' };
+  return db.transaction(async (tx) => {
+    const [before] = await tx
+      .select({ on: locations.receptionistSeesClientPhone })
+      .from(locations)
+      .where(
+        and(
+          eq(locations.id, input.actor.locationId),
+          eq(locations.organizationId, input.actor.organizationId),
+        ),
+      )
+      .for('update');
+    if (!before) return { ok: false as const, reason: 'not_allowed' as const };
+    if (before.on === input.on) return { ok: true as const };
+    await tx
+      .update(locations)
+      .set({ receptionistSeesClientPhone: input.on, updatedAt: new Date() })
+      .where(eq(locations.id, input.actor.locationId));
+    await writeAudit(tx, {
+      organizationId: input.actor.organizationId,
+      locationId: input.actor.locationId,
+      actorUserId: input.actor.userId,
+      entityType: 'locations',
+      entityId: input.actor.locationId,
+      action: 'client_phone_setting',
+      before: { receptionistSeesClientPhone: before.on },
+      after: { receptionistSeesClientPhone: input.on },
+    });
+    return { ok: true as const };
   });
 }
 

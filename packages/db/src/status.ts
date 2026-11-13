@@ -523,7 +523,7 @@ export async function sweepFloor(
       .select({ organizationId: locations.organizationId, timezone: locations.timezone })
       .from(locations)
       .where(eq(locations.id, locationId));
-    const none = { visits: 0, autoFinished: 0, calls: 0, help: 0 };
+    const none = { visits: 0, autoFinished: 0, calls: 0, help: 0, checkouts: 0 };
     if (!loc) return { outOverPosted: [], autoCheckedOut: [], closed: none };
     const rules = await activeRules(tx, locationId);
     const today = localDate(now, loc.timezone);

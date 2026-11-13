@@ -12,6 +12,7 @@ import {
   maskPhone,
   parseClientQuery,
   revealClientPhone,
+  setReceptionistSeesPhone,
   viewClient,
 } from '../src/clients';
 import {
@@ -196,13 +197,15 @@ describe('#4 the client list cannot be harvested', () => {
   });
 
   it('a search needs 3 letters of a name or 4 digits of a phone', async () => {
-    expect(parseClientQuery('an')).toBeNull();
+    // v0.18.0: two letters only as a whole first or last name (Võ, Lê): never a prefix.
+    expect(parseClientQuery('an')).toEqual({ name: 'an', exact: true });
+    expect(parseClientQuery('a')).toBeNull();
     expect(parseClientQuery('ann')).toEqual({ name: 'ann' });
     expect(parseClientQuery('8 1 3')).toBeNull();
     expect(parseClientQuery('019')).toBeNull();
     expect(parseClientQuery('0199')).toEqual({ phone: '0199' });
     const viewer = await staff('Short', 'receptionist');
-    expect(await findClients(db, { viewer, query: 'la' })).toEqual({
+    expect(await findClients(db, { viewer, query: 'l' })).toEqual({
       ok: false,
       reason: 'too_short',
     });
@@ -212,13 +215,17 @@ describe('#4 the client list cannot be harvested', () => {
     expect(rl!['n']).toBe(0);
   });
 
-  it('still at most 25 results, and the list never shows a whole phone', async () => {
+  it('still at most 25 results, and with the owner switch off the list never shows a whole phone', async () => {
+    // v0.18.0: the switch is on by default (the desk sees whole numbers);
+    // off, the v0.17.1 masked list comes back.
+    await setReceptionistSeesPhone(db, { actor: owner, on: false });
     const viewer = await staff('Lister', 'manager');
     const r = await findClients(db, { viewer, query: 'annie' });
     expect(r.ok && r.hits.length).toBe(CLIENT_SEARCH_LIMIT);
     const lan = await findClients(db, { viewer, query: 'lan' });
     expect(lan.ok && lan.hits[0]?.phone).toBe('(•••) •••-0199');
     expect(maskPhone('+18135550199')).toBe('(•••) •••-0199');
+    await setReceptionistSeesPhone(db, { actor: owner, on: true });
   });
 
   it('client pages and the fix lookup count against the same limit as search', async () => {
@@ -254,7 +261,8 @@ describe('#4 the client list cannot be harvested', () => {
     expect((await viewClient(db, { viewer: other, clientId: phoned })).ok).toBe(true);
   });
 
-  it('only owners and managers see the full phone; a receptionist taps Show, counted and audited', async () => {
+  it('with the owner switch off, only owners and managers see the full phone; a receptionist taps Show, counted and audited', async () => {
+    await setReceptionistSeesPhone(db, { actor: owner, on: false });
     const desk = await staff('Desk', 'receptionist');
     const mine = await viewClient(db, { viewer: desk, clientId: phoned });
     expect(mine).toMatchObject({
@@ -294,6 +302,7 @@ describe('#4 the client list cannot be harvested', () => {
       ok: false,
       reason: 'not_allowed',
     });
+    await setReceptionistSeesPhone(db, { actor: owner, on: true });
   });
 });
 
@@ -909,7 +918,8 @@ describe('the permissions table matches the owner switches, on the server', () =
       expect(await allowedAt(db, manager, cap)).toBe(true);
     }
     expect(can('receptionist', 'manage_levels')).toBe(false);
-    expect(can('receptionist', 'see_client_phone')).toBe(false);
+    // v0.18.0: a switched right now (on by default, Duong 2026-11-13).
+    expect(await allowedAt(db, desk, 'see_client_phone')).toBe(true);
     await setReceptionistEdits(db, { actor: owner, on: false });
     expect(await allowedAt(db, desk, 'edit_technicians')).toBe(false);
     expect(await allowedAt(db, desk, 'adjust_points')).toBe(false);

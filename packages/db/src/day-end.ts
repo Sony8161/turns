@@ -9,7 +9,9 @@
 //    shift, marked auto-finished (rules: closing.day_end_in_service; 'close'
 //    closes it with no points instead);
 //  - open calls close as expired, with no penalty;
-//  - open help requests close.
+//  - open help requests close;
+//  - v0.18.0 (F1): finished visits still on the "To check out" list are
+//    cleared (checked_out_at set, checked_out_by null), when the list is on.
 // Shifts are then checked out by the sweep. Every change is audited with the
 // day it belonged to (after.forDay), which the end-of-day summary counts.
 // Idempotent: a second run finds nothing. Server only.
@@ -17,6 +19,7 @@ import { and, eq, inArray, isNull, or, sql } from 'drizzle-orm';
 import { visitPointsUnder, type RuleConfig } from './rules';
 import {
   helpRequests,
+  locations,
   serviceCategories,
   services,
   shifts,
@@ -35,6 +38,8 @@ export type DayEndClosed = {
   autoFinished: number;
   calls: number;
   help: number;
+  /** v0.18.0: finished visits nobody checked out. */
+  checkouts: number;
 };
 
 /** The audit actions the close-out writes; the summary counts them by day. */
@@ -44,6 +49,7 @@ export const DAY_END_ACTIONS = [
   'call_closed_day_end',
   'help_closed_day_end',
   'auto_check_out',
+  'checkout_closed_day_end',
 ] as const;
 
 const localDay = (col: unknown, tz: string) =>
@@ -59,7 +65,7 @@ export async function closeOutDay(
   now: Date,
 ): Promise<DayEndClosed> {
   const tz = loc.timezone;
-  const out: DayEndClosed = { visits: 0, autoFinished: 0, calls: 0, help: 0 };
+  const out: DayEndClosed = { visits: 0, autoFinished: 0, calls: 0, help: 0, checkouts: 0 };
 
   // Visits first, then their calls: the lock order of the engine.
   const old = await tx
@@ -178,6 +184,9 @@ export async function closeOutDay(
           completedAt: now,
           pointsPosted: points.toFixed(1),
           autoFinished: true,
+          // v0.18.0: closed by the day end, so it never lands on the next
+          // day's "To check out" list.
+          checkedOutAt: now,
           updatedAt: now,
         })
         .where(eq(visits.id, v.id));
@@ -282,6 +291,43 @@ export async function closeOutDay(
       reason: 'day ended',
     });
     out.help++;
+  }
+
+  // v0.18.0 (F1): an earlier day's finished visits still waiting on the
+  // desk's "To check out" list. Only while the list is on: with it off
+  // nothing waits there.
+  const [list] = await tx
+    .select({ on: locations.checkoutList })
+    .from(locations)
+    .where(eq(locations.id, loc.id));
+  if (list?.on) {
+    const unchecked = await tx
+      .select({ id: visits.id, forDay: localDay(visits.completedAt, tz) })
+      .from(visits)
+      .where(
+        and(
+          eq(visits.locationId, loc.id),
+          eq(visits.status, 'completed'),
+          isNull(visits.checkedOutAt),
+          beforeDay(visits.completedAt, tz, today),
+        ),
+      )
+      .orderBy(visits.id)
+      .for('update');
+    for (const v of unchecked) {
+      await tx.update(visits).set({ checkedOutAt: now, updatedAt: now }).where(eq(visits.id, v.id));
+      await writeAudit(tx, {
+        organizationId: loc.organizationId,
+        locationId: loc.id,
+        actorUserId: null,
+        entityType: 'visits',
+        entityId: v.id,
+        action: 'checkout_closed_day_end',
+        after: { forDay: v.forDay },
+        reason: 'day ended',
+      });
+      out.checkouts++;
+    }
   }
   return out;
 }

@@ -473,7 +473,8 @@ describe('2. day-end close-out', () => {
     const mark = stamp!.mark;
 
     const swept = await sweepFloor(db, LOC);
-    expect(swept.closed).toEqual({ visits: 6, autoFinished: 2, calls: 1, help: 1 });
+    // v0.18.0: checkouts (nothing finished was waiting on "To check out").
+    expect(swept.closed).toEqual({ visits: 6, autoFinished: 2, calls: 1, help: 1, checkouts: 0 });
     expect(swept.autoCheckedOut.sort()).toEqual([a.id, b.id, c.id, d.id].sort());
 
     // A clean board.
@@ -530,6 +531,7 @@ describe('2. day-end close-out', () => {
       calls: 1,
       help: 1,
       shifts: 4,
+      checkouts: 0,
     });
 
     // A second sweep finds nothing.
@@ -538,6 +540,7 @@ describe('2. day-end close-out', () => {
       autoFinished: 0,
       calls: 0,
       help: 0,
+      checkouts: 0,
     });
 
     // Every technician can check in today, and the line works.

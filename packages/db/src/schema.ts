@@ -87,6 +87,12 @@ export const locations = pgTable(
     // until the owner or a manager approves it on Appointments.
     // 'name_must_match': the calendar's name must be hers. 'open': as v0.11.0.
     techCalendarLinks: text('tech_calendar_links').notNull().default('owner_approves'),
+    // v0.18.0 (F1): the desk's "To check out" list after a visit is finished.
+    // On by default (Heavenly); the owner turns it off under Advanced.
+    checkoutList: boolean('checkout_list').notNull().default(true),
+    // v0.18.0 (Duong, 2026-11-13): receptionists see a client's whole phone
+    // number. On by default; off brings back v0.17.1's last four with "Show".
+    receptionistSeesClientPhone: boolean('receptionist_sees_client_phone').notNull().default(true),
     createdAt: createdAt(),
     updatedAt: updatedAt(),
   },
@@ -663,6 +669,11 @@ export const visits = pgTable(
     finishedBy: uuid('finished_by').references(() => profiles.id, { onDelete: 'restrict' }),
     confirmedBy: uuid('confirmed_by').references(() => profiles.id, { onDelete: 'restrict' }),
     confirmedAt: timestamp('confirmed_at', { withTimezone: true }),
+    // v0.18.0 (F1): the desk tapped "Checked out" after the visit was
+    // finished (no payment, no prices). checked_out_by null with a time set =
+    // cleared by the day-end close-out.
+    checkedOutAt: timestamp('checked_out_at', { withTimezone: true }),
+    checkedOutBy: uuid('checked_out_by').references(() => profiles.id, { onDelete: 'restrict' }),
     createdAt: createdAt(),
     updatedAt: updatedAt(),
   },
@@ -679,6 +690,10 @@ export const visits = pgTable(
     index('visits_assigned_open')
       .on(t.assignedTechnicianId)
       .where(sql`${t.status} in ('called', 'in_service')`),
+    // v0.18.0 (F1): the desk's "To check out" list, newest finish first.
+    index('visits_to_check_out')
+      .on(t.locationId, t.completedAt)
+      .where(sql`${t.status} = 'completed' and ${t.checkedOutAt} is null`),
   ],
 ).enableRLS();
 

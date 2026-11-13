@@ -3,7 +3,7 @@
 // appointment, the client in their chair, and every ledger row behind their
 // points ("Why this order?"). Read-only; the engine's own order (compareQueue).
 import { and, asc, eq, gt, inArray, isNull } from 'drizzle-orm';
-import { compareQueue } from './engine';
+import { compareQueue, queueFor, type SkipReason } from './engine';
 import { loadLevels, menuLevels, type SkillLevel } from './levels';
 import { doesEverything, loadProfiles, type Restriction } from './profile';
 import { activeRules } from './rules';
@@ -262,4 +262,37 @@ export function aheadBecause(
     sort.includes('had_appointment_last') || (sort.includes('double_zero_last') && a.points === 0);
   if (counts && a.hadAppointmentLast !== b.hadAppointmentLast) return 'appointment_last';
   return 'earlier_check_in';
+}
+
+/** v0.18.0: one technician as a plain call sees her (no services, no client
+ *  details): can she be called right now, and if not, why. */
+export type PlainRow = {
+  technicianId: string;
+  eligible: boolean;
+  why: SkipReason;
+  detail?: string;
+  /** For appointment_soon: when it starts. */
+  appointmentAt?: Date;
+};
+
+/**
+ * v0.18.0 (B2): the board's "Next: Vân" banner and the reason on every row
+ * that cannot be called. The engine's own queue for a plain call (queueFor
+ * with no context), in its order; `next` is the one callNext would pick for
+ * a plain walk-in. Read-only: no rule lives here.
+ */
+export async function plainQueue(
+  db: Db,
+  locationId: string,
+  now = new Date(),
+): Promise<{ next: PlainRow | null; rows: PlainRow[] }> {
+  const queue = await db.transaction((tx) => queueFor(tx, locationId, undefined, now));
+  const rows = queue.map((c): PlainRow => ({
+    technicianId: c.technicianId,
+    eligible: c.eligible,
+    why: c.why,
+    ...(c.detail ? { detail: c.detail } : {}),
+    ...(c.appointmentAt ? { appointmentAt: new Date(c.appointmentAt) } : {}),
+  }));
+  return { next: rows.find((r) => r.eligible) ?? null, rows };
 }

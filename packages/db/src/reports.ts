@@ -140,6 +140,11 @@ export const AUDIT_ACTIONS = [
   'call_closed_day_end',
   'help_closed_day_end',
   'act_for_setting',
+  // v0.18.0
+  'visit_checked_out',
+  'checkout_closed_day_end',
+  'checkout_list_setting',
+  'client_phone_setting',
   'fix_entered',
   'fix_approved',
   'fix_declined',
@@ -205,6 +210,9 @@ export const OVERRIDE_ACTIONS = [
   'technician_profile_changed',
   'technician_edits_setting',
   'act_for_setting',
+  // v0.18.0
+  'checkout_list_setting',
+  'client_phone_setting',
 ] as const;
 
 /** Desk entries a receptionist makes that steer a call (T4: edits per receptionist). */
@@ -225,6 +233,8 @@ export const DESK_ACTIONS = [
   'left_without_service',
   'client_left_rejected',
   'appointment_no_show',
+  // v0.18.0
+  'visit_checked_out',
 ] as const;
 
 export type QueueEntry = {
@@ -980,6 +990,8 @@ export type DayEndCounts = {
   help: number;
   /** Shifts left open, checked out. */
   shifts: number;
+  /** v0.18.0: finished visits left on "To check out" (missing before v0.18.0). */
+  checkouts?: number;
 };
 
 /** One location's day, per technician, from the ledger and the calls. */
@@ -1163,6 +1175,7 @@ export async function dailyTurnReport(
         calls: dayEndOf('call_closed_day_end'),
         help: dayEndOf('help_closed_day_end'),
         shifts: dayEndOf('auto_check_out'),
+        checkouts: dayEndOf('checkout_closed_day_end'),
       },
     },
   };

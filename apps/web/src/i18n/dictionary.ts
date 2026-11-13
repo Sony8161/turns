@@ -1017,6 +1017,11 @@ const en = {
       fix_declined: 'Fix declined',
       help_requested: 'Asked for help',
       help_acknowledged: 'Help acknowledged',
+      // v0.18.0
+      visit_checked_out: 'Checked out',
+      checkout_closed_day_end: 'Not checked out, cleared at day end',
+      checkout_list_setting: '"To check out" list switched',
+      client_phone_setting: 'Receptionists seeing full client phones switched',
     },
   },
   reports: {
@@ -2530,6 +2535,10 @@ const vi: Dictionary = {
       fix_declined: 'Không duyệt sửa móng',
       help_requested: 'Thợ cần giúp',
       help_acknowledged: 'Quầy đã nhận báo giúp',
+      visit_checked_out: 'Đã check out',
+      checkout_closed_day_end: 'Chưa check out, đóng cuối ngày',
+      checkout_list_setting: 'Bật/tắt danh sách "Chờ check out"',
+      client_phone_setting: 'Bật/tắt lễ tân xem cả số điện thoại khách',
     },
   },
   reports: {

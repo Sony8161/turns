@@ -10,6 +10,8 @@
 //     switches on (Staff page, both on by default), change a technician's
 //     status, points, skills and restrictions, and accept, deny and finish for
 //     her. Technicians only see their own day.
+//   - v0.18.0 (Duong, 2026-11-13): receptionists see a client's whole phone
+//     number, while the owner leaves that switch on (default on).
 //
 // `can` is the most a role may ever have. A receptionist's switched rights
 // also need the location's switch: `allowedAt` checks both, and every server
@@ -41,7 +43,7 @@ export type Capability =
   | 'manage_kiosks' // pair, re-pair and revoke the customer check-in iPads (Part 9)
   | 'approve_fixes' // v0.16.0: approve or decline a nail fix a receptionist entered
   | 'approve_calendar_links' // v0.17.1: approve or decline a tech's own Fresha link
-  | 'see_client_phone' // v0.17.1: the full phone; others see the last 4 and "Show"
+  | 'see_client_phone' // v0.17.1: the full phone; others see the last 4 and "Show" (receptionist: switch, v0.18.0)
   | 'act_for_technician' // v0.17.0: accept, deny, finish for a tech (receptionist: switch)
   | 'technician_actions' // own status, accept, deny, finish
   | 'view_own_schedule' // own calls and upcoming appointments
@@ -67,18 +69,19 @@ export const ROLE_TABLE: Record<Capability, readonly Role[]> = {
   manage_kiosks: ['owner', 'manager'],
   approve_fixes: ['owner', 'manager'],
   approve_calendar_links: ['owner', 'manager'],
-  see_client_phone: ['owner', 'manager'],
+  see_client_phone: ['owner', 'manager', 'receptionist'],
   act_for_technician: ['owner', 'manager', 'receptionist'],
   technician_actions: ['technician'],
   view_own_schedule: ['technician'],
   delete_records: [],
 };
 
-/** The owner's switches (Staff page) a receptionist's right depends on. */
+/** The owner's switches (Staff page, Advanced) a receptionist's right depends on. */
 export const RECEPTIONIST_SWITCH = {
   edit_technicians: 'receptionistEditsTechnicians',
   adjust_points: 'receptionistEditsTechnicians',
   act_for_technician: 'receptionistActsForTechnicians',
+  see_client_phone: 'receptionistSeesClientPhone',
 } as const;
 
 type Switched = keyof typeof RECEPTIONIST_SWITCH;
@@ -93,6 +96,7 @@ export function can(role: Role, capability: Capability): boolean {
 export type Switches = {
   receptionistEditsTechnicians: boolean;
   receptionistActsForTechnicians: boolean;
+  receptionistSeesClientPhone: boolean;
 };
 
 /** The two switches of one location (both off when the location is unknown). */
@@ -101,10 +105,17 @@ export async function switchesAt(db: Db | Tx, locationId: string): Promise<Switc
     .select({
       receptionistEditsTechnicians: locations.receptionistEditsTechnicians,
       receptionistActsForTechnicians: locations.receptionistActsForTechnicians,
+      receptionistSeesClientPhone: locations.receptionistSeesClientPhone,
     })
     .from(locations)
     .where(eq(locations.id, locationId));
-  return row ?? { receptionistEditsTechnicians: false, receptionistActsForTechnicians: false };
+  return (
+    row ?? {
+      receptionistEditsTechnicians: false,
+      receptionistActsForTechnicians: false,
+      receptionistSeesClientPhone: false,
+    }
+  );
 }
 
 /** The role table and the location's switches together. Pure. */

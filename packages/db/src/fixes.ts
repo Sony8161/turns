@@ -10,6 +10,7 @@
 import { and, asc, desc, eq, gte, inArray, isNull, lte, ne, sql } from 'drizzle-orm';
 import { alias } from 'drizzle-orm/pg-core';
 import {
+  clientNameMatch,
   consumeClientLookup,
   nameParts,
   parseClientQuery,
@@ -65,7 +66,7 @@ export async function fixCandidates(
   const match =
     'phone' in parsed
       ? sql`${clients.phone} like ${`%${likeSafe(parsed.phone)}%`}`
-      : sql`(${clients.searchName} like ${`${likeSafe(parsed.name)}%`} or ${clients.searchName} like ${`% ${likeSafe(parsed.name)}%`})`;
+      : clientNameMatch(parsed);
   const rows = await db
     .select({
       visitId: visits.id,
