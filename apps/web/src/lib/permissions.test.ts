@@ -36,7 +36,8 @@ const TABLE: Record<Capability, Record<Role, boolean>> = {
   // v0.17.1: a technician's own Fresha link waits for one of these.
   approve_calendar_links: OM,
   // v0.17.1: receptionists see the last four digits and tap Show (audited).
-  see_client_phone: OM,
+  // v0.18.0 (Duong, 2026-11-13): receptionists too, while the owner's switch is on.
+  see_client_phone: OMR,
   // v0.17.0: the desk accepts, denies and finishes for a technician. A
   // receptionist only while the owner's switch is on (act-for.ts checks it).
   act_for_technician: OMR,
@@ -71,13 +72,28 @@ describe('principles', () => {
       'call_technician',
       'edit_technicians',
       'enter_walkins',
+      'see_client_phone',
       'view_board',
     ]);
   });
   it("a receptionist's switched rights follow the owner's switches", () => {
-    const on = { receptionistEditsTechnicians: true, receptionistActsForTechnicians: true };
-    const off = { receptionistEditsTechnicians: false, receptionistActsForTechnicians: false };
-    for (const c of ['edit_technicians', 'adjust_points', 'act_for_technician'] as const) {
+    const on = {
+      receptionistEditsTechnicians: true,
+      receptionistActsForTechnicians: true,
+      receptionistSeesClientPhone: true,
+    };
+    const off = {
+      receptionistEditsTechnicians: false,
+      receptionistActsForTechnicians: false,
+      receptionistSeesClientPhone: false,
+    };
+    for (const c of [
+      'edit_technicians',
+      'adjust_points',
+      'act_for_technician',
+      // v0.18.0 (Duong, 2026-11-13): the whole client phone, on by default.
+      'see_client_phone',
+    ] as const) {
       expect(allowedWith('receptionist', c, on)).toBe(true);
       expect(allowedWith('receptionist', c, off)).toBe(false);
       expect(allowedWith('manager', c, off)).toBe(true);
@@ -91,6 +107,19 @@ describe('principles', () => {
         ...off,
         receptionistEditsTechnicians: true,
       }),
+    ).toBe(false);
+  });
+  it('the client phone switch is its own: the other two do not open it', () => {
+    const off = {
+      receptionistEditsTechnicians: true,
+      receptionistActsForTechnicians: true,
+      receptionistSeesClientPhone: false,
+    };
+    expect(allowedWith('receptionist', 'see_client_phone', off)).toBe(false);
+    expect(allowedWith('owner', 'see_client_phone', off)).toBe(true);
+    expect(allowedWith('manager', 'see_client_phone', off)).toBe(true);
+    expect(
+      allowedWith('technician', 'see_client_phone', { ...off, receptionistSeesClientPhone: true }),
     ).toBe(false);
   });
   it('technicians never see the board or the archive', () => {

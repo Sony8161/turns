@@ -14,6 +14,7 @@ import {
   setVisitNote,
   type DenyReason,
 } from '@turn/db/engine';
+import { checkOutVisit } from '@turn/db/checkout';
 import { parseClientQuery } from '@turn/db/clients';
 import { findFixVisits, reviewFix } from '@turn/db/fixes';
 import { acknowledgeHelp } from '@turn/db/help';
@@ -40,8 +41,12 @@ export type DeskState = {
   detail?: string;
   /** Who was passed over for the last call, and why (Part 6). */
   skipped?: SkippedLine[];
-  /** v0.16.0: set when a group was added, so the form starts over. */
+  /** v0.16.0: set when a group was added, so the form starts over.
+   *  v0.18.0: also when a walk-in was added, so the sheet closes. */
   done?: number;
+  /** v0.18.0: the visit the last call was for, so its row shows who was
+   *  passed over ("Why not Thảo?"). */
+  visitId?: string;
 };
 
 async function deskMembership(): Promise<Membership | null> {
@@ -94,7 +99,7 @@ async function enterWalkInRun(_prev: DeskState, formData: FormData): Promise<Des
       : {}),
   });
   revalidatePath('/admin');
-  return result.ok ? {} : { error: result.reason };
+  return result.ok ? { done: Date.now() } : { error: result.reason };
 }
 
 /** v0.16.0: the client's visits inside the fix window, for the desk's fix entry. */
@@ -278,8 +283,13 @@ async function callNextForRun(_prev: DeskState, formData: FormData): Promise<Des
   revalidatePath('/admin');
   revalidatePath('/me');
   return result.ok
-    ? { skipped: toSkippedLines(result.skipped) }
-    : { error: result.reason, detail: result.detail, skipped: toSkippedLines(result.skipped) };
+    ? { visitId, skipped: toSkippedLines(result.skipped) }
+    : {
+        visitId,
+        error: result.reason,
+        detail: result.detail,
+        skipped: toSkippedLines(result.skipped),
+      };
 }
 
 /**
@@ -555,4 +565,45 @@ async function clientHereForRun(_prev: DeskState, formData: FormData): Promise<D
   revalidatePath('/admin');
   revalidatePath('/me');
   return result.ok ? {} : { error: result.reason };
+}
+
+/**
+ * v0.18.0 (C2): one "Client isn't here". The board sends what it saw (a
+ * kiosk check-in not confirmed, a waiting client, a called client); each
+ * goes to the same engine function as before, with the same checks:
+ * reviewKioskVisit (decline), leftWithoutService, clientLeft.
+ */
+export async function notHereFor(prev: DeskState, formData: FormData): Promise<DeskState> {
+  return guarded('notHereFor', { error: 'server' } as DeskState, () => {
+    const kind = String(formData.get('kind') ?? '');
+    if (kind === 'kiosk_decline') {
+      formData.set('decision', 'decline');
+      return reviewKioskForRun(prev, formData);
+    }
+    if (kind === 'walked_out') return leftWithoutServiceForRun(prev, formData);
+    if (kind === 'client_left') return clientLeftForRun(prev, formData);
+    return Promise.resolve({ error: 'unknown_visit' });
+  });
+}
+
+/** v0.18.0 (F1): "Checked out" on the desk's list. Whoever enters walk-ins. */
+export async function checkOutFor(prev: DeskState, formData: FormData): Promise<DeskState> {
+  return guarded('checkOutFor', { error: 'server' } as DeskState, async () => {
+    const actor = await requireActor();
+    const m = await deskMembership();
+    if (!m) return { error: 'not_allowed' };
+    const visitId = uuidOf(formData.get('visitId'));
+    if (!visitId) return { error: 'unknown_visit' };
+    const result = await checkOutVisit(db(), {
+      actor: {
+        userId: actor.userId,
+        role: m.role,
+        organizationId: m.organizationId,
+        locationId: m.locationId,
+      },
+      visitId,
+    });
+    revalidatePath('/admin');
+    return result.ok ? {} : { error: result.reason };
+  });
 }

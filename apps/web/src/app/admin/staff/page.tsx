@@ -7,15 +7,16 @@ import { receptionistMayActFor } from '@turn/db/act-for';
 import Link from 'next/link';
 import { redirect } from 'next/navigation';
 import { AdminNav } from '@/components/AdminNav';
-import { Button } from '@/components/ui';
+import { categoryLabel } from '../floor/model';
 import { fill, type Dictionary } from '@/i18n/dictionary';
-import { LanguageToggle } from '@/i18n/LanguageToggle';
 import { getDictionary } from '@/i18n/lang';
 import { membershipWith, requireActor } from '@/lib/auth';
 import { maskContact } from '@/lib/contact';
 import { db } from '@/lib/db';
 import { allowedAt, can } from '@/lib/permissions';
-import { signOut } from '../../login/actions';
+import { receptionistSeesPhoneAt } from '@turn/db/clients';
+import { phoneSettingAction } from '../settings-actions';
+import { SwitchForm } from '../SwitchForm';
 import { ReceptionistToggle } from './ReceptionistToggle';
 import { StaffPanel } from './StaffPanel';
 
@@ -58,30 +59,10 @@ export default async function StaffPage() {
   if (onlyTechnician) redirect('/me');
   const m = membershipWith(actor, 'invite_staff');
 
-  const header = (
-    <header className="flex flex-wrap items-center justify-between gap-3">
-      <div className="flex flex-col">
-        <span className="text-lead font-semibold">{t.app.name}</span>
-        <span className="text-small text-slate/70">
-          {fill(t.admin.welcome, { name: actor.displayName })}
-        </span>
-      </div>
-      <div className="flex items-center gap-3">
-        <LanguageToggle lang={lang} t={t} />
-        <form action={signOut}>
-          <Button type="submit" tone="quiet">
-            {t.nav.signOut}
-          </Button>
-        </form>
-      </div>
-    </header>
-  );
-
   if (!m) {
     return (
       <main className="mx-auto flex w-full max-w-5xl flex-1 flex-col gap-8 px-4 py-6 sm:px-8">
-        {header}
-        <AdminNav t={t.nav} current="staff" canStaff={false} canRules={false} canManage={false} />
+        <AdminNav current="staff" />
         <p className="max-w-[60ch] text-lead">{t.staff.notAllowed}</p>
       </main>
     );
@@ -97,21 +78,16 @@ export default async function StaffPage() {
         and(eq(serviceCategories.locationId, m.locationId), isNull(serviceCategories.archivedAt)),
       ),
   ]);
-  const categoryNames = new Map(categories.map((c) => [c.id, c.name]));
+  const categoryNames = new Map(
+    categories.map((c) => [c.id, categoryLabel(c.name, t.floor.category)]),
+  );
   const owner = can(m.role, 'manage_rules');
   const deskEdits = owner ? await receptionistMayEdit(db(), m.locationId) : false;
   const deskActsFor = owner ? await receptionistMayActFor(db(), m.locationId) : false;
+  const deskSeesPhone = owner ? await receptionistSeesPhoneAt(db(), m.locationId) : true;
   return (
     <main className="mx-auto flex w-full max-w-5xl flex-1 flex-col gap-8 px-4 py-6 sm:px-8">
-      {header}
-      <AdminNav
-        t={t.nav}
-        current="staff"
-        canStaff
-        canRules={can(m.role, 'manage_rules')}
-        canManage={can(m.role, 'override_queue')}
-        canLog={can(m.role, 'view_audit')}
-      />
+      <AdminNav current="staff" />
       <section className="flex flex-col gap-2">
         <h1 className="text-heading font-semibold">
           {fill(t.admin.locationRole, { location: m.locationName, role: t.roles[m.role] })}
@@ -125,6 +101,25 @@ export default async function StaffPage() {
       </section>
       {owner ? <ReceptionistToggle on={deskEdits} t={t.techSettings} /> : null}
       {owner ? <ReceptionistToggle on={deskActsFor} t={t.techSettings} kind="act_for" /> : null}
+      {owner ? (
+        // v0.18.0 (Duong, 2026-11-13): one new setting, under Advanced.
+        <details className="bg-board p-5">
+          <summary className="flex min-h-11 cursor-pointer items-center font-semibold">
+            {t.floor.advanced}
+          </summary>
+          <div className="pt-3">
+            <SwitchForm
+              action={phoneSettingAction}
+              on={deskSeesPhone}
+              label={t.floor.phoneSetting}
+              hint={t.floor.phoneSettingHint}
+              save={t.floor.save}
+              saved={t.floor.saved}
+              failed={t.techSettings.errors.server ?? ''}
+            />
+          </div>
+        </details>
+      ) : null}
       <StaffPanel
         rows={rows.map((r) => ({
           membershipId: r.membershipId,

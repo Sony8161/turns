@@ -13,15 +13,12 @@ import { redirect } from 'next/navigation';
 import { AdminNav } from '@/components/AdminNav';
 import { AutoRefresh } from '@/components/AutoRefresh';
 import { FreshaConnect } from '@/components/FreshaConnect';
-import { Button } from '@/components/ui';
 import { fill } from '@/i18n/dictionary';
-import { LanguageToggle } from '@/i18n/LanguageToggle';
 import { getDictionary } from '@/i18n/lang';
 import { membershipWith, requireActor } from '@/lib/auth';
 import { db } from '@/lib/db';
 import { ownerRows } from '@/lib/fresha-rows';
 import { can } from '@/lib/permissions';
-import { signOut } from '../../login/actions';
 import { AppointmentsPanel } from './AppointmentsPanel';
 import { FeedApprovals } from './FeedApprovals';
 import { salonInput } from './form';
@@ -38,39 +35,11 @@ export default async function AppointmentsPage() {
     actor.memberships.length > 0 && actor.memberships.every((m) => m.role === 'technician');
   if (onlyTechnician) redirect('/me');
   const m = membershipWith(actor, 'enter_walkins');
-  const any = actor.memberships[0];
-
-  const header = (
-    <header className="flex flex-wrap items-center justify-between gap-3">
-      <div className="flex flex-col">
-        <span className="text-lead font-semibold">{t.app.name}</span>
-        <span className="text-small text-slate/70">
-          {fill(t.admin.welcome, { name: actor.displayName })}
-        </span>
-      </div>
-      <div className="flex items-center gap-3">
-        <LanguageToggle lang={lang} t={t} />
-        <form action={signOut}>
-          <Button type="submit" tone="quiet">
-            {t.nav.signOut}
-          </Button>
-        </form>
-      </div>
-    </header>
-  );
 
   if (!m) {
     return (
       <main className="mx-auto flex w-full max-w-5xl flex-1 flex-col gap-8 px-4 py-6 sm:px-8">
-        {header}
-        <AdminNav
-          t={t.nav}
-          current="appointments"
-          canStaff={!!any && can(any.role, 'invite_staff')}
-          canRules={!!any && can(any.role, 'manage_rules')}
-          canManage={!!any && can(any.role, 'override_queue')}
-          canLog={!!any && can(any.role, 'view_audit')}
-        />
+        <AdminNav current="appointments" />
         <p className="max-w-[60ch] text-lead">{t.appointments.notAllowed}</p>
       </main>
     );
@@ -128,15 +97,7 @@ export default async function AppointmentsPage() {
   return (
     <main className="mx-auto flex w-full max-w-5xl flex-1 flex-col gap-8 px-4 py-6 sm:px-8">
       <AutoRefresh seconds={30} />
-      {header}
-      <AdminNav
-        t={t.nav}
-        current="appointments"
-        canStaff={can(m.role, 'invite_staff')}
-        canRules={isOwner}
-        canManage={can(m.role, 'override_queue')}
-        canLog={can(m.role, 'view_audit')}
-      />
+      <AdminNav current="appointments" />
       <section className="flex flex-col gap-2">
         <h1 className="text-heading font-semibold">
           {fill(t.admin.locationRole, { location: m.locationName, role: t.roles[m.role] })}

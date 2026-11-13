@@ -3,14 +3,10 @@ import { locations } from '@turn/db';
 import { eq } from 'drizzle-orm';
 import { redirect } from 'next/navigation';
 import { AdminNav } from '@/components/AdminNav';
-import { Button } from '@/components/ui';
 import { fill } from '@/i18n/dictionary';
-import { LanguageToggle } from '@/i18n/LanguageToggle';
 import { getDictionary } from '@/i18n/lang';
 import { membershipWith, requireActor } from '@/lib/auth';
 import { db } from '@/lib/db';
-import { can } from '@/lib/permissions';
-import { signOut } from '../../login/actions';
 import { KioskAdmin, type KioskRowView } from './KioskAdmin';
 
 // Admin → Kiosk (Part 9): the check-in iPads at this location. Owners and
@@ -22,42 +18,12 @@ export default async function KioskAdminPage() {
     redirect('/me');
   }
   const m = membershipWith(actor, 'manage_kiosks');
-  const any = m ?? actor.memberships[0];
 
-  const header = (
-    <header className="flex flex-wrap items-center justify-between gap-3">
-      <div className="flex flex-col">
-        <span className="text-lead font-semibold">{t.app.name}</span>
-        <span className="text-small text-slate/70">
-          {fill(t.admin.welcome, { name: actor.displayName })}
-        </span>
-      </div>
-      <div className="flex items-center gap-3">
-        <LanguageToggle lang={lang} t={t} />
-        <form action={signOut}>
-          <Button type="submit" tone="quiet">
-            {t.nav.signOut}
-          </Button>
-        </form>
-      </div>
-    </header>
-  );
-  const nav = (
-    <AdminNav
-      t={t.nav}
-      current="kiosk"
-      canStaff={!!any && can(any.role, 'invite_staff')}
-      canRules={!!any && can(any.role, 'manage_rules')}
-      canManage={!!any && can(any.role, 'override_queue')}
-      canLog={!!any && can(any.role, 'view_audit')}
-      canKiosk={!!any && can(any.role, 'manage_kiosks')}
-    />
-  );
+  const nav = <AdminNav current="kiosk" />;
 
   if (!m) {
     return (
       <main className="mx-auto flex w-full max-w-5xl flex-1 flex-col gap-8 px-4 py-6 sm:px-8">
-        {header}
         {nav}
         <p className="max-w-[60ch] text-lead">{t.kioskAdmin.notAllowed}</p>
       </main>
@@ -99,7 +65,6 @@ export default async function KioskAdminPage() {
 
   return (
     <main className="mx-auto flex w-full max-w-5xl flex-1 flex-col gap-8 px-4 py-6 sm:px-8">
-      {header}
       {nav}
       <section className="flex flex-col gap-2">
         <h1 className="text-heading font-semibold">{k.title}</h1>

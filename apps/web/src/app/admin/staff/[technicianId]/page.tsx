@@ -7,15 +7,13 @@ import { mayEditTechnicians } from '@turn/db/tech-settings';
 import Link from 'next/link';
 import { notFound, redirect } from 'next/navigation';
 import { AdminNav } from '@/components/AdminNav';
-import { Button } from '@/components/ui';
+import { categoryLabel } from '../../floor/model';
 import { fill } from '@/i18n/dictionary';
-import { LanguageToggle } from '@/i18n/LanguageToggle';
 import { getDictionary } from '@/i18n/lang';
 import { membershipWith, requireActor } from '@/lib/auth';
 import { db } from '@/lib/db';
 import { isUuid } from '@/lib/ids';
 import { can } from '@/lib/permissions';
-import { signOut } from '../../../login/actions';
 import { LevelForm } from './LevelForm';
 import { ProfileForm } from './ProfileForm';
 import { TodayPanel } from './TodayPanel';
@@ -30,42 +28,17 @@ export default async function TechnicianProfilePage({
 }) {
   const { technicianId } = await params;
   if (!isUuid(technicianId)) notFound();
-  const [{ lang, t }, actor] = await Promise.all([getDictionary(), requireActor()]);
+  const [{ t }, actor] = await Promise.all([getDictionary(), requireActor()]);
   const onlyTechnician =
     actor.memberships.length > 0 && actor.memberships.every((m) => m.role === 'technician');
   if (onlyTechnician) redirect('/me');
   const board = membershipWith(actor, 'view_board');
   const m = board && (await mayEditTechnicians(db(), board)) ? board : null;
 
-  const header = (
-    <header className="flex flex-wrap items-center justify-between gap-3">
-      <div className="flex flex-col">
-        <span className="text-lead font-semibold">{t.app.name}</span>
-        <span className="text-small text-slate/70">
-          {fill(t.admin.welcome, { name: actor.displayName })}
-        </span>
-      </div>
-      <div className="flex items-center gap-3">
-        <LanguageToggle lang={lang} t={t} />
-        <form action={signOut}>
-          <Button type="submit" tone="quiet">
-            {t.nav.signOut}
-          </Button>
-        </form>
-      </div>
-    </header>
-  );
-
   if (!m) {
     return (
       <main className="mx-auto flex w-full max-w-5xl flex-1 flex-col gap-8 px-4 py-6 sm:px-8">
-        {header}
-        <AdminNav
-          t={t.nav}
-          current="staff"
-          canStaff={!!board && can(board.role, 'invite_staff')}
-          canRules={false}
-        />
+        <AdminNav current="staff" />
         <p className="max-w-[60ch] text-lead">{t.profile.notAllowed}</p>
       </main>
     );
@@ -103,15 +76,7 @@ export default async function TechnicianProfilePage({
 
   return (
     <main className="mx-auto flex w-full max-w-5xl flex-1 flex-col gap-8 px-4 py-6 sm:px-8">
-      {header}
-      <AdminNav
-        t={t.nav}
-        current="staff"
-        canStaff={can(m.role, 'invite_staff')}
-        canRules={can(m.role, 'manage_rules')}
-        canManage={can(m.role, 'override_queue')}
-        canLog={can(m.role, 'view_audit')}
-      />
+      <AdminNav current="staff" />
       <section className="flex flex-col gap-2">
         <Link
           href={can(m.role, 'invite_staff') ? '/admin/staff' : '/admin'}
@@ -160,7 +125,10 @@ export default async function TechnicianProfilePage({
       </section>
       <ProfileForm
         technicianId={tech.id}
-        categories={categories}
+        categories={categories.map((c) => ({
+          ...c,
+          name: categoryLabel(c.name, t.floor.category),
+        }))}
         skillCategoryIds={profile.skillCategoryIds}
         levelSet={level.level !== null}
         tags={profile.tags}

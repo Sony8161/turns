@@ -1292,6 +1292,55 @@ export async function deskOptions(
   });
 }
 
+/**
+ * v0.18.0 (C1): the desk's one "Pick someone" sheet, per waiting visit that
+ * can be called now: the engine's whole queue for that visit (queueFor), in
+ * its order, whether the visit is a desk pick, and for a fix the technician
+ * who did the original work. Read-only. The sheet labels each technician
+ * from this; the writes stay callNext, deskCall and reassignVisit, with their
+ * own checks, so nothing here decides who may be called.
+ */
+export async function pickQueues(
+  db: Db,
+  locationId: string,
+  now = new Date(),
+): Promise<
+  Map<string, { deskPicks: boolean; queue: Candidate[]; originalTechnicianId: string | null }>
+> {
+  return db.transaction(async (tx) => {
+    const waiting = await tx
+      .select()
+      .from(visits)
+      .where(
+        and(
+          eq(visits.locationId, locationId),
+          eq(visits.status, 'waiting'),
+          eq(visits.needsConfirm, false),
+          eq(visits.needsApproval, false),
+        ),
+      );
+    const out = new Map<
+      string,
+      { deskPicks: boolean; queue: Candidate[]; originalTechnicianId: string | null }
+    >();
+    for (const visit of waiting) {
+      if (await waitsBehind(tx, visit)) continue;
+      const deskPicks = await hasDeskPick(tx, visit.id);
+      const queue = await queueFor(tx, locationId, await contextOf(tx, visit), now);
+      let originalTechnicianId: string | null = null;
+      if (visit.fixOfVisitId) {
+        const [orig] = await tx
+          .select({ technicianId: visits.assignedTechnicianId })
+          .from(visits)
+          .where(eq(visits.id, visit.fixOfVisitId));
+        originalTechnicianId = orig?.technicianId ?? null;
+      }
+      out.set(visit.id, { deskPicks, queue, originalTechnicianId });
+    }
+    return out;
+  });
+}
+
 /** The technician taps Finished: points post from the rules, the visit
  *  completes, the technician is available again. */
 export async function finishVisit(

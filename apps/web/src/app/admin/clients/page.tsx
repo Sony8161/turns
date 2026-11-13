@@ -9,12 +9,9 @@ import { redirect } from 'next/navigation';
 import { AdminNav } from '@/components/AdminNav';
 import { Button } from '@/components/ui';
 import { fill } from '@/i18n/dictionary';
-import { LanguageToggle } from '@/i18n/LanguageToggle';
 import { getDictionary } from '@/i18n/lang';
 import { membershipWith, requireActor } from '@/lib/auth';
 import { db } from '@/lib/db';
-import { can } from '@/lib/permissions';
-import { signOut } from '../../login/actions';
 
 // Client search (v0.13.0, Duong 2026-11-12): by phone in any format, or by
 // name without accents. Owner, managers and the front desk; never a
@@ -55,31 +52,7 @@ export default async function ClientsPage({
   const day = new Intl.DateTimeFormat(lang === 'vi' ? 'vi-VN' : 'en-US', { dateStyle: 'medium' });
   return (
     <main className="mx-auto flex w-full max-w-5xl flex-1 flex-col gap-8 px-4 py-6 sm:px-8">
-      <header className="flex flex-wrap items-center justify-between gap-3">
-        <div className="flex flex-col">
-          <span className="text-lead font-semibold">{t.app.name}</span>
-          <span className="text-small text-slate/70">
-            {fill(t.admin.welcome, { name: actor.displayName })}
-          </span>
-        </div>
-        <div className="flex items-center gap-3">
-          <LanguageToggle lang={lang} t={t} />
-          <form action={signOut}>
-            <Button type="submit" tone="quiet">
-              {t.nav.signOut}
-            </Button>
-          </form>
-        </div>
-      </header>
-      <AdminNav
-        t={t.nav}
-        current="clients"
-        canStaff={can(m.role, 'invite_staff')}
-        canRules={can(m.role, 'manage_rules')}
-        canManage={can(m.role, 'override_queue')}
-        canLog={can(m.role, 'view_audit')}
-        canKiosk={can(m.role, 'manage_kiosks')}
-      />
+      <AdminNav current="clients" />
       <section className="flex flex-col gap-2">
         <h1 className="text-heading font-semibold">{tc.title}</h1>
         <p className="max-w-[70ch] text-slate/80">{tc.lead}</p>

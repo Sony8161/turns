@@ -4,15 +4,16 @@ import { ruleHistory } from '@turn/db/rules';
 import Link from 'next/link';
 import { redirect } from 'next/navigation';
 import { AdminNav } from '@/components/AdminNav';
-import { Button } from '@/components/ui';
+import { SectionTabs } from '@/components/SectionTabs';
 import { fill } from '@/i18n/dictionary';
-import { LanguageToggle } from '@/i18n/LanguageToggle';
 import { getDictionary } from '@/i18n/lang';
 import { membershipWith, requireActor } from '@/lib/auth';
 import { db } from '@/lib/db';
-import { can } from '@/lib/permissions';
-import { signOut } from '../../login/actions';
 import { formValues } from './form';
+import { checkoutListAt } from '@turn/db/checkout';
+import { categoryLabel } from '../floor/model';
+import { checkoutListAction } from '../settings-actions';
+import { SwitchForm } from '../SwitchForm';
 import { RulesForm } from './RulesForm';
 
 // The rule builder (Part 5). Owner only. Every number the engine uses, the
@@ -23,39 +24,11 @@ export default async function RulesPage() {
     actor.memberships.length > 0 && actor.memberships.every((m) => m.role === 'technician');
   if (onlyTechnician) redirect('/me');
   const m = membershipWith(actor, 'manage_rules');
-  const any = actor.memberships[0];
-
-  const header = (
-    <header className="flex flex-wrap items-center justify-between gap-3">
-      <div className="flex flex-col">
-        <span className="text-lead font-semibold">{t.app.name}</span>
-        <span className="text-small text-slate/70">
-          {fill(t.admin.welcome, { name: actor.displayName })}
-        </span>
-      </div>
-      <div className="flex items-center gap-3">
-        <LanguageToggle lang={lang} t={t} />
-        <form action={signOut}>
-          <Button type="submit" tone="quiet">
-            {t.nav.signOut}
-          </Button>
-        </form>
-      </div>
-    </header>
-  );
 
   if (!m) {
     return (
       <main className="mx-auto flex w-full max-w-5xl flex-1 flex-col gap-8 px-4 py-6 sm:px-8">
-        {header}
-        <AdminNav
-          t={t.nav}
-          current="rules"
-          canStaff={!!any && can(any.role, 'invite_staff')}
-          canRules={false}
-          canManage={!!any && can(any.role, 'override_queue')}
-          canLog={!!any && can(any.role, 'view_audit')}
-        />
+        <AdminNav current="rules" />
         <p className="max-w-[60ch] text-lead">{t.rules.notAllowed}</p>
       </main>
     );
@@ -92,6 +65,7 @@ export default async function RulesPage() {
     .where(and(eq(services.locationId, m.locationId), isNull(services.archivedAt)))
     .orderBy(services.name);
   const current = history.find((h) => h.valid);
+  const checkoutOn = await checkoutListAt(db(), m.locationId);
   const authors = [...new Set(history.map((h) => h.createdBy).filter((x): x is string => !!x))];
   const names = authors.length
     ? await db()
@@ -108,14 +82,14 @@ export default async function RulesPage() {
 
   return (
     <main className="mx-auto flex w-full max-w-5xl flex-1 flex-col gap-8 px-4 py-6 sm:px-8">
-      {header}
-      <AdminNav
-        t={t.nav}
-        current="rules"
-        canStaff={can(m.role, 'invite_staff')}
-        canRules
-        canManage={can(m.role, 'override_queue')}
-        canLog={can(m.role, 'view_audit')}
+      <AdminNav current="rules" />
+      <SectionTabs
+        label={t.nav.servicesRules}
+        current="/admin/rules"
+        items={[
+          { href: '/admin/rules', label: t.nav.rulesTab },
+          { href: '/admin/levels', label: t.nav.levelsByTurn },
+        ]}
       />
       <section className="flex flex-col gap-2">
         <h1 className="text-heading font-semibold">{t.rules.title}</h1>
@@ -136,11 +110,18 @@ export default async function RulesPage() {
       {current?.config ? (
         <RulesForm
           values={formValues(current.config)}
-          categories={categories}
+          // v0.18.0: category names in words, never a code like full_set.
+          categories={categories.map((c) => ({
+            ...c,
+            name: categoryLabel(c.name, t.floor.category),
+          }))}
           services={menu.map((s) => ({
             id: s.id,
             name: s.name,
-            category: categories.find((c) => c.id === s.categoryId)?.name ?? '',
+            category: categoryLabel(
+              categories.find((c) => c.id === s.categoryId)?.name ?? '',
+              t.floor.category,
+            ),
             isFix: s.isFix,
           }))}
           version={history[0]?.version ?? current.version}
@@ -149,6 +130,24 @@ export default async function RulesPage() {
       ) : (
         <p className="text-polish">{t.rules.noValid}</p>
       )}
+
+      {/* v0.18.0 (F1): one new setting, under Advanced. */}
+      <details className="bg-board p-5">
+        <summary className="flex min-h-11 cursor-pointer items-center font-semibold">
+          {t.floor.advanced}
+        </summary>
+        <div className="pt-3">
+          <SwitchForm
+            action={checkoutListAction}
+            on={checkoutOn}
+            label={t.floor.checkoutSetting}
+            hint={t.floor.checkoutSettingHint}
+            save={t.floor.save}
+            saved={t.floor.saved}
+            failed={t.techSettings.errors.server ?? ''}
+          />
+        </div>
+      </details>
 
       <section className="flex flex-col gap-3">
         <h2 className="text-heading font-semibold">{t.rules.history}</h2>

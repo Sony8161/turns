@@ -1,83 +1,67 @@
+import { needsYouCount } from '@turn/db/board';
 import Link from 'next/link';
-import type { Dictionary } from '@/i18n/dictionary';
+import { fill } from '@/i18n/dictionary';
+import { getDictionary } from '@/i18n/lang';
+import { LanguageToggle } from '@/i18n/LanguageToggle';
+import { getActor } from '@/lib/auth';
+import { db } from '@/lib/db';
+import { can } from '@/lib/permissions';
 import { LocationSwitch } from './LocationSwitch';
+import { TAB_HREF, tabOf, tabsFor, type Page } from './nav-model';
 
-type Item = { href: string; label: string };
-
-/** Admin navigation (design plan: Board, Staff, Rules, Log, Settings; Part 6
- *  adds Overrides). Only the pages this role may open are listed; each page
- *  checks again on its own. */
-export function AdminNav({
-  t,
-  current,
-  canStaff,
-  canRules,
-  canManage = false,
-  canAppointments = true,
-  canLog = false,
-  canKiosk,
-  canClients,
-}: {
-  t: Dictionary['nav'];
-  current:
-    | 'board'
-    | 'staff'
-    | 'rules'
-    | 'manage'
-    | 'appointments'
-    | 'clients'
-    | 'log'
-    | 'reports'
-    | 'kiosk';
-  canStaff: boolean;
-  canRules: boolean;
-  canManage?: boolean;
-  /** Every staff role that sees the board sees appointments (Part 7). */
-  canAppointments?: boolean;
-  /** Owners and managers: the audit log and reports (Part 8). */
-  canLog?: boolean;
-  /** Owners and managers: the check-in iPads (Part 9). Same roles as staff by default. */
-  canKiosk?: boolean;
-  /** Owner, managers, the front desk: client search (v0.13.0). Same as appointments by default. */
-  canClients?: boolean;
-}) {
-  const items: Item[] = [{ href: '/admin', label: t.board }];
-  if (canAppointments) items.push({ href: '/admin/appointments', label: t.appointments });
-  if (canClients ?? canAppointments) items.push({ href: '/admin/clients', label: t.clients });
-  if (canManage) items.push({ href: '/admin/manage', label: t.manage });
-  if (canStaff) items.push({ href: '/admin/staff', label: t.staff });
-  if (canRules) items.push({ href: '/admin/rules', label: t.rules });
-  if (canKiosk ?? canStaff) items.push({ href: '/admin/kiosk', label: t.kiosk });
-  if (canLog) {
-    items.push({ href: '/admin/log', label: t.log });
-    items.push({ href: '/admin/reports', label: t.reports });
-  }
-  const active = {
-    board: '/admin',
-    staff: '/admin/staff',
-    rules: '/admin/rules',
-    manage: '/admin/manage',
-    appointments: '/admin/appointments',
-    clients: '/admin/clients',
-    log: '/admin/log',
-    reports: '/admin/reports',
-    kiosk: '/admin/kiosk',
-  }[current];
+/**
+ * v0.18.0 (B13, B14, C4): one slim header on every admin page: where you
+ * are, four tabs (Board, Appointments, Clients, More), a one-tap language
+ * toggle, and the location switch only for someone at two or more
+ * locations. Sign out and the rest moved into More. The Board tab carries
+ * the number of things waiting for the desk. Each page checks access again.
+ */
+export async function AdminNav({ current, badge }: { current: Page; badge?: number }) {
+  const [{ lang, t }, actor] = await Promise.all([getDictionary(), getActor()]);
+  const m = actor?.memberships.find((x) => can(x.role, 'view_board')) ?? null;
+  const tabs = m ? tabsFor(m.role) : [];
+  const count =
+    badge ?? (m ? await needsYouCount(db(), m.locationId, can(m.role, 'approve_fixes')) : 0);
+  const active = tabOf(current);
   return (
-    <nav aria-label="Admin" className="flex flex-wrap items-center gap-2">
-      {items.map((i) => (
-        <Link
-          key={i.href}
-          href={i.href}
-          aria-current={i.href === active ? 'page' : undefined}
-          className={`inline-flex min-h-11 items-center rounded-control px-4 font-semibold ${
-            i.href === active ? 'bg-navy text-board' : 'text-slate hover:bg-board'
-          }`}
-        >
-          {i.label}
-        </Link>
-      ))}
-      <LocationSwitch t={t} />
-    </nav>
+    <header className="flex flex-wrap items-center gap-x-4 gap-y-2">
+      <div className="flex min-w-0 flex-col leading-tight">
+        <span className="truncate font-semibold">{m?.locationName ?? t.app.name}</span>
+        {m ? <span className="text-small text-slate/70">{t.roles[m.role]}</span> : null}
+      </div>
+      {tabs.length ? (
+        <nav aria-label="Admin" className="flex flex-wrap items-center gap-1">
+          {tabs.map((tab) => (
+            <Link
+              key={tab}
+              href={TAB_HREF[tab]}
+              aria-current={tab === active ? 'page' : undefined}
+              aria-label={
+                tab === 'board' && count > 0
+                  ? `${t.nav.board}, ${fill(t.nav.boardBadge, { n: count })}`
+                  : undefined
+              }
+              className={`inline-flex min-h-11 items-center gap-2 rounded-control px-4 font-semibold ${
+                tab === active ? 'bg-navy text-board' : 'text-slate hover:bg-board'
+              }`}
+            >
+              {t.nav[tab]}
+              {tab === 'board' && count > 0 ? (
+                <span
+                  aria-hidden
+                  className="inline-flex min-w-6 items-center justify-center rounded-full bg-polish px-1.5 text-small font-semibold text-board"
+                >
+                  {count}
+                </span>
+              ) : null}
+            </Link>
+          ))}
+        </nav>
+      ) : null}
+      <div className="ml-auto flex items-center gap-2">
+        <LocationSwitch t={t.nav} />
+        <LanguageToggle lang={lang} t={t} />
+      </div>
+    </header>
   );
 }

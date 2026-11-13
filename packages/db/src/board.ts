@@ -2,13 +2,15 @@
 // shift, in queue order, with what they do, who they do not take, their next
 // appointment, the client in their chair, and every ledger row behind their
 // points ("Why this order?"). Read-only; the engine's own order (compareQueue).
-import { and, asc, eq, gt, inArray, isNull } from 'drizzle-orm';
+import { and, asc, eq, gt, inArray, isNull, sql } from 'drizzle-orm';
 import { compareQueue, queueFor, type SkipReason } from './engine';
 import { loadLevels, menuLevels, type SkillLevel } from './levels';
 import { doesEverything, loadProfiles, type Restriction } from './profile';
 import { activeRules } from './rules';
 import {
   appointments,
+  calendarFeeds,
+  helpRequests,
   serviceCategories,
   services,
   turnCalls,
@@ -69,6 +71,10 @@ export type TechCard = {
    *  reaches the rules' flag (fairness.free_deny_flag; 0 = never). */
   freeDenies: number;
   freeDenyFlag: boolean;
+  /** v0.18.0: since when she is in this status, and when her open call was
+   *  made, for the board's labelled times ("free 64 min", "called just now"). */
+  since: Date | null;
+  calledAt: Date | null;
 };
 
 export async function techBoard(db: Db, locationId: string, now = new Date()): Promise<TechCard[]> {
@@ -128,6 +134,7 @@ export async function techBoard(db: Db, locationId: string, now = new Date()): P
         visitId: turnCalls.visitId,
         callId: turnCalls.id,
         kind: turnCalls.kind,
+        calledAt: turnCalls.calledAt,
       })
       .from(turnCalls)
       .where(and(eq(turnCalls.locationId, locationId), isNull(turnCalls.respondedAt))),
@@ -200,6 +207,8 @@ export async function techBoard(db: Db, locationId: string, now = new Date()): P
     return {
       openCallId: myCall?.callId ?? null,
       openCallKind: myCall?.kind ?? null,
+      since: r.since ?? null,
+      calledAt: myCall?.calledAt ?? null,
       inServiceVisitId: myChair?.visitId ?? null,
       freeDenies: freeToday.length,
       freeDenyFlag: flagAt > 0 && freeToday.length >= flagAt,
@@ -295,4 +304,32 @@ export async function plainQueue(
     ...(c.appointmentAt ? { appointmentAt: new Date(c.appointmentAt) } : {}),
   }));
   return { next: rows.find((r) => r.eligible) ?? null, rows };
+}
+
+/**
+ * v0.18.0: the number on the Board tab, on every admin page: what waits for
+ * someone at the desk. Kiosk check-ins to confirm, fixes to approve (owners
+ * and managers), a technician's "client left", help requests, calls nobody
+ * answered, calendar links to approve (owners and managers). The board's own
+ * strip also counts a busy requested tech past the wait and a failing sync.
+ * Counts only.
+ */
+export async function needsYouCount(
+  db: Db,
+  locationId: string,
+  approver: boolean,
+  now = new Date(),
+): Promise<number> {
+  const rules = await activeRules(db, locationId);
+  const unansweredBefore = new Date(now.getTime() - rules.attention.unanswered_call_min * 60_000);
+  const [row] = await db.execute<{ n: number }>(sql`
+    select
+      (select count(*) from ${visits} v where v.location_id = ${locationId} and v.status = 'waiting' and v.needs_confirm)
+      + (case when ${approver} then (select count(*) from ${visits} v where v.location_id = ${locationId} and v.status = 'waiting' and v.needs_approval) else 0 end)
+      + (select count(*) from ${helpRequests} h where h.location_id = ${locationId} and h.acknowledged_at is null)
+      + (select count(*) from ${turnCalls} c where c.location_id = ${locationId} and c.responded_at is null
+           and (c.left_claimed_at is not null and c.left_claim_outcome is null or c.called_at <= ${unansweredBefore}))
+      + (case when ${approver} then (select count(*) from ${calendarFeeds} f where f.location_id = ${locationId} and f.needs_approval and f.archived_at is null) else 0 end)
+      as n`);
+  return Number(row?.n ?? 0);
 }

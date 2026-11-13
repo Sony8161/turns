@@ -1,402 +1,546 @@
-import { and, eq, isNull } from 'drizzle-orm';
-import { locations, serviceCategories, services, turnCalls } from '@turn/db';
-import { appointmentsBetween } from '@turn/db/appointments';
+import { and, eq, gt, isNull, sql } from 'drizzle-orm';
+import { locations, serviceCategories, services, visitServices, visits } from '@turn/db';
+import { aheadBecause, plainQueue, techBoard } from '@turn/db/board';
+import { toCheckOut } from '@turn/db/checkout';
 import { nameParts, shortName } from '@turn/db/clients';
-import { techBoard } from '@turn/db/board';
-import {
-  compareQueue,
-  deskOptions,
-  floorAttention,
-  todayCounts,
-  waitingVisits,
-} from '@turn/db/engine';
-import { feedSummary, FEED_STALE_MIN } from '@turn/db/feeds';
+import { floorAttention, pickQueues, todayPenalties, waitingVisits } from '@turn/db/engine';
+import { feedSummary } from '@turn/db/feeds';
 import { openHelpRequests } from '@turn/db/help';
+import { menuLevels, reaches } from '@turn/db/levels';
 import { requestHolds } from '@turn/db/requests';
-import { ensureDailySummary, localDate, previousDate } from '@turn/db/reports';
 import { activeRules } from '@turn/db/rules';
 import { mayEditTechnicians } from '@turn/db/tech-settings';
 import { mayActForTechnicians } from '@turn/db/act-for';
-import { locationStatus, sweepFloor } from '@turn/db/status';
-import Link from 'next/link';
+import { sweepFloor } from '@turn/db/status';
 import { redirect } from 'next/navigation';
 import { AdminNav } from '@/components/AdminNav';
 import { AutoRefresh } from '@/components/AutoRefresh';
-import { Board, secondsSince, type BoardRow } from '@/components/Board';
-import { TechCards } from '@/components/TechCards';
-import { Button } from '@/components/ui';
+import { formatClock, formatPoints, pointsWord, secondsSince } from '@/components/Board';
+import { lineText, signedPoints } from '@/components/tech-lines';
 import { fill } from '@/i18n/dictionary';
-import { LanguageToggle } from '@/i18n/LanguageToggle';
 import { getDictionary } from '@/i18n/lang';
 import { membershipWith, requireActor } from '@/lib/auth';
 import { db } from '@/lib/db';
 import { can } from '@/lib/permissions';
-import { currentKiosk } from '@/lib/kiosk';
-import { signOut } from '../login/actions';
 import { salonInput } from './appointments/form';
-import { enterKioskMode } from './kiosk/actions';
-import { Desk } from './Desk';
+import { Floor } from './floor/Floor';
+import {
+  categoryLabel,
+  floorStatus,
+  groupTiles,
+  minutesSince,
+  nextLine,
+  pickOptions,
+  rowTitle,
+  timeText,
+} from './floor/model';
+import type { CheckoutItem, ClientRow, NeedsItem, TeamMember } from './floor/types';
+import type { Waiting } from './floor/waiting';
 
-// Admin home: the live board in queue order, what needs attention, the front
-// desk (walk-ins and calls), and today's counts as a sentence.
+// v0.18.0 "Simplify the desk": the board as one screen. What needs a person
+// (Needs you), who is next, the team in turn order and the clients, with
+// every desk action one tap away. Today's counts, yesterday's line and the
+// calendar box moved to Reports ("Today"); Overrides moved into each tech's
+// drawer. Every action still goes to the same server function, which checks
+// the person's rights again.
 export default async function AdminPage() {
   const [{ lang, t }, actor] = await Promise.all([getDictionary(), requireActor()]);
   // Technicians see their own position on /me, never the whole board (roles table).
   const membership = membershipWith(actor, 'view_board');
   if (!membership && actor.memberships.some((m) => m.role === 'technician')) redirect('/me');
-
-  // Part 6: out-over penalties and shifts left open from an earlier day are
-  // settled before the board is read. Idempotent.
-  if (membership) await sweepFloor(db(), membership.locationId);
+  if (!membership) {
+    return (
+      <main className="mx-auto flex w-full max-w-5xl flex-1 flex-col gap-6 px-4 py-4 sm:px-8">
+        <AdminNav current="board" badge={0} />
+        <p className="max-w-[60ch] text-lead">{t.admin.noSalon}</p>
+      </main>
+    );
+  }
+  const loc = membership.locationId;
+  const role = membership.role;
+  // Out-over penalties and what an earlier day left open are settled first.
+  await sweepFloor(db(), loc);
   const now = new Date();
-  const [rows, menu, waiting, counts, attention, calendar, upcoming, loc, cards] = membership
-    ? await Promise.all([
-        boardRows(membership.locationId),
-        db()
-          .select({
-            id: services.id,
-            name: services.name,
-            category: serviceCategories.name,
-            isFix: services.isFix,
-          })
-          .from(services)
-          .innerJoin(serviceCategories, eq(serviceCategories.id, services.categoryId))
-          .where(and(eq(services.locationId, membership.locationId), isNull(services.archivedAt)))
-          .orderBy(serviceCategories.name, services.name),
-        waitingVisits(db(), membership.locationId),
-        todayCounts(db(), membership.locationId),
-        floorAttention(db(), membership.locationId),
-        // Part 7: the calendar's state (T15) and the next appointments.
-        feedSummary(db(), membership.locationId, now),
-        appointmentsBetween(
-          db(),
-          membership.locationId,
-          new Date(now.getTime() - 30 * 60_000),
-          new Date(now.getTime() + 4 * 3_600_000),
-        ),
-        db()
-          .select({ timezone: locations.timezone })
-          .from(locations)
-          .where(eq(locations.id, membership.locationId))
-          .then((r) => r[0]),
-        techBoard(db(), membership.locationId, now),
-      ])
-    : [[], [], [], { visits: 0, denies: 0, overrides: 0 }, null, null, [], undefined, []];
-  // v0.14.0: who the desk may ask or pick outside the turn order, per waiting visit.
-  const options = membership ? await deskOptions(db(), membership.locationId) : new Map();
-  // v0.15.0: visits waiting for a requested or booked technician who is busy,
-  // and the rules' queue order for the "why this order" lines.
-  const [holds, rules, help] = membership
-    ? await Promise.all([
-        requestHolds(db(), membership.locationId, now),
-        activeRules(db(), membership.locationId),
-        // v0.16.0: "Need help" taps nobody has acknowledged yet.
-        openHelpRequests(db(), membership.locationId),
-      ])
-    : [new Map(), null, []];
+  const since30 = new Date(now.getTime() - 30 * 24 * 3_600_000);
+  const [
+    cards,
+    plain,
+    menu,
+    usage,
+    waiting,
+    attention,
+    calendar,
+    place,
+    holds,
+    rules,
+    help,
+    picks,
+    levelMenu,
+  ] = await Promise.all([
+    techBoard(db(), loc, now),
+    plainQueue(db(), loc, now),
+    db()
+      .select({
+        id: services.id,
+        name: services.name,
+        category: serviceCategories.name,
+        isFillOrFullSet: serviceCategories.isFillOrFullSet,
+        deskPicks: services.deskPicks,
+        isFix: services.isFix,
+      })
+      .from(services)
+      .innerJoin(serviceCategories, eq(serviceCategories.id, services.categoryId))
+      .where(and(eq(services.locationId, loc), isNull(services.archivedAt)))
+      .orderBy(serviceCategories.name, services.name),
+    // B7: most used first, from the last 30 days of visits.
+    db()
+      .select({ id: visitServices.serviceId, n: sql<number>`count(*)::int` })
+      .from(visitServices)
+      .innerJoin(visits, eq(visits.id, visitServices.visitId))
+      .where(and(eq(visits.locationId, loc), gt(visits.arrivedAt, since30)))
+      .groupBy(visitServices.serviceId),
+    waitingVisits(db(), loc),
+    floorAttention(db(), loc),
+    feedSummary(db(), loc, now),
+    db()
+      .select({ timezone: locations.timezone })
+      .from(locations)
+      .where(eq(locations.id, loc))
+      .then((r) => r[0]),
+    requestHolds(db(), loc, now),
+    activeRules(db(), loc),
+    openHelpRequests(db(), loc),
+    pickQueues(db(), loc, now),
+    menuLevels(db(), loc),
+  ]);
+  const tz = place?.timezone ?? 'America/New_York';
   const clock = new Intl.DateTimeFormat(lang === 'vi' ? 'vi-VN' : 'en-US', {
-    timeZone: loc?.timezone ?? 'America/New_York',
+    timeZone: tz,
     hour: 'numeric',
     minute: '2-digit',
   });
   const day = new Intl.DateTimeFormat(lang === 'vi' ? 'vi-VN' : 'en-US', {
-    timeZone: loc?.timezone ?? 'America/New_York',
+    timeZone: tz,
     weekday: 'short',
     month: 'short',
     day: 'numeric',
   });
-  const nextAppointments = upcoming.filter((a) => !a.arrivedAt && !a.cancelledAt).slice(0, 4);
-  const owner = !!membership && can(membership.role, 'manage_rules');
-  // v0.17.1 (review #6): technicians' own links waiting for the owner or a manager.
-  const toApprove =
-    membership && calendar && can(membership.role, 'approve_calendar_links')
-      ? calendar.pending
-      : [];
-  // v0.17.0: may this person accept, deny and finish for a technician?
+  const f = t.floor;
   const canActFor =
-    !!membership &&
-    can(membership.role, 'act_for_technician') &&
-    (await mayActForTechnicians(db(), membership));
-  // Part 9: this browser is also paired as this location's kiosk.
-  const kiosk = membership ? await currentKiosk() : null;
-  const kioskHere = !!kiosk && kiosk.locationId === membership?.locationId;
-  // Part 8: the owner's end-of-day summary for yesterday (written once, then read).
-  const yesterday =
-    owner && membership ? previousDate(localDate(now, loc?.timezone ?? 'America/New_York')) : null;
-  const lastDay =
-    yesterday && membership
-      ? await ensureDailySummary(db(), membership.locationId, yesterday, now)
-      : null;
+    can(role, 'act_for_technician') && (await mayActForTechnicians(db(), membership));
+  const canOverride = can(role, 'override_queue');
+  const canReassign = can(role, 'reassign_visit');
+  const canApprove = can(role, 'approve_fixes');
+  const canEnter = can(role, 'enter_walkins');
+  const [penalties, checkout, canEdit] = await Promise.all([
+    canOverride ? todayPenalties(db(), loc) : Promise.resolve([]),
+    canEnter
+      ? toCheckOut(db(), {
+          userId: actor.userId,
+          role,
+          organizationId: membership.organizationId,
+          locationId: loc,
+        })
+      : Promise.resolve(null),
+    mayEditTechnicians(db(), membership),
+  ]);
+
+  // ---- Team (B2 to B6) ------------------------------------------------------
+  const plainOf = new Map(plain.rows.map((r) => [r.technicianId, r]));
+  const timers = new Map(attention?.timers.map((x) => [x.technicianId, x]) ?? []);
+  const sort = rules?.queue.sort;
+  const everyScore = !!sort?.includes('had_appointment_last');
+  const zeroOnly = !everyScore && (!sort || sort.includes('double_zero_last'));
+  const unansweredMin = attention?.unansweredCallMin ?? 3;
+  const team: TeamMember[] = cards.map((c, i) => {
+    const pr = plainOf.get(c.technicianId);
+    const status = floorStatus(c.status, c.heldForAppointment, pr?.why);
+    const minutes = minutesSince(c.status === 'called' ? c.calledAt : c.since, now);
+    const apptAt = pr?.appointmentAt ?? c.nextAppointmentAt;
+    const heldAt = apptAt ? clock.format(apptAt) : null;
+    const over = timers.get(c.technicianId)?.over ?? false;
+    const callable = pr?.eligible ?? false;
+    // The labelled time already says why for these; others get a few words.
+    const said = ['break', 'out', 'in_service', 'already_called', 'appointment_soon'];
+    const reason =
+      !callable && pr && !said.includes(pr.why)
+        ? fill(f.why[pr.why] ?? pr.why, { time: heldAt ?? '' })
+        : null;
+    const levelName = c.level ? (t.levels.name[c.level] ?? c.level) : null;
+    const diffLines: string[] = [];
+    if (c.level && c.services) {
+      const ticks = new Set(c.services);
+      const asLevel = levelMenu.filter((s) => reaches(c.level!, s.minLevel)).map((s) => s.name);
+      const extra = c.services.filter((n) => !asLevel.includes(n));
+      const missing = asLevel.filter((n) => !ticks.has(n));
+      if (extra.length) diffLines.push(fill(f.alsoDoes, { list: extra.join(', ') }));
+      if (missing.length) diffLines.push(fill(f.doesNot, { list: missing.join(', ') }));
+      if (!extra.length && !missing.length) diffLines.push(f.asLevel);
+    } else {
+      diffLines.push(
+        c.skills === null
+          ? f.everything
+          : fill(f.skillsOnly, {
+              list: c.skills.map((s) => categoryLabel(s, f.category)).join(', '),
+            }),
+      );
+    }
+    const ahead = cards[i + 1];
+    const notes = [
+      c.checkedInAt
+        ? fill(t.techBoard.checkedIn, {
+            time: clock.format(c.checkedInAt),
+            rank: c.checkInRank,
+            count: cards.length,
+          })
+        : null,
+      c.hadAppointmentLast && everyScore
+        ? t.techBoard.appointmentLast
+        : c.hadAppointmentLast && zeroOnly && c.points === 0
+          ? t.techBoard.appointmentLastZero
+          : null,
+      ahead
+        ? fill(t.techBoard.ahead[aheadBecause(c, ahead, sort)], { name: ahead.displayName })
+        : null,
+    ].filter((n): n is string => !!n);
+    return {
+      id: c.technicianId,
+      name: c.displayName,
+      place: c.turn,
+      status,
+      points: formatPoints(c.points, c.hadAppointmentLast),
+      pointsWords: pointsWord(c.points, c.hadAppointmentLast, t.board),
+      time: timeText(f, status, minutes, { heldAt, over, limit: attention?.outOverMin }),
+      alert: over || (status === 'called' && minutes >= unansweredMin),
+      callable,
+      isNext: plain.next?.technicianId === c.technicianId,
+      reason,
+      levelLine: levelName ? fill(f.level, { level: levelName }) : f.noLevel,
+      diffLines,
+      limits: c.restrictions.map((r) =>
+        r.type === 'custom'
+          ? (r.note ?? '')
+          : fill(t.profile.summary[r.type] ?? r.type, { value: r.value ?? '' }),
+      ),
+      apptLine: c.nextAppointmentAt
+        ? fill(c.heldForAppointment ? f.heldAppt : f.nextAppt, {
+            time: clock.format(c.nextAppointmentAt),
+          })
+        : f.noAppt,
+      currentLine:
+        c.currentServices.length && (c.status === 'called' || c.status === 'in_service')
+          ? fill(f.current, { services: c.currentServices.join(' + ') })
+          : null,
+      lines: c.lines.map((l) => ({
+        delta: signedPoints(l.delta),
+        text: lineText(l, t.techBoard, t.me.call.reasons),
+        at: clock.format(l.at),
+      })),
+      total: formatPoints(c.points, c.hadAppointmentLast),
+      notes,
+      // v0.17.1: the free-no badge is for owners and managers only.
+      freeDenyBadge:
+        can(role, 'view_audit') && c.freeDenyFlag
+          ? fill(t.techBoard.freeDenies, { n: c.freeDenies })
+          : null,
+      openCallId: c.openCallId,
+      openCallKind: c.openCallKind,
+      inServiceVisitId: c.inServiceVisitId,
+      penalties: penalties
+        .filter((p) => p.technicianId === c.technicianId)
+        .map((p) => ({
+          ledgerId: p.ledgerId,
+          text:
+            fill(t.manage.penaltyLine, {
+              name: p.technicianName,
+              points: formatPoints(p.delta),
+              kind: t.manage.penalty[p.reasonType] ?? p.reasonType,
+            }) + (p.note ? ` · ${p.note}` : ''),
+          excused: p.excused,
+        })),
+    };
+  });
+  const nextName = plain.next
+    ? (cards.find((c) => c.technicianId === plain.next!.technicianId)?.displayName ?? null)
+    : null;
+  const next = { ...nextLine(f, nextName, team), free: !!nextName };
+
+  // ---- Clients (B9 to B12, C1 to C3) --------------------------------------
+  const cardOf = new Map(cards.map((c) => [c.technicianId, c]));
+  const rows: ClientRow[] = waiting.map((v) => {
+    const base: Waiting = {
+      id: v.id,
+      status: v.status,
+      services: v.services,
+      waitSeconds: secondsSince(v.arrivedAt),
+      calledTechnician: v.calledTechnician,
+      calledSeconds: v.calledAt ? secondsSince(v.calledAt) : null,
+      assignedTechnician: v.assignedTechnician,
+      requestedTechnician: v.requestedTechnician,
+      note: v.note,
+      clientName:
+        v.clientFirstName || v.clientLastName
+          ? shortName(v.clientFirstName, v.clientLastName)
+          : v.clientName
+            ? shortName(
+                nameParts({ name: v.clientName }).firstName,
+                nameParts({ name: v.clientName }).lastName,
+              )
+            : null,
+      clientGender: v.clientGender,
+      clientIsKid: v.clientIsKid,
+      clientAge: v.clientAge,
+      groupId: v.groupId,
+      fromKiosk: v.fromKiosk,
+      kioskName: v.kioskName ? shortName(v.kioskName, v.kioskLastName) : null,
+      needsConfirm: v.needsConfirm,
+      deskPicks: v.deskPicks,
+      splitRest: v.splitFromVisitId !== null,
+      callKind: v.callKind ?? null,
+      slip: v.slip,
+      held: v.held,
+      callId: v.callId ?? null,
+      calledTechnicianId: v.calledTechnicianId ?? null,
+      assignedTechnicianId: v.assignedTechnicianId ?? null,
+      leftClaimPending: v.leftClaimPending === true,
+      booked: v.source === 'appointment',
+      hold: holdOf(holds.get(v.id), now, clock),
+      partyId: v.partyId,
+      partySize: v.partySize,
+      isFix: v.isFix,
+      needsApproval: v.needsApproval,
+      fixOf: v.fixOf
+        ? {
+            date: day.format(v.fixOf.at),
+            services: v.fixOf.services,
+            technician: v.fixOf.technician,
+          }
+        : null,
+    };
+    const title = rowTitle(f, base, v.status === 'waiting' ? minutesSince(v.arrivedAt, now) : null);
+    const callTime = (s: number) =>
+      s < 60 ? t.desk.justNow : fill(f.waitMin, { n: Math.floor(s / 60) });
+    const callLine =
+      v.status === 'called' && v.calledTechnician
+        ? fill(
+            v.callKind === 'offer'
+              ? f.askedRow
+              : v.callKind === 'desk_pick'
+                ? f.pickedRow
+                : f.calledRow,
+            { name: v.calledTechnician, time: callTime(base.calledSeconds ?? 0) },
+          )
+        : v.status === 'in_service' && v.assignedTechnician
+          ? fill(f.servedRow, {
+              name: v.assignedTechnician,
+              n: minutesSince(
+                v.assignedTechnicianId ? (cardOf.get(v.assignedTechnicianId)?.since ?? null) : null,
+                now,
+              ),
+            })
+          : null;
+    const entry = picks.get(v.id);
+    return {
+      ...base,
+      who: title.who,
+      servicesText: title.services,
+      wait: title.wait,
+      title: title.title,
+      callLine,
+      pick:
+        entry && !base.hold
+          ? pickOptions(
+              f,
+              {
+                deskPicks: entry.deskPicks,
+                originalTechnicianId: entry.originalTechnicianId,
+                queue: entry.queue.map((c) => ({
+                  technicianId: c.technicianId,
+                  displayName: c.displayName,
+                  eligible: c.eligible,
+                  why: c.why,
+                  skilled: c.skilled,
+                  ...(c.level ? { level: c.level } : {}),
+                  ...(c.appointmentAt ? { appointmentAt: c.appointmentAt } : {}),
+                })),
+              },
+              { canReassign, clock: (iso) => clock.format(new Date(iso)) },
+            )
+          : null,
+    };
+  });
+
+  // ---- Needs you (B1) -------------------------------------------------------
+  const toApprove = calendar && can(role, 'approve_calendar_links') ? calendar.pending : [];
+  const seenParty = new Set<string>();
+  const needs: NeedsItem[] = [];
+  for (const r of rows) {
+    if (r.status === 'waiting' && r.needsConfirm) {
+      if (r.partyId && seenParty.has(r.partyId)) continue;
+      if (r.partyId) seenParty.add(r.partyId);
+      needs.push({ kind: 'kiosk', key: `k-${r.id}`, row: r });
+    }
+  }
+  if (canApprove) {
+    for (const r of rows)
+      if (r.status === 'waiting' && r.needsApproval)
+        needs.push({ kind: 'fix', key: `f-${r.id}`, row: r });
+  }
+  for (const r of rows)
+    if (r.status === 'called' && r.leftClaimPending)
+      needs.push({ kind: 'left', key: `l-${r.id}`, row: r });
+  for (const h of help) {
+    needs.push({
+      kind: 'help',
+      key: `h-${h.id}`,
+      id: h.id,
+      title: fill(t.desk.helpTitle, { name: h.technician }),
+      detail:
+        fill(t.desk.helpWaiting, { time: formatClock(secondsSince(h.createdAt)) }) +
+        (h.reason ? ` · ${fill(t.desk.helpReason, { reason: h.reason })}` : ''),
+    });
+  }
+  for (const c of attention?.unansweredCalls ?? []) {
+    needs.push({
+      kind: 'unanswered',
+      key: `u-${c.callId}`,
+      callId: c.callId,
+      title: fill(t.desk.unanswered, { name: c.technicianName, minutes: c.waitedMin }),
+    });
+  }
+  for (const r of rows) {
+    if (r.status === 'waiting' && r.hold?.attention) {
+      needs.push({
+        kind: 'hold',
+        key: `r-${r.id}`,
+        row: r,
+        title: fill(t.desk.holdFlag, { name: r.hold.technicianName, minutes: r.hold.waitedMin }),
+        detail: r.title,
+      });
+    }
+  }
+  if (toApprove.length) {
+    needs.push({
+      kind: 'links',
+      key: 'links',
+      title: fill(f.linksToApprove, { names: toApprove.join(', ') }),
+    });
+  }
+  if (calendar && (calendar.failing.length || calendar.stale.length)) {
+    needs.push({
+      kind: 'sync',
+      key: 'sync',
+      title: fill(f.syncFailing, {
+        names: [...calendar.failing.map((x) => x.technicianName), ...calendar.stale].join(', '),
+      }),
+    });
+  }
+  const waitLine =
+    !attention || attention.estimatedWaitMin === null
+      ? t.desk.waitUnknown
+      : attention.estimatedWaitMin === 0
+        ? t.desk.noWait
+        : fill(t.desk.estimatedWait, { minutes: attention.estimatedWaitMin });
+
+  // ---- To check out (F1) ----------------------------------------------------
+  const items: CheckoutItem[] =
+    checkout && checkout.ok
+      ? checkout.rows.map((c) => {
+          const who =
+            (c.clientFirstName || c.clientLastName
+              ? shortName(c.clientFirstName, c.clientLastName)
+              : c.clientName
+                ? shortName(
+                    nameParts({ name: c.clientName }).firstName,
+                    nameParts({ name: c.clientName }).lastName,
+                  )
+                : c.kioskName
+                  ? shortName(c.kioskName, c.kioskLastName)
+                  : null) ?? f.walkInName;
+          return {
+            visitId: c.visitId,
+            who,
+            parts: c.parts.map((p) =>
+              p.technician
+                ? fill(f.partLine, { services: p.services.join(' + '), name: p.technician })
+                : fill(f.partNobody, { services: p.services.join(' + ') }),
+            ),
+            finished: fill(f.finishedAt, { time: clock.format(c.finishedAt) }),
+          };
+        })
+      : [];
+
+  // ---- Walk-in sheet (B7) ---------------------------------------------------
+  const count = Object.fromEntries(usage.map((u) => [u.id, Number(u.n)]));
+  const tiles = menu.map((s) => ({ ...s, category: categoryLabel(s.category, f.category) }));
+  const raw = menu.map((s) => ({ ...s }));
+  const groups = groupTiles(raw, count).map((g) => ({
+    group: g.group,
+    services: g.services.map((s) => ({
+      id: s.id,
+      name: s.name,
+      category: categoryLabel(s.category, f.category),
+    })),
+  }));
 
   return (
-    <main className="mx-auto flex w-full max-w-5xl flex-1 flex-col gap-8 px-4 py-6 sm:px-8">
+    <main className="mx-auto flex w-full max-w-[1500px] flex-1 flex-col gap-3 px-4 py-3 min-[1100px]:h-dvh min-[1100px]:overflow-hidden">
       <AutoRefresh seconds={5} />
-      <header className="flex flex-wrap items-center justify-between gap-3">
-        <div className="flex flex-col">
-          <span className="text-lead font-semibold">{t.app.name}</span>
-          <span className="text-small text-slate/70">
-            {fill(t.admin.welcome, { name: actor.displayName })}
-          </span>
-        </div>
-        <div className="flex items-center gap-3">
-          <LanguageToggle lang={lang} t={t} />
-          {kioskHere ? (
-            <form action={enterKioskMode}>
-              <Button type="submit" tone="quiet">
-                {t.nav.kioskMode}
-              </Button>
-            </form>
-          ) : null}
-          <form action={signOut}>
-            <Button type="submit" tone="quiet">
-              {t.nav.signOut}
-            </Button>
-          </form>
-        </div>
-      </header>
-
-      {membership ? (
-        <>
-          <AdminNav
-            t={t.nav}
-            current="board"
-            canStaff={can(membership.role, 'invite_staff')}
-            canRules={can(membership.role, 'manage_rules')}
-            canManage={can(membership.role, 'override_queue')}
-            canLog={can(membership.role, 'view_audit')}
-            canKiosk={can(membership.role, 'manage_kiosks')}
-          />
-          <section className="flex flex-col gap-4">
-            <h1 className="text-heading font-semibold">
-              {fill(t.admin.locationRole, {
-                location: membership.locationName,
-                role: t.roles[membership.role],
-              })}
-            </h1>
-            <Board rows={rows} t={t} compact />
-            <p className="text-slate/80">{fill(t.admin.today, counts)}</p>
-            {lastDay ? (
-              <p className="text-slate/80">
-                {fill(t.admin.yesterday, {
-                  date: lastDay.date,
-                  visits: lastDay.visits,
-                  denies: lastDay.denies,
-                  overrides: lastDay.overrides,
-                })}{' '}
-                {closedCount(lastDay) > 0
-                  ? `${fill(t.admin.yesterdayClosed, { n: closedCount(lastDay) })} `
-                  : ''}
-                <Link
-                  href={`/admin/reports?date=${lastDay.date}`}
-                  className="font-semibold underline"
-                >
-                  {t.admin.seeReport}
-                </Link>
-              </p>
-            ) : null}
-          </section>
-          {calendar &&
-          (calendar.feeds > 0 || nextAppointments.length > 0 || toApprove.length > 0) ? (
-            <section
-              aria-live="polite"
-              className={`flex flex-col gap-1 border-l-[12px] bg-board p-4 ${
-                calendar.failing.length || calendar.stale.length ? 'border-polish' : 'border-teal'
-              }`}
-            >
-              {calendar.feeds > 0 ? (
-                <p className="text-slate/80">
-                  {calendar.lastSyncedAt
-                    ? fill(t.appointments.lastSynced, { time: clock.format(calendar.lastSyncedAt) })
-                    : t.appointments.neverSynced}
-                </p>
-              ) : null}
-              {calendar.failing.map((f) => (
-                <p key={f.technicianName} className="font-semibold text-polish">
-                  {fill(t.appointments.failing, {
-                    name: f.technicianName,
-                    error: t.appointments.feedErrors[f.error] ?? f.error,
-                  })}
-                  {owner ? '' : ` ${t.appointments.tellOwner}`}
-                </p>
-              ))}
-              {calendar.stale.length ? (
-                <p className="font-semibold text-polish">
-                  {fill(t.appointments.stale, {
-                    minutes: FEED_STALE_MIN,
-                    names: calendar.stale.join(', '),
-                  })}
-                </p>
-              ) : null}
-              {toApprove.length ? (
-                <p className="font-semibold">
-                  {fill(t.appointments.toApprove, { names: toApprove.join(', ') })}
-                </p>
-              ) : null}
-              {nextAppointments.length ? (
-                <p className="text-slate/80">
-                  <span className="font-medium">{t.appointments.upcomingOnBoard}: </span>
-                  {nextAppointments
-                    .map((a) =>
-                      fill(t.appointments.upcomingLine, {
-                        time: clock.format(a.startAt),
-                        name: a.technicianName,
-                      }),
-                    )
-                    .join(' · ')}
-                </p>
-              ) : null}
-              <Link href="/admin/appointments" className="font-semibold text-navy underline">
-                {t.appointments.open}
-              </Link>
-            </section>
-          ) : null}
-          {can(membership.role, 'enter_walkins') && attention ? (
-            <Desk
-              services={menu}
-              waiting={waiting.map((v) => ({
-                id: v.id,
-                status: v.status,
-                services: v.services,
-                waitSeconds: secondsSince(v.arrivedAt),
-                calledTechnician: v.calledTechnician,
-                calledSeconds: v.calledAt ? secondsSince(v.calledAt) : null,
-                assignedTechnician: v.assignedTechnician,
-                requestedTechnician: v.requestedTechnician,
-                note: v.note,
-                // "First L." on the board (v0.13.0); the full name is on the client's page.
-                clientName:
-                  v.clientFirstName || v.clientLastName
-                    ? shortName(v.clientFirstName, v.clientLastName)
-                    : v.clientName
-                      ? shortName(
-                          nameParts({ name: v.clientName }).firstName,
-                          nameParts({ name: v.clientName }).lastName,
-                        )
-                      : null,
-                clientGender: v.clientGender,
-                clientIsKid: v.clientIsKid,
-                clientAge: v.clientAge,
-                groupId: v.groupId,
-                fromKiosk: v.fromKiosk,
-                kioskName: v.kioskName ? shortName(v.kioskName, v.kioskLastName) : null,
-                needsConfirm: v.needsConfirm,
-                deskPicks: v.deskPicks,
-                splitRest: v.splitFromVisitId !== null,
-                callKind: v.callKind ?? null,
-                slip: v.slip,
-                held: v.held,
-                callId: v.callId ?? null,
-                calledTechnicianId: v.calledTechnicianId ?? null,
-                assignedTechnicianId: v.assignedTechnicianId ?? null,
-                leftClaimPending: v.leftClaimPending === true,
-                booked: v.source === 'appointment',
-                hold: holdOf(holds.get(v.id), now, clock),
-                partyId: v.partyId,
-                partySize: v.partySize,
-                isFix: v.isFix,
-                needsApproval: v.needsApproval,
-                fixOf: v.fixOf
-                  ? {
-                      date: day.format(v.fixOf.at),
-                      services: v.fixOf.services,
-                      technician: v.fixOf.technician,
-                    }
-                  : null,
-                options: (options.get(v.id)?.technicians ?? []).map(
-                  (o: {
-                    technicianId: string;
-                    original?: boolean;
-                    displayName: string;
-                    level: string | null;
-                    turn: number;
-                    status: string;
-                    canCall: boolean;
-                    appointmentAt?: Date;
-                  }) => ({
-                    technicianId: o.technicianId,
-                    ...(o.original ? { original: true } : {}),
-                    name: o.displayName,
-                    level: o.level,
-                    turn: o.turn,
-                    status: o.status,
-                    canCall: o.canCall,
-                    // v0.17.1: "Held: 2:30 appt", not "available".
-                    ...(o.appointmentAt ? { heldAt: clock.format(o.appointmentAt) } : {}),
-                  }),
-                ),
-              }))}
-              technicians={rows.map((r) => ({ id: r.id, name: r.name }))}
-              attention={{
-                unansweredCalls: attention.unansweredCalls.map((c) => ({
-                  callId: c.callId,
-                  technicianName: c.technicianName,
-                  waitedMin: c.waitedMin,
-                })),
-                unansweredCallMin: attention.unansweredCallMin,
-                estimatedWaitMin: attention.estimatedWaitMin,
-                longWait: attention.longWait,
-                longWaitMin: attention.longWaitMin,
-                noticeEnabled: attention.noticeEnabled,
-                timers: attention.timers.map((x) => ({
-                  technicianId: x.technicianId,
-                  technicianName: x.technicianName,
-                  status: x.status,
-                  minutes: x.minutes,
-                  over: x.over,
-                })),
-                outOverMin: attention.outOverMin,
-                help: help.map((h) => ({
-                  id: h.id,
-                  name: h.technician,
-                  reason: h.reason,
-                  waitedSeconds: secondsSince(h.createdAt),
-                })),
-              }}
-              canApprove={can(membership.role, 'approve_fixes')}
-              fixWindowDays={rules?.fixes.window_days ?? 14}
-              fixNeedsApproval={
-                !can(membership.role, 'approve_fixes') &&
-                (rules?.fixes.receptionist_needs_approval ?? true)
-              }
-              groupMax={rules?.groups.max_people ?? 8}
-              canActFor={canActFor}
-              actFor={t.actFor}
-              denyReasons={t.me.call.reasons}
-              freeReasons={rules?.penalties.deny_excused_reasons ?? []}
-              freeLabel={t.me.call.freeReason}
-              t={t.desk}
-              levelNames={t.levels.name}
-              statusNames={t.board.status}
-              bookDefault={salonInput(
-                new Date(Math.ceil((now.getTime() + 60 * 60_000) / 900_000) * 900_000),
-                loc?.timezone ?? 'America/New_York',
-              )}
-            />
-          ) : null}
-          <TechCards
-            cards={cards}
-            t={t}
-            lang={lang}
-            timezone={loc?.timezone ?? 'America/New_York'}
-            canEdit={await mayEditTechnicians(db(), membership)}
-            canActFor={canActFor}
-            showFairness={can(membership.role, 'view_audit')}
-            sort={rules?.queue.sort}
-          />
-        </>
-      ) : (
-        <p className="max-w-[60ch] text-lead">{t.admin.noSalon}</p>
-      )}
+      <AdminNav current="board" badge={needs.length} />
+      <Floor
+        words={{
+          floor: f,
+          desk: t.desk,
+          actFor: t.actFor,
+          manage: t.manage,
+          reasons: t.me.call.reasons,
+          freeLabel: t.me.call.freeReason,
+        }}
+        levelNames={t.levels.name}
+        canEnter={canEnter}
+        needs={needs}
+        waitLine={
+          attention?.longWait
+            ? `${waitLine} · ${fill(t.desk.longWait, { minutes: attention.longWaitMin })}`
+            : waitLine
+        }
+        longWait={!!attention?.longWait}
+        noticeEnabled={!!attention?.noticeEnabled}
+        next={next}
+        team={team}
+        rows={rows}
+        checkout={{ on: !!(checkout && checkout.ok && checkout.on), items }}
+        clientRights={{ approve: canApprove, actFor: canActFor }}
+        drawerRights={{
+          actFor: canActFor,
+          edit: canEdit,
+          override: canOverride,
+          reassign: canReassign,
+        }}
+        freeReasons={rules?.penalties.deny_excused_reasons ?? []}
+        bookDefault={salonInput(
+          new Date(Math.ceil((now.getTime() + 60 * 60_000) / 900_000) * 900_000),
+          tz,
+        )}
+        walkIn={{
+          groups,
+          fixes: tiles
+            .filter((s) => s.isFix)
+            .map((s) => ({ id: s.id, name: s.name, category: s.category, isFix: true })),
+          allServices: tiles.map((s) => ({
+            id: s.id,
+            name: s.name,
+            category: s.category,
+            isFix: s.isFix,
+          })),
+          technicians: cards.map((c) => ({ id: c.technicianId, name: c.displayName })),
+          fixWindowDays: rules?.fixes.window_days ?? 14,
+          fixNeedsApproval: !canApprove && (rules?.fixes.receptionist_needs_approval ?? true),
+          groupMax: rules?.groups.max_people ?? 8,
+        }}
+      />
     </main>
   );
-}
-
-/** v0.17.0: how many things the day-end close-out closed for that day. */
-function closedCount(s: {
-  closedAtDayEnd?: { visits: number; autoFinished: number; calls: number; help: number };
-}): number {
-  const c = s.closedAtDayEnd;
-  return c ? c.visits + c.autoFinished + c.calls + c.help : 0;
 }
 
 /** A request hold in the desk's shape: minutes and a clock time, no ids. */
@@ -427,35 +571,4 @@ function holdOf(
     waitedMin: h.waitedMin,
     attention: h.attention,
   };
-}
-
-// Queue order (design doc, rules' queue.sort): lowest points first, 0 before 00, then earlier check-in. A
-// technician with an open call shows as "called" with the time waited.
-async function boardRows(locationId: string): Promise<BoardRow[]> {
-  const [rows, open, rules] = await Promise.all([
-    locationStatus(db(), locationId),
-    db()
-      .select({ technicianId: turnCalls.technicianId, calledAt: turnCalls.calledAt })
-      .from(turnCalls)
-      .where(and(eq(turnCalls.locationId, locationId), isNull(turnCalls.respondedAt))),
-    activeRules(db(), locationId),
-  ]);
-  const called = new Map(open.map((c) => [c.technicianId, c.calledAt]));
-  return (
-    rows
-      .filter((r) => r.status !== 'off')
-      // The engine's own order, so 0 sits above 00 (Part 7).
-      .sort((a, b) => compareQueue(rules, a, b))
-      .map((r) => {
-        const calledAt = called.get(r.technicianId);
-        return {
-          id: r.technicianId,
-          name: r.displayName,
-          points: r.points,
-          hadAppointmentLast: r.hadAppointmentLast,
-          status: calledAt ? 'called' : (r.status as BoardRow['status']),
-          seconds: secondsSince(calledAt ?? r.since),
-        };
-      })
-  );
 }

@@ -15,14 +15,12 @@ import { fixesByOriginalTech } from '@turn/db/fixes';
 import { eq } from 'drizzle-orm';
 import { redirect } from 'next/navigation';
 import { AdminNav } from '@/components/AdminNav';
+import { SectionTabs } from '@/components/SectionTabs';
 import { Button } from '@/components/ui';
 import { fill } from '@/i18n/dictionary';
-import { LanguageToggle } from '@/i18n/LanguageToggle';
 import { getDictionary } from '@/i18n/lang';
 import { membershipWith, requireActor } from '@/lib/auth';
 import { db } from '@/lib/db';
-import { can } from '@/lib/permissions';
-import { signOut } from '../../login/actions';
 
 function addDays(date: string, days: number): string {
   const d = new Date(`${date}T12:00:00Z`);
@@ -47,38 +45,11 @@ export default async function ReportsPage({
     actor.memberships.length > 0 && actor.memberships.every((m) => m.role === 'technician');
   if (onlyTechnician) redirect('/me');
   const m = membershipWith(actor, 'view_audit');
-  const any = actor.memberships[0];
-
-  const header = (
-    <header className="flex flex-wrap items-center justify-between gap-3">
-      <div className="flex flex-col">
-        <span className="text-lead font-semibold">{t.app.name}</span>
-        <span className="text-small text-slate/70">
-          {fill(t.admin.welcome, { name: actor.displayName })}
-        </span>
-      </div>
-      <div className="flex items-center gap-3">
-        <LanguageToggle lang={lang} t={t} />
-        <form action={signOut}>
-          <Button type="submit" tone="quiet">
-            {t.nav.signOut}
-          </Button>
-        </form>
-      </div>
-    </header>
-  );
 
   if (!m) {
     return (
       <main className="mx-auto flex w-full max-w-5xl flex-1 flex-col gap-8 px-4 py-6 sm:px-8">
-        {header}
-        <AdminNav
-          t={t.nav}
-          current="reports"
-          canStaff={!!any && can(any.role, 'invite_staff')}
-          canRules={!!any && can(any.role, 'manage_rules')}
-          canManage={!!any && can(any.role, 'override_queue')}
-        />
+        <AdminNav current="reports" />
         <p className="max-w-[60ch] text-lead">{t.reports.notAllowed}</p>
       </main>
     );
@@ -118,14 +89,14 @@ export default async function ReportsPage({
 
   return (
     <main className="mx-auto flex w-full max-w-6xl flex-1 flex-col gap-8 px-4 py-6 sm:px-8">
-      {header}
-      <AdminNav
-        t={t.nav}
-        current="reports"
-        canStaff={can(m.role, 'invite_staff')}
-        canRules={can(m.role, 'manage_rules')}
-        canManage={can(m.role, 'override_queue')}
-        canLog
+      <AdminNav current="reports" />
+      <SectionTabs
+        label={t.nav.reportsHistory}
+        current="/admin/reports"
+        items={[
+          { href: '/admin/reports', label: t.nav.reports },
+          { href: '/admin/log', label: t.nav.history },
+        ]}
       />
       <section className="flex flex-col gap-2">
         <h1 className="text-heading font-semibold">

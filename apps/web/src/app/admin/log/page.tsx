@@ -11,15 +11,14 @@ import { visitLabels } from '@turn/db/clients';
 import { eq } from 'drizzle-orm';
 import { redirect } from 'next/navigation';
 import { AdminNav } from '@/components/AdminNav';
+import { SectionTabs } from '@/components/SectionTabs';
 import { pointsWord } from '@/components/Board';
 import { Button } from '@/components/ui';
 import { fill } from '@/i18n/dictionary';
-import { LanguageToggle } from '@/i18n/LanguageToggle';
 import { getDictionary } from '@/i18n/lang';
 import { membershipWith, requireActor } from '@/lib/auth';
 import { db } from '@/lib/db';
 import { can } from '@/lib/permissions';
-import { signOut } from '../../login/actions';
 import { filterQuery, parseLogFilters } from './filters';
 import { auditLabels } from './labels';
 import { formatReadable, visitIdsOf } from './readable';
@@ -44,38 +43,11 @@ export default async function LogPage({
     actor.memberships.length > 0 && actor.memberships.every((m) => m.role === 'technician');
   if (onlyTechnician) redirect('/me');
   const m = membershipWith(actor, 'view_audit');
-  const any = actor.memberships[0];
-
-  const header = (
-    <header className="flex flex-wrap items-center justify-between gap-3">
-      <div className="flex flex-col">
-        <span className="text-lead font-semibold">{t.app.name}</span>
-        <span className="text-small text-slate/70">
-          {fill(t.admin.welcome, { name: actor.displayName })}
-        </span>
-      </div>
-      <div className="flex items-center gap-3">
-        <LanguageToggle lang={lang} t={t} />
-        <form action={signOut}>
-          <Button type="submit" tone="quiet">
-            {t.nav.signOut}
-          </Button>
-        </form>
-      </div>
-    </header>
-  );
 
   if (!m) {
     return (
       <main className="mx-auto flex w-full max-w-5xl flex-1 flex-col gap-8 px-4 py-6 sm:px-8">
-        {header}
-        <AdminNav
-          t={t.nav}
-          current="log"
-          canStaff={!!any && can(any.role, 'invite_staff')}
-          canRules={!!any && can(any.role, 'manage_rules')}
-          canManage={!!any && can(any.role, 'override_queue')}
-        />
+        <AdminNav current="log" />
         <p className="max-w-[60ch] text-lead">{t.log.notAllowed}</p>
       </main>
     );
@@ -101,14 +73,14 @@ export default async function LogPage({
 
   return (
     <main className="mx-auto flex w-full max-w-6xl flex-1 flex-col gap-8 px-4 py-6 sm:px-8">
-      {header}
-      <AdminNav
-        t={t.nav}
-        current="log"
-        canStaff={can(m.role, 'invite_staff')}
-        canRules={can(m.role, 'manage_rules')}
-        canManage={can(m.role, 'override_queue')}
-        canLog
+      <AdminNav current="log" />
+      <SectionTabs
+        label={t.nav.reportsHistory}
+        current="/admin/log"
+        items={[
+          { href: '/admin/reports', label: t.nav.reports },
+          { href: '/admin/log', label: t.nav.history },
+        ]}
       />
       <section className="flex flex-col gap-2">
         <h1 className="text-heading font-semibold">
