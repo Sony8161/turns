@@ -23,7 +23,11 @@ start, and timers move on. Load again for a fresh copy.
 - A service's own points come first: Gel polish change 1, Nail fix / repair 0, Polish change 0.
 - A nail fix or repair is free and entered at the desk only (never the kiosk). The desk sees the client's visits from the last 14 days; a fix a receptionist enters waits for a manager or owner to approve it. The desk picks the tech, the one who did the work first; saying no costs nothing.
 - A group checks in together (up to 8): each person is their own client and visit, called by turn on their own.
-- A called visit whose client walks out before the service starts: **Client left**. No points, the tech keeps her place.
+- A called visit whose client walks out before the service starts: **Client left**. No points, the tech keeps her place. When the tech taps it on her phone, the desk confirms first: **Yes, the client left** or **The client is here**.
+- A waiting client who walks out before anyone is called: **Left without service** (under **More** on the row). A booked client who never comes: **No-show** (under **More** on Appointments, once the start time has passed). Neither counts against any tech.
+- The desk can act for a tech whose phone is not at hand: **Accept for** or **Finish for** her on her current visit (the desk row or her card), **Deny for** her under **More**, with the same points as her phone. Her phone lists what was done for her.
+- Saying no for free ("need a break", "personal"): after 3 in a day her card shows a small badge; there is no daily limit.
+- At day end, whatever is left open closes: waiting and called clients with no points or penalty, a client still in the chair is finished with its points on that day, open calls and help requests close, and everyone is checked out. The end-of-day summary lists it.
 
 ## Levels
 
@@ -57,7 +61,7 @@ start, and timers move on. Load again for a fresh copy.
 
 | Turn | Tech | Level | Status | Points | Checked in | How the points add up |
 | --- | --- | --- | --- | --- | --- | --- |
-| 1 | Thảo | dip | available | 0 | 5th | said no once ("need a break"): excused by the rules, no points |
+| 1 | Thảo | dip | available | 0 | 5th | said no once ("need a break"): excused by the rules, no points; said no once ("personal"): excused by the rules, no points; said no once ("need a break"): excused by the rules, no points; card badge: said no 3 times today (free) |
 | 2 | Linh | gel | available | 00 | 4th | +0 Gel fill (appointment) |
 | 3 | Tâm | gel | on break | ½ | 6th | +½ late start (17 min late) |
 | 4 | Vân | regular polish | available | 1 | 1st | +1 out over 60 min |
@@ -75,9 +79,9 @@ Why this order:
 ## The next calls
 
 Press **Call next** on each waiting row, top to bottom; each called tech accepts on her phone
-(or the owner accepts for her from Manage).
+(or the desk presses **Accept for** her on the row).
 
-First: **Sara Kim** (Gel manicure) shows Linh called, but the client walked out. Press **Client left** on the row (or Linh presses it on her phone): no points, Linh keeps her place.
+First: **Sara Kim** (Gel manicure) was called to Linh, who tapped **Client left** on her phone. The row says "Linh says the client left": press **Yes, the client left** (no points, Linh keeps her place) or **The client is here** (her call stays open).
 
 1. **Thu Pham**, Gel manicure → nobody yet: the client asked for Hoa, so the visit waits for her and never falls back. The row shows Hoa: with a client. It is flagged already (this client arrived 12 minutes ago): **Keep waiting**, **Book for later** or **Send by turn**.
 2. **Hanh Bui**, Nail art / design → never called by turn. Press **Pick a tech**: Linh (free), Vân (free), Hoa (with a client). The picked tech may say no with no penalty.
@@ -105,12 +109,22 @@ Only techs who are in today and do every chosen service, names only, with **Anyo
 
 - Mai tapped **Need help** ("Need more acetone at station 4"). The desk board shows "Mai needs help" with the time waiting until someone presses **On my way**.
 
+## Done for a tech by the desk
+
+- Hạnh pressed **Accept for Hoa**. Hoa's phone shows "Accepted for you by Hạnh" with the time. The desk row shows **Finish for Hoa**.
+
+## Walk-outs, no-shows and yesterday
+
+- Today 2 waiting clients left without service (Reports counts them; no points for anyone).
+- Yesterday's leftovers, closed by the first board load this morning: 1 waiting (no points), 1 still in the chair (finished, its point on yesterday's shift), 0 open calls, 1 help request, 1 check-out. The owner's board and Reports for yesterday list them.
+
 ## Appointments today
 
 | Tech | From | When | State |
 | --- | --- | --- | --- |
+| Thảo | desk | 90 min ago | the desk marked it a **No-show** (the client page counts it) |
 | Linh | Fresha calendar (demo) | 45 min ago | client arrived (visit done) |
-| Tâm | Fresha calendar (demo) | 40 min ago | no-show: past the buffer, no longer holds her |
+| Tâm | Fresha calendar (demo) | 40 min ago | past the buffer, no longer holds her; the desk may press **No-show** (under More) |
 | Thảo | Fresha calendar (demo) | in 20 min | coming up: holds her out of the line |
 | Mai | desk | in 120 min | later today |
 | Linh | desk | in 180 min | later today |

@@ -110,7 +110,9 @@ describe('demo day', () => {
     expect(line('Hoa').lines.map((l) => l.delta)).toEqual([1.5]);
     // C: no ledger row for the excused deny; the reason is on the call.
     expect(line('Thảo').lines).toEqual([]);
-    expect(line('Thảo').excusedDenies).toEqual(['break_needed']);
+    // v0.17.0: two more free no's (both clients then walked out): the badge.
+    expect(line('Thảo').excusedDenies).toEqual(['break_needed', 'personal', 'break_needed']);
+    expect(report.freeDenyBadges).toEqual([{ name: 'Thảo', n: 3 }]);
     expect(line('Mai').lines.map((l) => l.delta)).toEqual([1, 1]);
     expect(line('Linh').lines.map((l) => l.delta)).toEqual([0]);
   });
@@ -175,8 +177,9 @@ describe('demo day', () => {
   it('v0.16.0: client left, a pending fix, a kiosk group of three and a help request', () => {
     // Sara Kim's call went to Linh (Thảo is held for her appointment); the
     // client left before the service: no points, Linh keeps her place.
+    // v0.17.0: Linh tapped it on her phone, so the desk confirms first.
     expect(report.left).toEqual([
-      { client: 'Sara Kim', services: ['Gel manicure'], technician: 'Linh' },
+      { client: 'Sara Kim', services: ['Gel manicure'], technician: 'Linh', claimed: true },
     ]);
     const fix = report.calls[7]!;
     expect(fix.services).toEqual(['Nail fix / repair']);
@@ -244,6 +247,8 @@ describe('demo day', () => {
         ['Linh', 'calendar', 'arrived'],
         ['Tâm', 'calendar', 'no_show'],
         ['Thảo', 'calendar', 'upcoming'],
+        ['Thảo', 'desk', 'no_show_marked'], // v0.17.0: Kim Le never came
+
         ['Mai', 'desk', 'upcoming'],
         ['Linh', 'desk', 'upcoming'],
       ].sort((x, y) => x.join().localeCompare(y.join())),
@@ -254,8 +259,32 @@ describe('demo day', () => {
     // v0.16.0: one open call stays: Sara Kim's, for the demo's "Client left".
     const [open] = await sql`select count(*)::int as n from turn_calls where responded_at is null`;
     expect(open!.n).toBe(1);
+    // v0.17.0: the two walk-outs are real; the simulated Client left is not kept.
     const [left] = await sql`select count(*)::int as n from visits where status = 'left'`;
-    expect(left!.n).toBe(0);
+    expect(left!.n).toBe(2);
+    expect(report.walkOuts).toBe(2);
+  });
+
+  it('v0.17.0: the desk acted for Hoa, and yesterday was closed by the morning sweep', async () => {
+    expect(report.doneFor).toEqual([{ name: 'Hoa', what: 'accepted', by: 'Hạnh' }]);
+    expect(report.closedYesterday).toEqual({
+      visit_closed_day_end: 1,
+      visit_auto_finished: 1,
+      call_closed_day_end: 0,
+      help_closed_day_end: 1,
+      auto_check_out: 1,
+    });
+    // Tâm's pedicure point stays on yesterday's shift; today she starts with her late ½.
+    const [y] = await sql`select coalesce(sum(l.delta), 0)::float as n from turn_ledger l
+      join shifts s on s.id = l.shift_id
+      where s.technician_id = (select id from technicians where display_name = 'Tâm')
+        and s.date < (select max(date) from shifts)`;
+    expect(y!.n).toBe(1);
+    // Kim Le's client page counts the no-show.
+    const [kim] =
+      await sql`select count(*)::int as n from appointments a join clients c on c.id = a.client_id
+      where c.phone = '+18135550210' and a.no_show_at is not null`;
+    expect(kim!.n).toBe(1);
   });
 
   it('matches the committed cheat sheet exactly', () => {
@@ -290,7 +319,11 @@ describe('demo day', () => {
     // Her deny excused itself: nothing posted, and the card says why.
     expect(card('Thảo').lines.map((l) => [l.kind, l.delta, l.note])).toEqual([
       ['deny_excused', 0, 'break_needed'],
+      ['deny_excused', 0, 'personal'],
+      ['deny_excused', 0, 'break_needed'],
     ]);
+    expect(card('Thảo').freeDenyFlag).toBe(true);
+    expect(card('Hoa').inServiceVisitId).not.toBeNull();
     expect(card('Mai').lines.map((l) => [l.kind, l.delta])).toEqual([
       ['deny', 1],
       ['visit', 1],

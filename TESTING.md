@@ -695,6 +695,72 @@ Sign in as Hạnh (0102, receptionist) unless a step says otherwise.
 9. **Vietnamese.** Switch to Tiếng Việt on the desk, the phone and the kiosk:
    every new button and line has a Vietnamese string.
 
+## 8p. First-week gaps (v0.17.0)
+
+Load the demo (`npm run up -- -Demo`) and keep `docs/DEMO-EXPECTED.md` open.
+Sign in as Hạnh (0102, receptionist) unless a step says otherwise. Check each
+screen at iPad landscape (1366), iPad portrait (1024) and phone (390).
+
+1. **The desk acts for a tech.** Kim L.'s row (Spa pedicure, in service with
+   Hoa) has **Finish for Hoa**. Press it: Hoa is available again with +1. Press
+   **Call next** on An D.'s row: the row now says "Vân called" with **Accept
+   for Vân**; press it, the row goes to in service. On a called row, **More**
+   holds **Deny for Vân** with a reason; a reason marked "(no points)" costs
+   nothing, any other reason +1, exactly as on her phone. The tech cards
+   below show **Accept for** on a called tech and **Finish for** on one in
+   service. Sign in as Hoa (0110): "Done for you today by the front desk:
+   Accepted for you by Hạnh, (time)" and "Finished for you by Hạnh, (time)".
+2. **The owner's switch.** As Phu (0100): Staff → "Receptionists can accept,
+   deny and finish for a technician" is ticked. Untick, Save: Hạnh's board no
+   longer shows the Accept / Finish / Deny buttons (Vy and Phu still do). Tick
+   it again.
+3. **In service is not a status the desk can change** (review #1). As Phu:
+   Staff → Hoa (while she is in service) → Change status → Ready: "She is with
+   a client. Finish the visit first".
+4. **A tech's "Client left" asks the desk** (this changes v0.16.0). The first
+   called row, Sara K., says "Linh says the client left." Press **The client
+   is here**: Linh's phone (0104) now says "The front desk says the client is
+   still here. Accept or deny the call." Tap **Client left** on her phone
+   again: "You said the client left. The front desk is checking." Press **Yes,
+   the client left** on the desk: the row is gone, Linh's points do not move.
+   Rules → "Client left" → "It closes right away" brings back the v0.16.0 way.
+5. **Left without service.** Any waiting row (including a kiosk check-in, a
+   fix waiting for approval and a held second part) has **More** →
+   **Left without service**. Press it on one: the row is gone, nobody's
+   points or place change. Reports → today: "3 left without service" (the
+   demo already has 2).
+6. **No-show.** Appointments: Tâm's calendar client from 40 minutes ago has
+   **More** → **No-show**. Press it: the row says "no-show"; Tâm's card no
+   longer mentions it. Thảo's desk appointment from 90 minutes ago already
+   says "no-show". Clients → search `813 555 0210` → Kim L.: "1 no-shows".
+7. **Free-deny badge.** Thảo's card shows "Said no 3 times today (free)".
+   Rules → "Client left" → **Advanced**: the badge number (0 = never), a daily
+   limit (blank = no limit), the minutes before No-show and what happens to a
+   client still in the chair at day end. Set the limit to 3 and save: Thảo's
+   next free no posts +1. Put it back to blank.
+8. **Fairness table.** As Phu or Vy: Reports → "Fairness, (dates)": tech,
+   visits, points and "Worth a look" (Thảo: "3 free no"; Linh: "1 client left
+   (1 confirmed)" after step 4). **Show details** opens every count, including
+   skips by reason. No client names anywhere.
+9. **Day end.** The owner's board says "Yesterday (date): … 3 left open were
+   closed at day end." Reports → yesterday: "Closed at day end: 1 still
+   waiting or called (no points), 1 finished automatically (points kept), 0
+   calls, 1 help requests, 1 check-outs." Log, yesterday and today: "Closed at
+   day end (no points)", "Finished at day end", "Help request closed at day
+   end", "Checked out (left open)". The automated day-two and clock-change
+   tests are in `packages/db/test/v017.test.ts`.
+10. **Help needs a shift** (review #12). As a tech who is checked out, **Need
+    help** is not offered; the server refuses it too ("Check in first").
+11. **Small leftovers.** Log → open a call's "Queue at that second": "1
+    point", not "1 points" (also Staff → a tech → Today). Ngoc V.'s row after
+    **Call next** (Linh takes the pedicure): the dip row says "Slip: Linh is
+    doing Basic pedicure"; after Linh finishes, "Linh did Basic pedicure".
+    Admin → Kiosk: "pairing code waiting, works until (date, time)"; a new code
+    says "before (time)". Hanh B.'s **Pick a tech** lists a tech with an open
+    call as "called", not "available".
+12. **Vietnamese.** Switch to Tiếng Việt on the desk, the phone, Reports and
+    Rules: every new button and line has a Vietnamese string.
+
 ## 9. If something is off
 
 - **"Something went wrong on our side"** on sign-in: the local stack is probably

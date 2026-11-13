@@ -2,6 +2,109 @@
 
 One version per delivered part. Tags point at the commits.
 
+## v0.17.0, 2026-11-13: First-week gaps
+
+Release 1 of `17-Next-Build-Plan.md`, with review findings #1, #12 and #13.
+Every new behaviour is a setting with Heavenly's default; EN/VI throughout;
+readable on the iPad (landscape and portrait) and a phone. Built to Duong's
+standing note "easy to use for everyone": the main next step is a button,
+anything less common sits under the row's **More**, plain words, no new
+confirm dialogs.
+
+- **Changes v0.16.0: a technician's "Client left" now asks the desk.** Under
+  Rules → "Client left" (Heavenly: "The front desk confirms first") her tap
+  no longer closes the visit. The call stays open and the desk row says
+  "Linh says the client left" with **Yes, the client left** (closes it: no
+  points, she keeps her place) and **The client is here** (her phone then
+  says so, and she accepts or denies as usual). The desk's own **Client
+  left** still closes at once. "It closes right away" is the v0.16.0 way.
+- **The desk acts for a tech** whose phone is not at hand. On her current
+  visit only: **Accept for Linh** on a called row and **Finish for Hoa** on a
+  row in service, and the same two on her tech card; **Deny for Linh** (with a
+  reason, the same points as her phone) under the row's **More**. Accept is
+  the start: there is no separate start step. Owners and managers always;
+  receptionists while the owner leaves Staff → "Receptionists can accept, deny
+  and finish for a technician" on (default on; a switch of its own, next to
+  the one for receptionist edits). Her phone lists today's "Accepted for you
+  by Hạnh, 2:14 PM" lines. The log names the desk person as "By" and the tech
+  as "Done for". New permission `act_for_technician`.
+- **Day-end close-out.** Whatever an earlier local day left open is closed by
+  the floor sweep (every board and phone load) and by the nightly job, before
+  the end-of-day summary is written: waiting, called, unconfirmed kiosk,
+  pending-fix, held second parts and request holds close as "closed at day
+  end" (no points, no penalty); a visit still in service is finished with its
+  points on that day's shift, marked auto-finished (Rules → Advanced: or close
+  it with no points); open calls expire with no penalty; help requests close;
+  shifts check out. Every change is in the log with the day it belonged to,
+  and the summary and Reports list the counts ("Closed at day end: …"); the
+  owner's board says "N left open were closed at day end". Tests: a day-two
+  test, and both 2026 clock-change days in the salon's zone (the reset, the
+  late penalty, the out-over penalty and the appointment hold).
+- **Left without service.** **More** → **Left without service** on any
+  waiting row, a kiosk check-in, a fix waiting for approval and a held second
+  part included. No points, no penalty, nobody moves. Reports counts walk-outs
+  apart from clients who left after the call.
+- **No-show.** Appointments → **More** → **No-show**, once the start time
+  (plus Rules → Advanced minutes, Heavenly 0) has passed. The tech is free
+  again at once; nobody's points change. The client's page counts no-shows
+  (an appointment booked for a known client: "Book for later" now keeps the
+  client). A client marked a no-show who comes after all can still be
+  "Client arrived", and the mark is cleared.
+- **Free-deny badge.** A small badge on the tech card, "Said no 3 times today
+  (free)", at Rules → Advanced "Badge after this many free no's in a day"
+  (Heavenly 3; 0 = never). A hard daily limit is a separate setting, blank
+  for Heavenly (no limit); with one set, the next free no costs the deny
+  penalty and the log says so.
+- **Fairness table** in Reports (owner and manager), the 7 days up to the
+  chosen day: tech, visits, points and "Worth a look" (free no's, client left
+  hers / confirmed, fixes on her work); **Show details** opens penalty and free
+  no's, no's when asked, splits, client left, fixes and skips by reason.
+  Counts only, no client names.
+- **Review #1:** the desk can no longer change the status of a tech who is in
+  service ("She is with a client. Finish the visit first"); that used to leave
+  her visit open for good.
+- **Review #12:** Need help needs her on shift, and open requests close at day
+  end, so yesterday's never swallows today's.
+- **Leftovers:** "1 point", not "1 points" (log queue, tech settings); the slip
+  says "Linh is doing Basic pedicure" until her part is finished; Admin → Kiosk
+  shows the code's real expiry ("works until …"), and the kiosk's own pairing
+  screen no longer promises 15 minutes; Pick a tech says "called" for a tech
+  with an open call.
+- **Rules:** one new choice in view ("When a technician taps Client left"),
+  the rest under **Advanced**.
+- **Demo day** adds: Linh's Client left waiting for the desk (Sara Kim), Hạnh
+  accepted Kim Le for Hoa, Thảo's three free no's and badge, two walk-outs,
+  Kim Le's no-show, and yesterday's leftovers (a client still with Tâm, a
+  walk-in still waiting, Tâm's help request) closed by the morning sweep.
+  `docs/DEMO-EXPECTED.md` regenerated; its drift test passes.
+- Database: migration 0028 (`visits.close_reason`, `auto_finished`,
+  `finished_by`; `turn_calls.answered_by`, `left_claimed_at`,
+  `left_claim_outcome`; `appointments.no_show_at`, `no_show_by`, `client_id`;
+  `locations.receptionist_acts_for_technicians`; checks on the new values). No
+  new tables. New modules `act-for.ts`, `day-end.ts`. Rules sections
+  `fairness` and `closing` (a config saved before v0.17.0 still validates).
+
+Tests: 419 database (35 new: `v017.test.ts` 34 and the demo), 180 web (10 new).
+
+Readings taken where the brief left room (say if any is wrong):
+
+- "Following the existing owner toggle": a second switch of the same kind,
+  not the same switch, so the owner can allow edits but not acting for, or the
+  reverse. Both default on.
+- "Start" for a tech: accepting starts the service, as on her phone; there is
+  no separate start step to add.
+- The desk can deny for her under the same rules, including the reasons that
+  are free; a free no the desk taps counts toward her badge.
+- A visit still in service at day end is finished with its points (Heavenly);
+  the alternative (close with no points) is under Advanced.
+- Day end is the salon's local midnight, as the points reset already was.
+- No-show is offered from the start time (Heavenly 0 minutes after).
+- "Skips by reason" counts the techs ahead of the one called who were passed
+  over, by the first reason that applied (status reasons included).
+- The fairness table's "Worth a look" shows free no's, client left and fixes;
+  penalty no's are in the details (they already cost her points).
+- The end-of-day summary lists counts per kind, not each item.
+
 ## v0.16.1, 2026-11-12: Fixes from demo filming
 
 Four things the demo video showed (Duong, 2026-11-12, "fix these").

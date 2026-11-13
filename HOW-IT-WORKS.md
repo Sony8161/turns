@@ -2,7 +2,7 @@
 
 What each part is for, what it does today, and what it is meant to do when
 finished. Plain language; the code is the detail. Design source:
-`../Turn System Design Doc.md`. Updated 2026-11-11 after Part 7.
+`../Turn System Design Doc.md`. Updated 2026-11-13 after v0.17.0.
 
 ## The idea in one paragraph
 
@@ -385,6 +385,49 @@ From Duong's list of 2026-11-12. Every rule is a setting; Heavenly's values in b
 - **Need help** (`packages/db/src/help.ts`, table `help_requests`): a button on the technician's phone with an optional short reason (80 characters). The desk board's "Needs attention" shows "Mai needs help" and the time waiting until someone presses **On my way**. One open request per technician, six taps an hour. Log: `help_requested`, `help_acknowledged` (whether there was a reason, never its text). The board's 5-second refresh shows it; no phone push.
 - **Owners and managers** do not do nails: only a technician membership makes a technician row, so they are never in the rotation (a test holds this).
 - Migration 0027 (`help_requests`, the new visit columns, `services.is_fix`, the `left` and `client_left` values, the approval trigger).
+
+### First-week gaps (v0.17.0)
+
+Release 1 of `../17-Next-Build-Plan.md`. Every rule is a setting
+(`fairness` and `closing` in `rule_config`); Heavenly's values in brackets.
+
+- **The desk acts for a tech** (`packages/db/src/act-for.ts`):
+  `deskAnswerCall` and `deskFinishVisit` check the role and location
+  (`mayActForTechnicians`: owners and managers always, receptionists while
+  `locations.receptionist_acts_for_technicians` is on [on]) and then call the
+  engine's own `respondToCall` and `finishVisit` with `onBehalf`, so the
+  points are exactly those of her phone. The call keeps `answered_by`, the
+  visit `finished_by`, and the audit row has the desk person as actor and
+  `after.actedFor`. `actedForToday` gives her phone today's lines. The desk
+  shows Accept and Finish only on her current visit; Deny is under More.
+- **Day-end close-out** (`packages/db/src/day-end.ts`, `closeOutDay`), called
+  by `sweepFloor` before anything else and so by every board and phone load,
+  `ensureDailySummary` and the nightly `summarizeYesterdayEverywhere`. It
+  closes what an earlier local day left open: waiting, called, kiosk and
+  pending visits as `cancelled` with `close_reason = 'day_end'`; an
+  in-service visit finished with its points on the shift of the day it
+  started, `auto_finished` [`closing.day_end_in_service = finish`]; its open
+  calls as `expired`; help requests. The sweep then checks out every shift
+  from an earlier day. Audit rows carry `after.forDay`, which the daily report
+  counts (`closedAtDayEnd`).
+- **Walk-outs and no-shows**: `leftWithoutService` (engine) closes a waiting
+  visit as `left` with `close_reason = 'walked_out'`; `markNoShow`
+  (appointments) sets `no_show_at` once the start plus
+  `closing.no_show_after_min` [0] has passed, and the queue, the board and the
+  phone stop counting that appointment. Neither posts anything. The daily
+  report counts walk-outs, client-left and no-shows; `clientDetail` counts a
+  client's no-shows (`appointments.client_id`).
+- **Fairness**: `clientLeft` from the tech's phone, under
+  `fairness.client_left_by_tech = ask_desk` [ask_desk], only marks the open
+  call (`left_claimed_at`); the desk answers with `clientLeft` (closes,
+  `technician_confirmed`) or `clientHere` (`left_claim_outcome =
+client_here`). `freeDeniesToday` counts her excused denies since check-in:
+  the tech card's badge at `fairness.free_deny_flag` [3], and
+  `fairness.free_deny_daily_limit` [none] in `respondToCall`.
+  `fairnessReport` (reports.ts) builds the table from the calls, the ledger,
+  the visits, the audit log and the call snapshots.
+- Review #1: `staffSetStatus` refuses a tech in service. Review #12:
+  `askForHelp` needs her on shift. Migration 0028.
 
 ## How the pieces talk to each other
 

@@ -380,6 +380,10 @@ export async function seedDev(url: string, opts: { demo?: boolean } = {}): Promi
             'v0.16.0 on the demo day: Sara Kim was called to Linh and left (press Client left); a nail fix',
             'for Trang Ho entered by Hạnh waits for Phu or Vy to approve; a kiosk group of three waits for',
             'Confirm all 3; Mai tapped Need help (On my way on the desk clears it).',
+            'v0.17.0 on the demo day: Linh tapped Client left for Sara Kim (the desk confirms: Yes, the',
+            "client left / The client is here); Hạnh pressed Accept for Hoa (Hoa's phone says so; the desk",
+            'row has Finish for Hoa); Thảo said no for free 3 times (badge on her card); two walk-outs;',
+            "Kim Le is a no-show (client page); yesterday's leftovers were closed at day end (owner board).",
             '',
           ]
         : [

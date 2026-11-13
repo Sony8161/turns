@@ -12,14 +12,18 @@
 // Clock times never appear in the cheat sheet, only order and minutes, so the
 // sheet is the same on every run.
 import { and, asc, eq, inArray, isNull, sql } from 'drizzle-orm';
-import { addAppointment, appointmentArrived } from './appointments';
+import { actedForToday, deskAnswerCall } from './act-for';
+import { addAppointment, appointmentArrived, markNoShow } from './appointments';
+import { techBoard } from './board';
 import { upsertClient } from './clients';
+import { DAY_END_ACTIONS } from './day-end';
 import {
   callNext,
   clientLeft,
   createWalkIn,
   deskOptions,
   finishVisit,
+  leftWithoutService,
   openCallFor,
   queueFor,
   respondToCall,
@@ -44,10 +48,14 @@ import { saveProfile, type ProfileInput } from './profile';
 import { activeRules, type RuleConfig } from './rules';
 import {
   appointments,
+  auditLog,
   calendarFeeds,
+  clients,
+  helpRequests,
   locations,
   services,
   shifts,
+  technicianStatus,
   technicians,
   turnCalls,
   turnLedger,
@@ -55,7 +63,7 @@ import {
   visits,
 } from './schema';
 import type { Db } from './server';
-import { checkIn, transition, writeAudit } from './status';
+import { checkIn, sweepFloor, transition, writeAudit } from './status';
 
 export const DEMO_TECH_NAMES = ['Vân', 'Mai', 'Hoa', 'Linh', 'Thảo', 'Tâm'] as const;
 /** The service choices the cheat sheet shows the kiosk's technician list for. */
@@ -262,6 +270,73 @@ export async function buildDemoDay(db: Db, ctx: DemoContext): Promise<void> {
     }
   }
 
+  // v0.17.0 (DAY-001): yesterday's leftovers. Tâm was still in the chair with
+  // a gel pedicure, a walk-in was still waiting and her "Need help" was never
+  // answered when the salon closed. Written straight into yesterday (like the
+  // fix's earlier visit below); then the first board load of the morning, the
+  // floor sweep, closes them: the pedicure is finished with its point on
+  // yesterday's shift, the walk-in closes with no points, the help request
+  // closes and Tâm is checked out, so she checks in today like everyone else.
+  const midnight = minus(now, sinceMidnight);
+  const yesterday = localDay(minus(midnight, 60), tz);
+  const [oldShift] = await db
+    .insert(shifts)
+    .values({
+      organizationId: ctx.organizationId,
+      locationId: ctx.locationId,
+      technicianId: tech['Tâm'].id,
+      date: yesterday,
+      checkedInAt: minus(midnight, 14 * 60),
+      readyAt: minus(midnight, 14 * 60 - 1),
+    })
+    .returning({ id: shifts.id });
+  await db
+    .insert(technicianStatus)
+    .values({
+      technicianId: tech['Tâm'].id,
+      organizationId: ctx.organizationId,
+      locationId: ctx.locationId,
+      status: 'in_service',
+      since: minus(midnight, 4 * 60 + 30),
+      shiftId: oldShift!.id,
+    })
+    .onConflictDoUpdate({
+      target: technicianStatus.technicianId,
+      set: { status: 'in_service', since: minus(midnight, 4 * 60 + 30), shiftId: oldShift!.id },
+    });
+  for (const [status, name, at] of [
+    ['in_service', 'Gel pedicure', minus(midnight, 4 * 60 + 35)],
+    ['waiting', 'Basic pedicure', minus(midnight, 4 * 60 + 10)],
+  ] as const) {
+    const [row] = await db
+      .insert(visits)
+      .values({
+        organizationId: ctx.organizationId,
+        locationId: ctx.locationId,
+        source: 'walk_in',
+        status,
+        ...(status === 'in_service'
+          ? { assignedTechnicianId: tech['Tâm'].id, startedAt: plus(at, 5) }
+          : {}),
+        createdBy: ctx.receptionistUserId,
+        arrivedAt: at,
+      })
+      .returning({ id: visits.id });
+    await db.insert(visitServices).values({
+      organizationId: ctx.organizationId,
+      visitId: row!.id,
+      serviceId: svc(name),
+      pointsValueSnapshot: '1.0',
+    });
+  }
+  await db.insert(helpRequests).values({
+    organizationId: ctx.organizationId,
+    locationId: ctx.locationId,
+    technicianId: tech['Tâm'].id,
+    createdAt: minus(midnight, 4 * 60 + 20),
+  });
+  await sweepFloor(db, ctx.locationId, now);
+
   // Check-ins, oldest first, laid out backwards from now inside today.
   const span = Math.min(125, sinceMidnight - 2);
   const step = Math.min(15, Math.floor((span - 5) / 6));
@@ -330,7 +405,11 @@ export async function buildDemoDay(db: Db, ctx: DemoContext): Promise<void> {
       }),
       `${n} accepts`,
     );
-  const deny = async (callId: string, n: DemoTechName, reason: 'other' | 'break_needed') =>
+  const deny = async (
+    callId: string,
+    n: DemoTechName,
+    reason: 'other' | 'break_needed' | 'personal',
+  ) =>
     must(
       await respondToCall(db, {
         callId,
@@ -374,6 +453,25 @@ export async function buildDemoDay(db: Db, ctx: DemoContext): Promise<void> {
   await deny(await call(dip.visitId, 'Thảo'), 'Thảo', 'break_needed');
   await accept(await call(dip.visitId, 'Mai'), 'Mai');
   await finish('Mai');
+  // v0.17.0 (FAIR-001, WALK-001): two more clients come to Thảo (still the
+  // lowest) and she says no for free both times, so her card gets the
+  // "Said no 3 times today (free)" badge. Both clients then walk out before
+  // anyone else is called: Left without service, no points for anyone.
+  for (const [name, reason] of [
+    ['Basic pedicure', 'personal'],
+    ['Spa pedicure', 'break_needed'],
+  ] as const) {
+    const gone = await walkIn([name]);
+    await deny(await call(gone.visitId, 'Thảo'), 'Thảo', reason);
+    must(
+      await leftWithoutService(db, {
+        visitId: gone.visitId,
+        actor: { userId: ctx.receptionistUserId },
+        locationId: ctx.locationId,
+      }),
+      'walk-out',
+    );
+  }
 
   // Linh: her calendar client arrived for a gel fill: ½ − ½ = 0. Her last
   // visit was an appointment, so she shows 00 and goes after Thảo's true 0.
@@ -402,7 +500,16 @@ export async function buildDemoDay(db: Db, ctx: DemoContext): Promise<void> {
     requestedTechnicianId: tech['Hoa'].id,
     client: { name: 'Kim Le', phone: '813-555-0210' },
   });
-  await accept(await call(request.visitId, 'Hoa'), 'Hoa');
+  // v0.17.0 (DESK-001): Hoa's phone is in her bag, so Hạnh at the desk
+  // presses "Accept for Hoa". Her phone later shows "Accepted for you by Hạnh".
+  must(
+    await deskAnswerCall(db, {
+      actor: { ...desk, role: 'receptionist' as const },
+      callId: await call(request.visitId, 'Hoa'),
+      response: 'accepted',
+    }),
+    'Hạnh accepts for Hoa',
+  );
 
   // Tâm: 17 minutes late (+½ at check-in), now on break.
   await ready('Tâm');
@@ -443,6 +550,30 @@ export async function buildDemoDay(db: Db, ctx: DemoContext): Promise<void> {
       `desk appointment ${a.name}`,
     );
   }
+
+  // v0.17.0 (WALK-001): Kim Le had also booked Thảo by phone 90 minutes ago
+  // and never came for it: Hạnh marked it a no-show (Kim Le's client page
+  // counts it). Tâm's calendar client from 40 minutes ago is left for the desk
+  // to mark (Appointments, More, No-show).
+  const [kim] = await db
+    .select({ id: clients.id })
+    .from(clients)
+    .where(and(eq(clients.locationId, ctx.locationId), eq(clients.phone, '+18135550210')));
+  const booked = must(
+    await addAppointment(db, {
+      actor: desk,
+      technicianId: tech['Thảo'].id,
+      clientName: 'Kim Le',
+      clientId: kim?.id ?? null,
+      startAt: minus(now, 90),
+      endAt: minus(now, 45),
+    }),
+    'Kim Le booked',
+  );
+  must(
+    await markNoShow(db, { actor: desk, appointmentId: booked.appointmentId }),
+    'Kim Le no-show',
+  );
 
   // Waiting, oldest first: the cheat sheet calls them top to bottom.
   // Asked for Hoa, who is with a client: the visit waits for her, never falls
@@ -576,6 +707,17 @@ export async function buildDemoDay(db: Db, ctx: DemoContext): Promise<void> {
     attributes: { gender: 'female', isKid: false, age: null },
   });
   await call(gone.visitId, 'Linh');
+  // v0.17.0 (FAIR-001): Linh taps "Client left" on her phone; under the rules
+  // the desk confirms first, so the row shows "Linh says the client left".
+  must(
+    await clientLeft(db, {
+      visitId: gone.visitId,
+      actor: actorOf('Linh'),
+      locationId: ctx.locationId,
+      technicianId: tech['Linh'].id,
+    }),
+    'Linh says the client left',
+  );
 
   // Mai taps "Need help" on her phone: the desk board shows it until someone
   // presses "On my way".
@@ -697,8 +839,14 @@ export type DemoCall = {
    *  it waited for approval (approved in the simulation, then the desk picks). */
   fix?: { original: string | null; daysAgo: number | null; pending: boolean };
 };
-/** v0.16.0: a called visit whose client left before the service started. */
-export type DemoLeft = { client: string; services: string[]; technician: string };
+/** v0.16.0: a called visit whose client left before the service started.
+ *  v0.17.0: claimed = the tech tapped it and the desk confirms first. */
+export type DemoLeft = {
+  client: string;
+  services: string[];
+  technician: string;
+  claimed: boolean;
+};
 /** v0.15.0: who the kiosk offers for a choice of services (names only). */
 export type DemoKioskChoice = { services: string[]; technicians: string[] };
 export type DemoLevel = { name: string; level: SkillLevel | null; not: string[] };
@@ -707,7 +855,8 @@ export type DemoAppointment = {
   name: string;
   source: 'calendar' | 'desk';
   startMin: number;
-  state: 'arrived' | 'upcoming' | 'no_show';
+  /** v0.17.0: no_show_marked = the desk pressed No-show. */
+  state: 'arrived' | 'upcoming' | 'no_show' | 'no_show_marked';
 };
 export type DemoReport = {
   rules: RuleConfig;
@@ -722,6 +871,14 @@ export type DemoReport = {
   /** A service's own points (rules by_service), by name. */
   servicePoints: { name: string; points: number }[];
   help: { name: string; reason: string | null }[];
+  /** v0.17.0: what the desk did for a tech today, as her phone lists it. */
+  doneFor: { name: string; what: string; by: string | null }[];
+  /** v0.17.0: techs with the free-deny badge, and their free no's today. */
+  freeDenyBadges: { name: string; n: number }[];
+  /** v0.17.0: clients who left without service today. */
+  walkOuts: number;
+  /** v0.17.0: what the morning sweep closed for yesterday. */
+  closedYesterday: Record<string, number>;
 };
 
 class Rollback extends Error {}
@@ -758,10 +915,17 @@ export async function demoReport(db: Db, locationId: string): Promise<DemoReport
   const now = new Date();
   const rules = await activeRules(db, locationId);
   const queue = await db.transaction((tx) => queueFor(tx, locationId, undefined, now));
+  const [loc] = await db
+    .select({ timezone: locations.timezone })
+    .from(locations)
+    .where(eq(locations.id, locationId));
+  const tz = loc?.timezone ?? 'America/New_York';
+  const today = localDay(now, tz);
+  // Today's shifts only (v0.17.0: the demo also has yesterday's leftovers).
   const shiftRows = await db
     .select({ technicianId: shifts.technicianId, checkedInAt: shifts.checkedInAt, id: shifts.id })
     .from(shifts)
-    .where(eq(shifts.locationId, locationId));
+    .where(and(eq(shifts.locationId, locationId), eq(shifts.date, today)));
   const ranked = [...shiftRows].sort((a, b) => a.checkedInAt.getTime() - b.checkedInAt.getTime());
   const ledger = shiftRows.length
     ? await db
@@ -845,6 +1009,7 @@ export async function demoReport(db: Db, locationId: string): Promise<DemoReport
           client: v.kioskName ?? v.clientName ?? 'Walk-in',
           services: v.services,
           technician: nameOfTech.get(r.technicianId) ?? '?',
+          claimed: v.leftClaimPending === true,
         });
       }
       const waiting = (await waitingVisits(txDb, locationId)).filter((v) => v.status === 'waiting');
@@ -979,10 +1144,48 @@ export async function demoReport(db: Db, locationId: string): Promise<DemoReport
       source: appointments.source,
       startAt: appointments.startAt,
       arrivedAt: appointments.arrivedAt,
+      noShowAt: appointments.noShowAt,
     })
     .from(appointments)
     .where(and(eq(appointments.locationId, locationId), isNull(appointments.cancelledAt)))
     .orderBy(asc(appointments.startAt));
+  // v0.17.0: the desk acting for a tech, the free-deny badge, walk-outs and
+  // what the morning sweep closed for yesterday.
+  const doneFor: DemoReport['doneFor'] = [];
+  for (const c of queue) {
+    for (const d of await actedForToday(db, c.technicianId, now)) {
+      doneFor.push({ name: c.displayName, what: d.what, by: d.by });
+    }
+  }
+  const freeDenyBadges = (await techBoard(db, locationId, now))
+    .filter((c) => c.freeDenyFlag)
+    .map((c) => ({ name: c.displayName, n: c.freeDenies }));
+  const [walked] = await db
+    .select({ n: sql<string>`count(*)` })
+    .from(visits)
+    .where(
+      and(
+        eq(visits.locationId, locationId),
+        eq(visits.status, 'left'),
+        eq(visits.closeReason, 'walked_out'),
+      ),
+    );
+  const yesterday = new Date(`${today}T12:00:00Z`);
+  yesterday.setUTCDate(yesterday.getUTCDate() - 1);
+  const closedRows = await db
+    .select({ action: auditLog.action, n: sql<string>`count(*)` })
+    .from(auditLog)
+    .where(
+      and(
+        eq(auditLog.locationId, locationId),
+        inArray(auditLog.action, [...DAY_END_ACTIONS]),
+        sql`${auditLog.after}->>'forDay' = ${yesterday.toISOString().slice(0, 10)}`,
+      ),
+    )
+    .groupBy(auditLog.action);
+  const closedYesterday = Object.fromEntries(
+    DAY_END_ACTIONS.map((a) => [a, Number(closedRows.find((r) => r.action === a)?.n ?? 0)]),
+  );
   const bufferMs = rules.eligibility.upcoming_appointment_buffer_min * 60_000;
   const menu = await menuLevels(db, locationId);
   const ticks = await loadLevels(db, locationId);
@@ -1001,6 +1204,10 @@ export async function demoReport(db: Db, locationId: string): Promise<DemoReport
     calls,
     left,
     help,
+    doneFor,
+    freeDenyBadges,
+    walkOuts: Number(walked?.n ?? 0),
+    closedYesterday,
     servicePoints: menu
       .filter((m) => rules.points.by_service?.[m.id] !== undefined)
       .map((m) => ({ name: m.name, points: rules.points.by_service![m.id]! })),
@@ -1025,9 +1232,11 @@ export async function demoReport(db: Db, locationId: string): Promise<DemoReport
       startMin: Math.round((a.startAt.getTime() - now.getTime()) / 60_000),
       state: a.arrivedAt
         ? 'arrived'
-        : a.startAt.getTime() < now.getTime() - bufferMs
-          ? 'no_show'
-          : 'upcoming',
+        : a.noShowAt
+          ? 'no_show_marked'
+          : a.startAt.getTime() < now.getTime() - bufferMs
+            ? 'no_show'
+            : 'upcoming',
     })),
   };
 }
@@ -1047,6 +1256,7 @@ const signed = (p: number) => (p >= 0 ? `+${fmtPoints(p)}` : fmtPoints(p));
 const ordinal = (n: number) => `${n}${n === 1 ? 'st' : n === 2 ? 'nd' : n === 3 ? 'rd' : 'th'}`;
 
 const STATUS: Record<string, string> = {
+  called: 'called, waiting for her answer',
   available: 'available',
   in_service: 'with a client',
   break: 'on break',
@@ -1148,7 +1358,20 @@ export function renderDemoExpected(r: DemoReport): string {
         : '') +
       '. The desk picks the tech, the one who did the work first; saying no costs nothing.',
     `- A group checks in together (up to ${r.rules.groups.max_people}): each person is their own client and visit, called by turn on their own.`,
-    '- A called visit whose client walks out before the service starts: **Client left**. No points, the tech keeps her place.',
+    '- A called visit whose client walks out before the service starts: **Client left**. No points, the tech keeps her place.' +
+      (r.rules.fairness.client_left_by_tech === 'ask_desk'
+        ? ' When the tech taps it on her phone, the desk confirms first: **Yes, the client left** or **The client is here**.'
+        : ''),
+    '- A waiting client who walks out before anyone is called: **Left without service** (under **More** on the row). A booked client who never comes: **No-show** (under **More** on Appointments, once the start time has passed). Neither counts against any tech.',
+    '- The desk can act for a tech whose phone is not at hand: **Accept for** or **Finish for** her on her current visit (the desk row or her card), **Deny for** her under **More**, with the same points as her phone. Her phone lists what was done for her.',
+    `- Saying no for free (${r.rules.penalties.deny_excused_reasons.map((x) => `"${REASON[x] ?? x}"`).join(', ') || 'no reason is free'}): ` +
+      (r.rules.fairness.free_deny_flag > 0
+        ? `after ${r.rules.fairness.free_deny_flag} in a day her card shows a small badge`
+        : 'no badge') +
+      (r.rules.fairness.free_deny_daily_limit === null
+        ? '; there is no daily limit.'
+        : `; after ${r.rules.fairness.free_deny_daily_limit} a day the next one costs the deny penalty.`),
+    '- At day end, whatever is left open closes: waiting and called clients with no points or penalty, a client still in the chair is finished with its points on that day, open calls and help requests close, and everyone is checked out. The end-of-day summary lists it.',
     '',
     '## Levels',
     '',
@@ -1177,6 +1400,11 @@ export function renderDemoExpected(r: DemoReport): string {
       ...b.excusedDenies.map(
         (x) => `said no once ("${REASON[x] ?? x}"): excused by the rules, no points`,
       ),
+      ...(r.freeDenyBadges.some((f) => f.name === b.name)
+        ? [
+            `card badge: said no ${r.freeDenyBadges.find((f) => f.name === b.name)!.n} times today (free)`,
+          ]
+        : []),
     ];
     const lines = parts.length ? parts.join('; ') : 'nothing yet';
     out.push(
@@ -1205,12 +1433,14 @@ export function renderDemoExpected(r: DemoReport): string {
     '## The next calls',
     '',
     'Press **Call next** on each waiting row, top to bottom; each called tech accepts on her phone',
-    '(or the owner accepts for her from Manage).',
+    '(or the desk presses **Accept for** her on the row).',
     '',
   );
   for (const l of r.left) {
     out.push(
-      `First: **${l.client}** (${l.services.join(' + ')}) shows ${l.technician} called, but the client walked out. Press **Client left** on the row (or ${l.technician} presses it on her phone): no points, ${l.technician} keeps her place.`,
+      l.claimed
+        ? `First: **${l.client}** (${l.services.join(' + ')}) was called to ${l.technician}, who tapped **Client left** on her phone. The row says "${l.technician} says the client left": press **Yes, the client left** (no points, ${l.technician} keeps her place) or **The client is here** (her call stays open).`
+        : `First: **${l.client}** (${l.services.join(' + ')}) shows ${l.technician} called, but the client walked out. Press **Client left** on the row (or ${l.technician} presses it on her phone): no points, ${l.technician} keeps her place.`,
       '',
     );
   }
@@ -1292,6 +1522,22 @@ export function renderDemoExpected(r: DemoReport): string {
       );
     }
   }
+  if (r.doneFor.length) {
+    out.push('', '## Done for a tech by the desk', '');
+    for (const d of r.doneFor) {
+      out.push(
+        `- ${d.by ?? 'The desk'} pressed **${d.what === 'accepted' ? 'Accept' : d.what === 'finished' ? 'Finish' : 'Deny'} for ${d.name}**. ${d.name}'s phone shows "${d.what[0]!.toUpperCase()}${d.what.slice(1)} for you by ${d.by ?? 'the desk'}" with the time.` +
+          (d.what === 'accepted' ? ` The desk row shows **Finish for ${d.name}**.` : ''),
+      );
+    }
+  }
+  out.push(
+    '',
+    '## Walk-outs, no-shows and yesterday',
+    '',
+    `- Today ${r.walkOuts} waiting ${r.walkOuts === 1 ? 'client' : 'clients'} left without service (Reports counts them; no points for anyone).`,
+    `- Yesterday's leftovers, closed by the first board load this morning: ${r.closedYesterday['visit_closed_day_end'] ?? 0} waiting (no points), ${r.closedYesterday['visit_auto_finished'] ?? 0} still in the chair (finished, its point on yesterday's shift), ${r.closedYesterday['call_closed_day_end'] ?? 0} open calls, ${r.closedYesterday['help_closed_day_end'] ?? 0} help request, ${r.closedYesterday['auto_check_out'] ?? 0} check-out. The owner's board and Reports for yesterday list them.`,
+  );
   out.push(
     '',
     '## Appointments today',
@@ -1304,11 +1550,13 @@ export function renderDemoExpected(r: DemoReport): string {
     const state =
       a.state === 'arrived'
         ? 'client arrived (visit done)'
-        : a.state === 'no_show'
-          ? 'no-show: past the buffer, no longer holds her'
-          : a.startMin <= r.rules.eligibility.upcoming_appointment_buffer_min
-            ? 'coming up: holds her out of the line'
-            : 'later today';
+        : a.state === 'no_show_marked'
+          ? 'the desk marked it a **No-show** (the client page counts it)'
+          : a.state === 'no_show'
+            ? 'past the buffer, no longer holds her; the desk may press **No-show** (under More)'
+            : a.startMin <= r.rules.eligibility.upcoming_appointment_buffer_min
+              ? 'coming up: holds her out of the line'
+              : 'later today';
     out.push(
       `| ${a.name} | ${a.source === 'calendar' ? 'Fresha calendar (demo)' : 'desk'} | ${when} | ${state} |`,
     );
